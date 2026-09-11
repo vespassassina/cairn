@@ -1,0 +1,20 @@
+{
+  "name": "cairn",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@9.15.4",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "pnpm -r --sequential build",
+    "test": "vitest run",
+    "typecheck": "pnpm -r --sequential typecheck"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "typescript": "^5.7.3",
+    "vite": "^8.3.0",
+    "vitest": "^5.0.0"
+  }
+}

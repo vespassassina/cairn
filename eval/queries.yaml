@@ -1,0 +1,16 @@
+# 30 real queries with expected page ids.
+# Write these before tuning search. Use things you have genuinely wanted to find.
+# recall@5 = share of queries where at least one expected page appears in the top 5.
+
+queries:
+  - id: q01
+    query: "which ESC firmware did I flash on the 5 inch build"
+    expected: []   # page ids, filled once pages exist
+    lang: en
+    notes: "exact term recall"
+  - id: q02
+    query: "prints that failed on first layer"
+    expected: []
+    lang: en
+    notes: "synonym test: warping, adhesion"
+  # add q03 to q30

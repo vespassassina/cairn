@@ -1,0 +1,77 @@
+# CLAUDE.md
+
+Project context for Claude Code. Read this first, then `docs/PRD.md`.
+
+## What this is
+
+Cairn (working name): an open-source, self-hosted document and collection store where Claude is the primary client through MCP. Web editor comes second. Runs on Azure or AWS free tier, or as a single container.
+
+## Current phase
+
+Phase 0: foundations. Adapter interfaces, SQLite adapter, conformance tests, eval query set.
+
+Do not write frontend code until Phase 1 passes its gate (see PRD section 14).
+
+## Stack
+
+1. TypeScript, Node 22, pnpm workspaces
+2. Hono for the API and MCP server (must run on Azure Functions, AWS Lambda and plain Node)
+3. Official MCP TypeScript SDK, streamable HTTP transport
+4. Vitest for tests
+5. Later: React plus BlockNote for the editor
+
+## Repo layout (target)
+
+```
+packages/
+  core/          domain logic, adapter interfaces, no cloud SDKs
+  adapter-sqlite/
+  adapter-cosmos/
+  adapter-dynamo/   (P1)
+  api/           Hono app, REST plus MCP routes
+  indexer/       link extraction, chunking, optional embeddings
+  web/           (Phase 2)
+deploy/
+  azure/         Bicep
+  aws/           (P1)
+eval/
+  queries.yaml
+docs/
+  PRD.md
+  decisions/
+```
+
+## Hard rules
+
+1. No cloud SDK imports outside `adapter-*` packages. `core` must build with zero cloud dependencies.
+2. Every adapter passes the shared conformance suite in `core/test/conformance`. No adapter-specific branches in business logic.
+3. Every write uses optimistic concurrency via version tokens.
+4. The chunks store is separate from pages from day one. The vector container is created when embeddings are enabled, never at deploy.
+5. Optional services (embeddings) degrade to keyword mode with a `mode` flag. They never throw into the core path.
+6. Every MCP tool truncates to a token budget and returns a cursor when it does.
+7. No search change merges without running `pnpm eval` and recording before and after recall@5 in the PR description, per search backend.
+8. Search is a separate adapter from the document store. Never assume one backend provides both (ADR-005).
+9. Pages and rows are the source of truth. Edges and chunks are derived, written only through an idempotent `replaceForSource`, and must survive a full rebuild unchanged.
+10. No transactions across documents. Write the page, then its derived data, and make the gap recoverable.
+11. Derived reads (backlinks, neighbours, search) are eventually consistent. Tests poll to the 10 second bound, they never read once straight after a write.
+12. Collection filtering runs in core. Pushdown is an optional adapter capability that must produce identical results.
+13. Route handlers use web standard `Request` and `Response`. Platform-specific code lives only in `api/src/entry/*` (ADR-006).
+
+## Verification before calling a task done
+
+1. `pnpm build` and `pnpm test` pass
+2. Conformance suite passes for every adapter touched
+3. New MCP tools have a contract test with a realistic payload
+4. PRD or an ADR updated if behaviour changed
+
+## Writing style for docs
+
+Plain, direct, short paragraphs. No em dashes. Sentence case headings. Numbered lists over dash bullets.
+
+## Open questions that block work
+
+See PRD section 13. Q1 (Cosmos full-text languages) blocks keyword search. Q8 (emulator support for full-text) decides how search is tested in CI. Q7 (free tier facts) must be verified before Phase 1. Q2 and Q3 are answered by ADR-005 and ADR-007.
+
+## Decisions
+
+Read `docs/decisions/` before changing architecture. ADR-005 (adapter boundary), ADR-006 (runtime and transport) and ADR-007 (auth) define most of the constraints above.

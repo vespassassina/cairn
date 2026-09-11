@@ -1,0 +1,174 @@
+import type {
+  Collection,
+  CollectionInput,
+  EdgeInput,
+  Edge,
+  ExpectedVersion,
+  Id,
+  Page,
+  PageInput,
+  Paged,
+  Row,
+  RowInput,
+  WorkspaceId,
+} from "../types.js";
+import type { RowQuery } from "../query/filter.js";
+
+/**
+ * What an adapter claims it can do. Capabilities never change behaviour that
+ * callers can observe: a pushdown query must return exactly what core's
+ * in-memory evaluation would return (ADR-005 rule 5).
+ */
+export interface DocumentStoreCapabilities {
+  /** Adapter implements `queryRows` natively. Core falls back when false. */
+  readonly rowQueryPushdown: boolean;
+}
+
+/**
+ * The source-of-truth store, plus the derived edge store.
+ *
+ * Consistency is stated per operation and is part of the contract (ADR-005
+ * rule 4). Two levels exist:
+ *
+ * 1. Immediate. A read after a successful write sees that write. All point
+ *    reads and writes of pages, collections and rows are immediate.
+ * 2. Eventual, bounded at {@link EVENTUAL_CONSISTENCY_BOUND_MS}. Everything
+ *    derived, and every list operation, may lag. Tests poll, they never read
+ *    once straight after a write.
+ *
+ * No method spans more than one document transactionally, and callers must not
+ * assume one (ADR-005 rule 3).
+ */
+export interface DocumentStore {
+  readonly capabilities: DocumentStoreCapabilities;
+
+  /** Create schema or containers. Idempotent, safe to call on every start. */
+  init(): Promise<void>;
+  close(): Promise<void>;
+
+  // Pages. Source of truth.
+
+  /** Immediate. */
+  getPage(workspaceId: WorkspaceId, id: Id): Promise<Page | null>;
+
+  /**
+   * Immediate. Pass `expectedVersion: null` to create, or the version last
+   * read to update.
+   *
+   * @throws VersionConflictError carrying the current page.
+   */
+  putPage(
+    workspaceId: WorkspaceId,
+    id: Id,
+    input: PageInput,
+    expectedVersion: ExpectedVersion,
+  ): Promise<Page>;
+
+  /** Immediate. @throws VersionConflictError */
+  deletePage(
+    workspaceId: WorkspaceId,
+    id: Id,
+    expectedVersion: ExpectedVersion,
+  ): Promise<void>;
+
+  /** Eventual. `parentId` of null lists roots, undefined lists everything. */
+  listPages(
+    workspaceId: WorkspaceId,
+    options?: { parentId?: Id | null; limit?: number; cursor?: string | null },
+  ): Promise<Paged<Page>>;
+
+  // Edges. Derived, rebuildable, idempotent.
+
+  /**
+   * Replaces every edge whose source is `sourceId`. The only way to write
+   * edges (ADR-005 rule 2). Calling it twice with the same input leaves the
+   * same state.
+   */
+  replaceEdgesForSource(
+    workspaceId: WorkspaceId,
+    sourceId: Id,
+    edges: EdgeInput[],
+  ): Promise<void>;
+
+  /** Eventual. */
+  getOutboundEdges(workspaceId: WorkspaceId, sourceId: Id): Promise<Edge[]>;
+
+  /** Eventual. Backlinks. One partition query, never a scan. */
+  getInboundEdges(workspaceId: WorkspaceId, targetId: Id): Promise<Edge[]>;
+
+  // Collections and rows.
+
+  /** Immediate. */
+  getCollection(workspaceId: WorkspaceId, id: Id): Promise<Collection | null>;
+
+  /** Immediate. @throws VersionConflictError */
+  putCollection(
+    workspaceId: WorkspaceId,
+    id: Id,
+    input: CollectionInput,
+    expectedVersion: ExpectedVersion,
+  ): Promise<Collection>;
+
+  /** Eventual. */
+  listCollections(workspaceId: WorkspaceId): Promise<Collection[]>;
+
+  /** Immediate. */
+  getRow(workspaceId: WorkspaceId, collectionId: Id, id: Id): Promise<Row | null>;
+
+  /**
+   * Immediate. Validation happens in core before this is called, so an adapter
+   * never inspects field semantics.
+   *
+   * @throws VersionConflictError
+   */
+  putRow(
+    workspaceId: WorkspaceId,
+    collectionId: Id,
+    id: Id,
+    input: RowInput,
+    expectedVersion: ExpectedVersion,
+  ): Promise<Row>;
+
+  /** Immediate. @throws VersionConflictError */
+  deleteRow(
+    workspaceId: WorkspaceId,
+    collectionId: Id,
+    id: Id,
+    expectedVersion: ExpectedVersion,
+  ): Promise<void>;
+
+  /**
+   * Eventual. Unfiltered, unsorted, paged. This is the lowest common
+   * denominator every adapter must provide, and what core filters in memory.
+   */
+  listRows(
+    workspaceId: WorkspaceId,
+    collectionId: Id,
+    options?: { limit?: number; cursor?: string | null },
+  ): Promise<Paged<Row>>;
+
+  /**
+   * Eventual. Optional pushdown of the filter grammar. Only called when
+   * `capabilities.rowQueryPushdown` is true. Must return what core's in-memory
+   * evaluation returns for the same query.
+   */
+  queryRows?(
+    workspaceId: WorkspaceId,
+    collectionId: Id,
+    query: RowQuery,
+  ): Promise<Paged<Row>>;
+
+  // Maintenance.
+
+  /**
+   * Every page id in the workspace, for the derived-data rebuild (PRD P0.9).
+   * Streams so a rebuild never loads the workspace into memory.
+   */
+  iteratePageIds(workspaceId: WorkspaceId): AsyncIterable<Id>;
+}
+
+/**
+ * How long a derived read may lag a write. Matches PRD P0.3. The conformance
+ * suite polls to this bound, and the indexer is expected to beat it.
+ */
+export const EVENTUAL_CONSISTENCY_BOUND_MS = 10_000;
