@@ -9,10 +9,15 @@
   "scripts": {
     "build": "pnpm -r --sequential build",
     "test": "vitest run",
-    "typecheck": "pnpm -r --sequential typecheck"
+    "typecheck": "pnpm -r --sequential typecheck",
+    "dev": "pnpm --filter @cairn/api dev",
+    "import": "pnpm --filter @cairn/api import",
+    "rebuild": "pnpm --filter @cairn/api rebuild",
+    "eval": "pnpm --filter @cairn/api eval"
   },
   "devDependencies": {
     "@types/node": "^22.10.5",
+    "tsx": "^4.23.13",
     "typescript": "^5.7.3",
     "vite": "^8.3.0",
     "vitest": "^5.0.0"

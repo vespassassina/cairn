@@ -160,6 +160,7 @@ Cairn contains one small OAuth 2.1 authorization server that delegates login to 
 | `list_collections` | Collections with their schemas. |
 | `query_collection` | Filter and sort rows. Simple filter grammar, not SQL. |
 | `upsert_row` | Create or update a row. Returns field-level validation errors. |
+| `create_collection` | Create a collection with a typed schema. Added during the PoC: this list assumed collections were created in the web editor, which is Phase 2, so without it collections cannot be used at all. |
 
 Result size: every tool truncates at a configurable token budget and says so, with a cursor for the next page.
 

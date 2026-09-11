@@ -10,16 +10,21 @@ Status: design. See `docs/PRD.md`.
 2. Open this folder in Claude Code; it picks up `CLAUDE.md`
 3. Fill `eval/queries.yaml` with 30 real queries before any search work
 
-## Develop
+## Run it locally
 
-Node 22 or later. pnpm comes from corepack.
+See `docs/LOCAL.md`. Short version, with Node 22 or later:
 
 ```
-corepack enable
-pnpm install
-pnpm test
-pnpm typecheck
-pnpm build
+corepack enable && pnpm install
+export CAIRN_TOKEN=$(openssl rand -hex 24)
+pnpm import ~/notes
+pnpm dev
+```
+
+Then point Claude Code at it:
+
+```
+claude mcp add --transport http cairn http://127.0.0.1:8787/mcp --header "Authorization: Bearer $CAIRN_TOKEN"
 ```
 
 ## What exists
@@ -28,8 +33,11 @@ pnpm build
    conformance suites every adapter runs. No cloud dependencies.
 2. `packages/adapter-sqlite`. The reference adapter, on Node's built-in
    `node:sqlite`. FTS5 gives keyword search with no native dependency.
+3. `packages/api`. Hono app, the MCP server over stateless streamable HTTP,
+   dev-mode bearer auth, and the import, rebuild and eval commands.
 
-Nothing else yet. The API, the Cosmos adapter and the MCP server are Phase 1.
+Not yet: OAuth, the Cosmos and DynamoDB adapters, the web editor, embeddings,
+attachments and export.
 
 ## Licence
 

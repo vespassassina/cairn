@@ -100,11 +100,18 @@ export function chunkPage(
   for (const section of splitIntoSections(page.body)) {
     const text = section.lines.join("\n").trim();
     if (text === "") continue;
+    // A Markdown file that opens with an H1 matching its title would otherwise
+    // repeat it in every heading path.
+    const headingPath =
+      section.headingPath[0]?.trim().toLowerCase() === page.title.trim().toLowerCase()
+        ? section.headingPath
+        : [page.title, ...section.headingPath];
+
     for (const part of splitBySize(text, options)) {
       chunks.push({
         id: `${page.id}:${chunks.length}`,
         pageId: page.id,
-        headingPath: [page.title, ...section.headingPath],
+        headingPath,
         text: part,
         ordinal: chunks.length,
       });

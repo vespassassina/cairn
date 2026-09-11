@@ -1,0 +1,25 @@
+{
+  "name": "@cairn/api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "dev": "tsx src/entry/node.ts",
+    "import": "tsx src/cli/import.ts",
+    "rebuild": "tsx src/cli/rebuild.ts",
+    "eval": "tsx src/cli/eval.ts"
+  },
+  "dependencies": {
+    "@cairn/adapter-sqlite": "workspace:*",
+    "@cairn/core": "workspace:*",
+    "@hono/node-server": "^2.1.1",
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "hono": "^4.13.7",
+    "zod": "^4.6.2"
+  }
+}

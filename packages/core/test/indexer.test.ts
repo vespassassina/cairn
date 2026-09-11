@@ -97,6 +97,16 @@ describe("chunkPage", () => {
     expect(chunks[1]!.text).toBe("bed adhesion");
   });
 
+  it("does not repeat the title when the body opens with a matching H1", () => {
+    const chunks = chunkPage(
+      page("# Self\n\nintro\n\n## Detail\n\nmore", { title: "Self" }),
+    );
+    expect(chunks.map((c) => c.headingPath)).toEqual([
+      ["Self"],
+      ["Self", "Detail"],
+    ]);
+  });
+
   it("numbers chunks in document order with derived ids", () => {
     const chunks = chunkPage(page("a\n\n# One\n\nb\n\n# Two\n\nc"));
     expect(chunks.map((c) => c.ordinal)).toEqual([0, 1, 2]);
