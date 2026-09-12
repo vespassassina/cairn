@@ -13,7 +13,8 @@
     "dev": "pnpm --filter @cairn/api dev",
     "import": "pnpm --filter @cairn/api import",
     "rebuild": "pnpm --filter @cairn/api rebuild",
-    "eval": "pnpm --filter @cairn/api eval"
+    "eval": "pnpm --filter @cairn/api eval",
+    "sync:artifactkit": "node scripts/sync-artifactkit.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.10.5",

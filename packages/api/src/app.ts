@@ -4,6 +4,7 @@ import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/
 import type { Actor } from "@cairn/core";
 import type { AppContext } from "./context.js";
 import { registerTools } from "./mcp/tools.js";
+import { registerConsole } from "./web/console.js";
 
 /**
  * The Hono app. Handlers use web standard Request and Response only, so the
@@ -96,6 +97,10 @@ export function createApp(options: AppOptions): Hono {
   });
 
   app.all("/mcp", (c) => handleMcpRequest(c.req.raw, options.context));
+
+  // The review console (ADR-009). Registered after MCP so its sign-in never
+  // stands in front of the MCP bearer check.
+  registerConsole(app, { context: options.context, token: options.token });
 
   return app;
 }

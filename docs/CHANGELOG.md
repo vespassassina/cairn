@@ -6,6 +6,39 @@ Entries link to the ADR when there is one. A change of direction that has no ADR
 
 ## 2026-09-12
 
+### Added: review console (ADR-009)
+
+A server-rendered console in the same Hono app. It has these screens:
+
+1. Recent changes, filterable to agents or people.
+2. Read-mode pages with a page tree, backlinks, outbound links and the last actor.
+3. A Markdown editor with preview.
+4. History with a per-version diff and restore.
+5. Collections as a sortable table, with row forms built from the schema.
+6. Search, and new page.
+
+It is styled with artifactkit, embedded by `pnpm sync:artifactkit` as a generated module. Cairn adds one small stylesheet that uses only artifactkit tokens.
+
+Why: agents write directly (ADR-008), and the owner needs to see and undo what they wrote.
+
+Security choices, because agent-written content is rendered here:
+
+1. Markdown is rendered with raw HTML disabled, and links are limited to http, https, mailto, anchors and page links.
+2. A strict Content-Security-Policy applies: no inline script or style, no external images, no framing.
+3. Sign-in sets an HttpOnly, SameSite=Strict cookie holding an HMAC of the dev token, never the token itself.
+4. Every form post must carry a matching Origin header.
+5. Search snippets are escaped before match markers become `<mark>`.
+
+A save that loses a version conflict keeps the owner's text, shows the difference from the version that won, and makes the next save a deliberate overwrite. The other version stays in history.
+
+### Finding: artifactkit's documented paths are stale
+
+The skill's instructions point at `src/` and `examples/templates/`. The files live in `assets/` and `assets/templates/`. The sync script reads `assets/` and accepts `ARTIFACTKIT_DIR` to override.
+
+### Not yet verified: how the console looks
+
+It is covered by 24 contract tests: sign-in, cross-origin refusal, escaping of hostile content, conflicts, restore and collections. It has not been checked visually. No headless Chrome is installed, and the browser pane would not load the rendered snapshots. That check is still owed (artifactkit gate G4).
+
 ### Added: revisions for pages and rows (ADR-008)
 
 Every write of a page or row now stores an immutable full snapshot with the actor, time and an optional change note, linked into a chain by the version it replaced. Pages and rows carry `updatedBy`. Restore writes an old snapshot as a new revision. Deletion records a final revision, so history survives it.

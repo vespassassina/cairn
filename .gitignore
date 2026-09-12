@@ -6,3 +6,6 @@ dist/
 .env.*
 *.sqlite
 *.sqlite-*
+
+# Local launch configs hold dev tokens and machine-specific paths
+.claude/launch.json

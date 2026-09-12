@@ -69,12 +69,17 @@ available are the nine in PRD section 8, plus `create_collection`,
 Every write is kept as a revision with who made it and why (ADR-008), so an
 agent edit can always be undone.
 
+## 6. Review in the console
+
+Open http://127.0.0.1:8787 and sign in with `CAIRN_TOKEN`. The home page lists recent changes, newest first; "Agents only" shows what Claude wrote. Every page has Edit and History, and any version can be restored.
+
 ## Other commands
 
 ```
 pnpm rebuild   regenerate every edge and chunk, and sweep stray revisions
 pnpm eval      run eval/queries.yaml and report recall@5
-pnpm test      unit, conformance and MCP contract tests
+pnpm test      unit, conformance, MCP and console contract tests
+pnpm sync:artifactkit   re-embed artifactkit after changing it, then commit
 ```
 
 Run `pnpm rebuild` after changing chunking, and `pnpm eval` before and after
