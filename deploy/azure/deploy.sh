@@ -109,6 +109,8 @@ json_string() {
 params="$(mktemp)"
 trap 'rm -f "$params"' EXIT
 {
+  # "$schema" is a literal JSON key, meant not to expand.
+  # shellcheck disable=SC2016
   printf '{"$schema":"https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",'
   printf '"contentVersion":"1.0.0.0","parameters":{'
   printf '"name":{"value":%s},' "$(json_string "$CAIRN_NAME")"

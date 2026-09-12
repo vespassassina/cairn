@@ -13,6 +13,13 @@ Each entry answers four questions:
 
 ## 2026-09-12
 
+### shellcheck ran for the first time in CI, and failed on a literal `$schema`
+
+1. **What happened.** The "azure template" job failed on the first pull request: SC2016, "Expressions don't expand in single quotes", on the line of `deploy.sh` that writes the parameters file.
+2. **Cause.** `$schema` there is a JSON key, meant literally, so the warning is a false positive. It failed the job because shellcheck exits non-zero even for info-level findings. shellcheck is not installed on the development machine, so the script had never been linted before the push.
+3. **Fix.** A `shellcheck disable=SC2016` directive on that one line, with a comment saying why.
+4. **Lesson.** A check that only CI can run is unverified until CI has run it. Say so when reporting, and lint shell scripts locally before pushing where the tool is available (`brew install shellcheck`).
+
 ### pnpm's built-in commands silently replaced two of Cairn's
 
 1. **What happened.** `pnpm rebuild` finished quietly, but the stored search chunks still had the old heading paths. Its output mentioned esbuild's postinstall.
