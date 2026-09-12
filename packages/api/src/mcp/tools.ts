@@ -4,15 +4,22 @@ import {
   NotFoundError,
   ValidationError,
   VersionConflictError,
+  type Actor,
+  type Diff,
   type Page,
+  type Revision,
 } from "@cairn/core";
 import { budgetList, budgetText, DEFAULT_TOKEN_BUDGET } from "../budget.js";
 import type { AppContext } from "../context.js";
 
 /**
  * The MCP tools from PRD section 8, plus `create_collection`, which section 8
- * omits because collections were assumed to be created in the web editor. The
- * editor is Phase 2, so without it collections cannot be tested at all.
+ * originally omitted because collections were assumed to be created in the web
+ * editor. The editor is Phase 2, so without it collections cannot be used.
+ *
+ * Every write is attributed to the calling agent and recorded as a revision
+ * (ADR-008). Write tools take an optional `change_note`, shown to the owner in
+ * the review console's recent changes.
  *
  * Every tool returns compact JSON as text. Descriptions are written for Claude
  * as the reader: they say what to do when a result is thin or a call fails,
@@ -65,6 +72,46 @@ function toolError(error: unknown): ToolResult {
   });
 }
 
+const CHANGE_NOTE = z
+  .string()
+  .max(500)
+  .optional()
+  .describe(
+    "One line saying why you made this change. Shown to the owner next to the change in their review of recent edits. Write it for them, not for yourself.",
+  );
+
+function revisionSummary(revision: Revision): Record<string, unknown> {
+  return {
+    version: revision.version,
+    replaced: revision.parentVersion,
+    at: revision.createdAt,
+    by: { kind: revision.actor.kind, name: revision.actor.label },
+    note: revision.note,
+    deleted: revision.deleted || undefined,
+  };
+}
+
+/** A compact unified-style diff: only changed lines and a little context. */
+function renderDiff(diff: Diff | null, context = 2): string | null {
+  if (!diff) return null;
+  const keep = new Set<number>();
+  diff.lines.forEach((line, i) => {
+    if (line.op === "equal") return;
+    for (let j = Math.max(0, i - context); j <= Math.min(diff.lines.length - 1, i + context); j += 1) {
+      keep.add(j);
+    }
+  });
+  const out: string[] = [];
+  let last = -1;
+  for (const i of [...keep].sort((a, b) => a - b)) {
+    if (last !== -1 && i > last + 1) out.push("…");
+    const line = diff.lines[i]!;
+    out.push(`${line.op === "add" ? "+" : line.op === "remove" ? "-" : " "} ${line.text}`);
+    last = i;
+  }
+  return out.join("\n");
+}
+
 function pageSummary(page: Page): Record<string, unknown> {
   return {
     id: page.id,
@@ -72,12 +119,14 @@ function pageSummary(page: Page): Record<string, unknown> {
     parent_id: page.parentId,
     tags: page.tags,
     updated_at: page.updatedAt,
+    updated_by: { kind: page.updatedBy.kind, name: page.updatedBy.label },
     version: page.version,
   };
 }
 
-export function registerTools(server: McpServer, context: AppContext): void {
+export function registerTools(server: McpServer, context: AppContext, actor: Actor): void {
   const ws = context.workspaceId;
+  const by = (note: string | undefined) => ({ actor, note: note ?? null });
 
   server.registerTool(
     "search",
@@ -174,16 +223,16 @@ export function registerTools(server: McpServer, context: AppContext): void {
         body: z.string().default(""),
         parent_id: z.string().optional(),
         tags: z.array(z.string()).optional(),
+        change_note: CHANGE_NOTE,
       },
     },
-    async ({ title, body, parent_id, tags }): Promise<ToolResult> => {
+    async ({ title, body, parent_id, tags, change_note }): Promise<ToolResult> => {
       try {
-        const page = await context.pages.create(ws, {
-          title,
-          body,
-          parentId: parent_id ?? null,
-          tags: tags ?? [],
-        });
+        const page = await context.pages.create(
+          ws,
+          { title, body, parentId: parent_id ?? null, tags: tags ?? [] },
+          by(change_note),
+        );
         return json(pageSummary(page));
       } catch (error) {
         return toolError(error);
@@ -197,6 +246,7 @@ export function registerTools(server: McpServer, context: AppContext): void {
       title: "Update a page",
       description:
         "Update a page. Requires the version from get_page, so a concurrent edit is reported instead of silently overwritten. " +
+        "Every update is kept in the page's history and the owner can restore any earlier version, so edit with confidence, and say why in change_note. " +
         "Prefer mode 'append' or 'replace_section' over 'replace_body': they leave the rest of the user's page alone. " +
         "On a version_conflict, merge your change into the returned current_content and retry with current_version.",
       inputSchema: {
@@ -210,9 +260,10 @@ export function registerTools(server: McpServer, context: AppContext): void {
           .describe("Heading text, required for replace_section."),
         title: z.string().optional(),
         tags: z.array(z.string()).optional(),
+        change_note: CHANGE_NOTE,
       },
     },
-    async ({ page_id, version, mode, content, section, title, tags }): Promise<ToolResult> => {
+    async ({ page_id, version, mode, content, section, title, tags, change_note }): Promise<ToolResult> => {
       try {
         const page = await context.pages.get(ws, page_id);
         let body: string;
@@ -249,6 +300,7 @@ export function registerTools(server: McpServer, context: AppContext): void {
             tags: tags ?? page.tags,
           },
           version,
+          by(change_note),
         );
         return json(pageSummary(updated));
       } catch (error) {
@@ -361,15 +413,19 @@ export function registerTools(server: McpServer, context: AppContext): void {
       try {
         // Drop the keys the caller left out rather than passing explicit
         // undefined, which the domain types do not accept.
-        const collection = await context.collections.create(ws, {
-          name,
-          fields: fields.map((field) => ({
-            name: field.name,
-            type: field.type,
-            ...(field.required === undefined ? {} : { required: field.required }),
-            ...(field.options === undefined ? {} : { options: field.options }),
-          })),
-        });
+        const collection = await context.collections.create(
+          ws,
+          {
+            name,
+            fields: fields.map((field) => ({
+              name: field.name,
+              type: field.type,
+              ...(field.required === undefined ? {} : { required: field.required }),
+              ...(field.options === undefined ? {} : { options: field.options }),
+            })),
+          },
+          by(undefined),
+        );
         return json({ id: collection.id, name: collection.name, version: collection.version });
       } catch (error) {
         return toolError(error);
@@ -457,20 +513,113 @@ export function registerTools(server: McpServer, context: AppContext): void {
           .string()
           .optional()
           .describe("Required when updating an existing row."),
+        change_note: CHANGE_NOTE,
       },
     },
-    async ({ collection_id, values, row_id, version }): Promise<ToolResult> => {
+    async ({ collection_id, values, row_id, version, change_note }): Promise<ToolResult> => {
       try {
         const row = await context.collections.upsertRow(
           ws,
           collection_id,
           { values: values as never },
+          by(change_note),
           {
             ...(row_id ? { id: row_id } : {}),
             ...(version !== undefined ? { expectedVersion: version } : {}),
           },
         );
         return json({ id: row.id, values: row.values, version: row.version });
+      } catch (error) {
+        return toolError(error);
+      }
+    },
+  );
+  server.registerTool(
+    "get_history",
+    {
+      title: "History of a page or row",
+      description:
+        "Earlier versions of a page, or of a row when collection_id is given, newest first, with who made each change, when, and why. " +
+        "Use it to see what changed recently before editing, or to find a version to compare with get_revision. The owner sees the same history.",
+      inputSchema: {
+        page_id: z.string().optional().describe("For a page's history."),
+        collection_id: z.string().optional().describe("With row_id, for a row's history."),
+        row_id: z.string().optional(),
+        limit: z.number().int().min(1).max(50).optional(),
+      },
+    },
+    async ({ page_id, collection_id, row_id, limit }): Promise<ToolResult> => {
+      try {
+        let revisions: Revision[];
+        if (page_id) {
+          revisions = await context.pages.history(ws, page_id, { limit: limit ?? 10 });
+        } else if (collection_id && row_id) {
+          revisions = await context.collections.rowHistory(ws, collection_id, row_id, {
+            limit: limit ?? 10,
+          });
+        } else {
+          return failure({
+            error: "validation_failed",
+            message: "Pass page_id, or collection_id with row_id.",
+            fields: [{ field: "page_id", message: "or collection_id and row_id" }],
+          });
+        }
+        return json({
+          revisions: revisions.map(revisionSummary),
+          hint:
+            revisions.length === 0
+              ? "No history recorded. The record may predate history, or the id may be wrong."
+              : undefined,
+        });
+      } catch (error) {
+        return toolError(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "get_revision",
+    {
+      title: "One earlier version",
+      description:
+        "The content of one version from get_history, and what changed compared with the version before it, as a diff with + and - lines. " +
+        "To undo a change, read the version you want back and write it with update_page mode 'replace_body'.",
+      inputSchema: {
+        version: z.string(),
+        page_id: z.string().optional(),
+        collection_id: z.string().optional(),
+        row_id: z.string().optional(),
+      },
+    },
+    async ({ version, page_id, collection_id, row_id }): Promise<ToolResult> => {
+      try {
+        if (page_id) {
+          const view = await context.pages.revision(ws, page_id, version);
+          const body = budgetText(view.snapshot.body);
+          return json({
+            ...revisionSummary(view.revision),
+            title: view.snapshot.title,
+            tags: view.snapshot.tags,
+            body: body.text,
+            truncated: body.truncated,
+            title_changed: view.titleChanged || undefined,
+            tags_changed: view.tagsChanged || undefined,
+            diff: renderDiff(view.diff),
+          });
+        }
+        if (collection_id && row_id) {
+          const view = await context.collections.rowRevision(ws, collection_id, row_id, version);
+          return json({
+            ...revisionSummary(view.revision),
+            values: view.snapshot.values,
+            diff: renderDiff(view.diff),
+          });
+        }
+        return failure({
+          error: "validation_failed",
+          message: "Pass page_id, or collection_id with row_id.",
+          fields: [{ field: "page_id", message: "or collection_id and row_id" }],
+        });
       } catch (error) {
         return toolError(error);
       }

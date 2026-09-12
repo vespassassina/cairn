@@ -1,4 +1,5 @@
 import type {
+  Actor,
   Collection,
   CollectionInput,
   EdgeInput,
@@ -8,9 +9,14 @@ import type {
   Page,
   PageInput,
   Paged,
+  Revision,
+  RevisionInput,
+  RevisionKind,
   Row,
   RowInput,
+  Version,
   WorkspaceId,
+  WriteMeta,
 } from "../types.js";
 import type { RowQuery } from "../query/filter.js";
 
@@ -53,7 +59,8 @@ export interface DocumentStore {
 
   /**
    * Immediate. Pass `expectedVersion: null` to create, or the version last
-   * read to update.
+   * read to update. The new version, actor and time come from `meta`: the
+   * adapter stores them as given and never invents its own (ADR-008 rule 5).
    *
    * @throws VersionConflictError carrying the current page.
    */
@@ -62,6 +69,7 @@ export interface DocumentStore {
     id: Id,
     input: PageInput,
     expectedVersion: ExpectedVersion,
+    meta: WriteMeta,
   ): Promise<Page>;
 
   /** Immediate. @throws VersionConflictError */
@@ -107,6 +115,7 @@ export interface DocumentStore {
     id: Id,
     input: CollectionInput,
     expectedVersion: ExpectedVersion,
+    meta: WriteMeta,
   ): Promise<Collection>;
 
   /** Eventual. */
@@ -127,6 +136,7 @@ export interface DocumentStore {
     id: Id,
     input: RowInput,
     expectedVersion: ExpectedVersion,
+    meta: WriteMeta,
   ): Promise<Row>;
 
   /** Immediate. @throws VersionConflictError */
@@ -157,6 +167,59 @@ export interface DocumentStore {
     collectionId: Id,
     query: RowQuery,
   ): Promise<Paged<Row>>;
+
+  // Revisions. Source of truth for history (ADR-008). Immutable once written.
+
+  /**
+   * Immediate. Writes a new revision. Keyed by kind, record and version, and
+   * never overwritten: the version is fresh, so this cannot conflict with a
+   * concurrent writer.
+   */
+  putRevision(workspaceId: WorkspaceId, revision: RevisionInput): Promise<void>;
+
+  /** Immediate. */
+  getRevision(
+    workspaceId: WorkspaceId,
+    kind: RevisionKind,
+    recordId: Id,
+    version: Version,
+  ): Promise<Revision | null>;
+
+  /**
+   * Removes a revision whose record write failed on a version conflict, so it
+   * never appears in recent changes. The only case in which a revision is
+   * deleted. Idempotent.
+   */
+  deleteRevision(
+    workspaceId: WorkspaceId,
+    kind: RevisionKind,
+    recordId: Id,
+    version: Version,
+  ): Promise<void>;
+
+  /**
+   * Eventual. Every revision of one record, newest first. May include a
+   * revision off the chain; core walks the chain to decide what to show.
+   */
+  listRevisions(
+    workspaceId: WorkspaceId,
+    kind: RevisionKind,
+    recordId: Id,
+    options?: { limit?: number; cursor?: string | null },
+  ): Promise<Paged<Revision>>;
+
+  /**
+   * Eventual. Revisions across the workspace, newest first, for the review
+   * console's recent changes. `actorKind` filters to people or agents.
+   */
+  listRecentRevisions(
+    workspaceId: WorkspaceId,
+    options?: {
+      limit?: number;
+      cursor?: string | null;
+      actorKind?: Actor["kind"];
+    },
+  ): Promise<Paged<Revision>>;
 
   // Maintenance.
 

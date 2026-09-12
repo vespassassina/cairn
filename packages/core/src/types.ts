@@ -18,6 +18,35 @@ export type Version = string;
 export const CREATE_ONLY = null;
 export type ExpectedVersion = Version | typeof CREATE_ONLY;
 
+/**
+ * Who made a change (ADR-008 rule 4). Every write names one, so the review
+ * console can say whether a person or an agent changed a page, and which one.
+ */
+export interface Actor {
+  kind: "user" | "agent";
+  /** Stable identity: `owner` in dev mode, an OAuth client id later. */
+  id: string;
+  /** Shown to people. A user agent string for MCP clients until auth lands. */
+  label: string;
+}
+
+/**
+ * What the service tells an adapter about a write. The service chooses the
+ * version so a record and its revision share it (ADR-008 rule 5), and chooses
+ * the time so both carry the same timestamp.
+ */
+export interface WriteMeta {
+  version: Version;
+  actor: Actor;
+  at: string;
+}
+
+/** What a caller supplies with every write: who, and optionally why. */
+export interface WriteContext {
+  actor: Actor;
+  note?: string | null;
+}
+
 export interface Page {
   id: Id;
   workspaceId: WorkspaceId;
@@ -28,6 +57,8 @@ export interface Page {
   body: string;
   createdAt: string;
   updatedAt: string;
+  /** Who made the latest write, so a page view needs no history read. */
+  updatedBy: Actor;
   version: Version;
 }
 
@@ -89,6 +120,7 @@ export interface Collection {
   fields: FieldDef[];
   createdAt: string;
   updatedAt: string;
+  updatedBy: Actor;
   version: Version;
 }
 
@@ -106,12 +138,61 @@ export interface Row {
   values: Record<string, FieldValue>;
   createdAt: string;
   updatedAt: string;
+  updatedBy: Actor;
   version: Version;
 }
 
 export interface RowInput {
   values: Record<string, FieldValue>;
 }
+
+/**
+ * Revisions (ADR-008). One immutable snapshot per write of a page or row,
+ * linked into a chain by `parentVersion`.
+ *
+ * History is read by walking that chain back from the record's current
+ * version. A revision off the chain, left by a crash between writing it and
+ * writing the record, is therefore never shown.
+ */
+export type RevisionKind = "page" | "row";
+
+export interface PageSnapshot {
+  title: string;
+  parentId: Id | null;
+  tags: string[];
+  body: string;
+}
+
+export interface RowSnapshot {
+  collectionId: Id;
+  values: Record<string, FieldValue>;
+}
+
+export interface Revision {
+  workspaceId: WorkspaceId;
+  kind: RevisionKind;
+  /**
+   * The page id for a page. For a row, `<collectionId>/<rowId>`, because row
+   * ids are only unique within their collection. Build it with
+   * `revisionRecordId`, never by hand.
+   */
+  recordId: Id;
+  /** The collection a row belongs to. Null for pages. */
+  collectionId: Id | null;
+  /** The version the record has after this write. */
+  version: Version;
+  /** The version this write replaced. Null for the first revision. */
+  parentVersion: Version | null;
+  actor: Actor;
+  /** Why the change was made, when the writer said. */
+  note: string | null;
+  createdAt: string;
+  /** True for the revision that records a deletion. Its snapshot is the last content. */
+  deleted: boolean;
+  snapshot: PageSnapshot | RowSnapshot;
+}
+
+export type RevisionInput = Omit<Revision, "workspaceId">;
 
 /**
  * A batch of results plus an opaque cursor. Every list operation returns this.

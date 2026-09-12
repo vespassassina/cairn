@@ -22,7 +22,7 @@ Status key: done, in progress, next, later, blocked.
 | Local PoC: API, MCP server, dev auth | done | Claude Code CLI, loopback only |
 | Import, rebuild, eval commands | done | |
 | Peptide wiki seed | done | `examples/peptide-wiki` |
-| Revisions: history, actor, change notes | in progress | ADR-008 |
+| Revisions: history, actor, change notes | done | ADR-008. MCP `get_history`, `get_revision`, `change_note` |
 | Review console | in progress | ADR-009 |
 | Search precision: OR matching over-matches | later | Tune against the eval set once expected pages exist |
 | Cosmos adapter | later | Needs Q1, Q7, Q8 answered |

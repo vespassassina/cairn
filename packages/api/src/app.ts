@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
+import type { Actor } from "@cairn/core";
 import type { AppContext } from "./context.js";
 import { registerTools } from "./mcp/tools.js";
 
@@ -30,7 +31,7 @@ async function handleMcpRequest(
   context: AppContext,
 ): Promise<Response> {
   const server = new McpServer(SERVER_INFO);
-  registerTools(server, context);
+  registerTools(server, context, agentActor(request));
 
   // No sessionIdGenerator means stateless: no session to track, and no
   // server-initiated messages. enableJsonResponse returns one JSON body
@@ -40,6 +41,22 @@ async function handleMcpRequest(
   });
   await server.connect(transport);
   return transport.handleRequest(request);
+}
+
+/**
+ * Who is calling, for attributing writes (ADR-008 rule 4).
+ *
+ * In stateless mode the MCP client's name arrives only at initialize, never on
+ * a tool call, so the user agent header is the best label available until
+ * OAuth client registrations exist (ADR-007).
+ */
+export function agentActor(request: Request): Actor {
+  const userAgent = request.headers.get("user-agent")?.trim();
+  return {
+    kind: "agent",
+    id: "mcp:dev",
+    label: userAgent ? userAgent.slice(0, 120) : "MCP client",
+  };
 }
 
 function timingSafeEqual(a: string, b: string): boolean {

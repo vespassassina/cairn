@@ -1,5 +1,7 @@
 import { NotFoundError, ValidationError } from "../errors.js";
-import { newCollectionId, newRowId } from "../ids.js";
+import { newCollectionId, newRowId, newVersion, revisionRecordId } from "../ids.js";
+import { diffLines, type Diff } from "../history/diff.js";
+import { readHistory, writeWithRevision } from "../history/revisions.js";
 import type { DocumentStore } from "../ports/document-store.js";
 import {
   clampLimit,
@@ -16,10 +18,29 @@ import type {
   ExpectedVersion,
   Id,
   Paged,
+  Revision,
   Row,
   RowInput,
+  RowSnapshot,
+  Version,
   WorkspaceId,
+  WriteContext,
 } from "../types.js";
+
+/** A revision of a row, with its diff against the version it replaced. */
+export interface RowRevisionView {
+  revision: Revision;
+  snapshot: RowSnapshot;
+  /** One line per field, so a changed value reads as a one-line change. */
+  diff: Diff | null;
+}
+
+function valuesAsLines(values: RowSnapshot["values"]): string {
+  return Object.keys(values)
+    .sort()
+    .map((key) => `${key}: ${JSON.stringify(values[key])}`)
+    .join("\n");
+}
 
 /** How many rows one in-memory query pass will pull from the store. */
 const MAX_SCAN = 5_000;
@@ -44,12 +65,18 @@ export class CollectionService {
     return this.store.listCollections(workspaceId);
   }
 
+  /** Schemas are not versioned yet (ADR-008 consequence 5), but carry an actor. */
   async create(
     workspaceId: WorkspaceId,
     input: CollectionInput,
+    context: WriteContext,
     id: Id = newCollectionId(),
   ): Promise<Collection> {
-    return this.store.putCollection(workspaceId, id, input, null);
+    return this.store.putCollection(workspaceId, id, input, null, {
+      version: newVersion(),
+      actor: context.actor,
+      at: new Date().toISOString(),
+    });
   }
 
   async update(
@@ -57,8 +84,13 @@ export class CollectionService {
     id: Id,
     input: CollectionInput,
     expectedVersion: ExpectedVersion,
+    context: WriteContext,
   ): Promise<Collection> {
-    return this.store.putCollection(workspaceId, id, input, expectedVersion);
+    return this.store.putCollection(workspaceId, id, input, expectedVersion, {
+      version: newVersion(),
+      actor: context.actor,
+      at: new Date().toISOString(),
+    });
   }
 
   /**
@@ -71,6 +103,7 @@ export class CollectionService {
     workspaceId: WorkspaceId,
     collectionId: Id,
     input: RowInput,
+    context: WriteContext,
     options: { id?: Id; expectedVersion?: ExpectedVersion } = {},
   ): Promise<Row> {
     const collection = await this.get(workspaceId, collectionId);
@@ -80,7 +113,20 @@ export class CollectionService {
     const id = options.id ?? newRowId();
     const expectedVersion =
       options.expectedVersion !== undefined ? options.expectedVersion : null;
-    return this.store.putRow(workspaceId, collectionId, id, input, expectedVersion);
+
+    return writeWithRevision(
+      this.store,
+      {
+        workspaceId,
+        kind: "row",
+        recordId: revisionRecordId("row", id, collectionId),
+        collectionId,
+        expectedVersion,
+        snapshot: { collectionId, values: input.values },
+      },
+      context,
+      (meta) => this.store.putRow(workspaceId, collectionId, id, input, expectedVersion, meta),
+    );
   }
 
   async getRow(
@@ -93,13 +139,92 @@ export class CollectionService {
     return row;
   }
 
+  /** Records a deletion revision holding the last values, then deletes. */
   async deleteRow(
     workspaceId: WorkspaceId,
     collectionId: Id,
     id: Id,
-    expectedVersion: ExpectedVersion,
+    expectedVersion: Version,
+    context: WriteContext,
   ): Promise<void> {
-    await this.store.deleteRow(workspaceId, collectionId, id, expectedVersion);
+    const row = await this.getRow(workspaceId, collectionId, id);
+    await writeWithRevision(
+      this.store,
+      {
+        workspaceId,
+        kind: "row",
+        recordId: revisionRecordId("row", id, collectionId),
+        collectionId,
+        expectedVersion,
+        snapshot: { collectionId, values: row.values },
+        deleted: true,
+      },
+      context,
+      () => this.store.deleteRow(workspaceId, collectionId, id, expectedVersion),
+    );
+  }
+
+  // History (ADR-008).
+
+  async rowHistory(
+    workspaceId: WorkspaceId,
+    collectionId: Id,
+    id: Id,
+    options: { limit?: number } = {},
+  ): Promise<Revision[]> {
+    const row = await this.store.getRow(workspaceId, collectionId, id);
+    return readHistory(
+      this.store,
+      workspaceId,
+      "row",
+      revisionRecordId("row", id, collectionId),
+      row?.version ?? null,
+      options,
+    );
+  }
+
+  async rowRevision(
+    workspaceId: WorkspaceId,
+    collectionId: Id,
+    id: Id,
+    version: Version,
+  ): Promise<RowRevisionView> {
+    const recordId = revisionRecordId("row", id, collectionId);
+    const revision = await this.store.getRevision(workspaceId, "row", recordId, version);
+    if (!revision) throw new NotFoundError("revision", `${recordId}@${version}`);
+    const snapshot = revision.snapshot as RowSnapshot;
+    const parent = revision.parentVersion
+      ? await this.store.getRevision(workspaceId, "row", recordId, revision.parentVersion)
+      : null;
+    return {
+      revision,
+      snapshot,
+      diff: parent
+        ? diffLines(
+            valuesAsLines((parent.snapshot as RowSnapshot).values),
+            valuesAsLines(snapshot.values),
+          )
+        : null,
+    };
+  }
+
+  /** Restore a row's values from an earlier revision, as a new revision. */
+  async restoreRow(
+    workspaceId: WorkspaceId,
+    collectionId: Id,
+    id: Id,
+    version: Version,
+    expectedVersion: Version,
+    context: WriteContext,
+  ): Promise<Row> {
+    const { snapshot } = await this.rowRevision(workspaceId, collectionId, id, version);
+    return this.upsertRow(
+      workspaceId,
+      collectionId,
+      { values: snapshot.values },
+      { actor: context.actor, note: context.note ?? `Restored version ${version.slice(0, 8)}` },
+      { id, expectedVersion },
+    );
   }
 
   /**

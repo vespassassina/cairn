@@ -2,8 +2,17 @@ import { beforeAll, describe, expect, it } from "vitest";
 import type { DocumentStore } from "../ports/document-store.js";
 import type { RowQuery } from "../query/filter.js";
 import { CollectionService } from "../services/collections.js";
-import type { WorkspaceId } from "../types.js";
+import { randomUUID } from "node:crypto";
+import type { WorkspaceId, WriteMeta } from "../types.js";
 import { eventually } from "./eventually.js";
+
+function meta(): WriteMeta {
+  return {
+    version: randomUUID(),
+    actor: { kind: "user", id: "owner", label: "Owner" },
+    at: new Date().toISOString(),
+  };
+}
 
 /**
  * Proves the only sanctioned form of adapter variation is invisible: a
@@ -99,10 +108,10 @@ export function runPushdownConformance(
             { name: "tags", type: "multi_select", options: ["fast", "draft"] },
           ],
         },
-        null,
+        null, meta(),
       );
       for (const row of ROWS) {
-        await store.putRow(WS, COLLECTION, row.id, { values: row.values }, null);
+        await store.putRow(WS, COLLECTION, row.id, { values: row.values }, null, meta());
       }
       await eventually(async () => {
         const listed = await store.listRows(WS, COLLECTION, { limit: 100 });

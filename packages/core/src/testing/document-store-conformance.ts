@@ -1,7 +1,8 @@
+import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { VersionConflictError } from "../errors.js";
 import type { DocumentStore } from "../ports/document-store.js";
-import type { Page, Row, WorkspaceId } from "../types.js";
+import type { Actor, Page, RevisionInput, Row, WorkspaceId, WriteMeta } from "../types.js";
 import { eventually } from "./eventually.js";
 
 /**
@@ -16,6 +17,38 @@ export interface DocumentStoreHarness {
 }
 
 const WS: WorkspaceId = "ws_conformance";
+
+const OWNER: Actor = { kind: "user", id: "owner", label: "Owner" };
+const AGENT: Actor = { kind: "agent", id: "mcp:test", label: "test-agent/1.0" };
+
+/**
+ * Write metadata as the service would supply it. The adapter must store the
+ * version, actor and time exactly as given (ADR-008 rule 5).
+ */
+function meta(actor: Actor = OWNER): WriteMeta {
+  return { version: randomUUID(), actor, at: new Date().toISOString() };
+}
+
+function revision(
+  recordId: string,
+  version: string,
+  parentVersion: string | null,
+  overrides: Partial<RevisionInput> = {},
+): RevisionInput {
+  return {
+    kind: "page",
+    recordId,
+    collectionId: null,
+    version,
+    parentVersion,
+    actor: OWNER,
+    note: null,
+    createdAt: new Date().toISOString(),
+    deleted: false,
+    snapshot: { title: recordId, parentId: null, tags: [], body: `body of ${version}` },
+    ...overrides,
+  };
+}
 
 export function runDocumentStoreConformance(
   name: string,
@@ -41,7 +74,7 @@ export function runDocumentStoreConformance(
         WS,
         id,
         { title: `Page ${id}`, body: "body", parentId: null, tags: [], ...overrides },
-        null,
+        null, meta(),
       );
 
     describe("init", () => {
@@ -80,11 +113,30 @@ export function runDocumentStoreConformance(
           WS,
           first.id,
           { title: "Changed", body: "body", parentId: null, tags: [] },
-          first.version,
+          first.version, meta(),
         );
         expect(second.version).not.toBe(first.version);
         expect(second.title).toBe("Changed");
         expect(second.createdAt).toBe(first.createdAt);
+      });
+
+      it("stores the version, actor and time the service chose", async () => {
+        const chosen = meta(AGENT);
+        const page = await store.putPage(
+          WS,
+          "pg_meta",
+          { title: "Meta", body: "", parentId: null, tags: [] },
+          null,
+          chosen,
+        );
+        expect(page.version).toBe(chosen.version);
+        expect(page.updatedBy).toEqual(AGENT);
+        expect(page.updatedAt).toBe(chosen.at);
+        expect(page.createdAt).toBe(chosen.at);
+
+        const read = await store.getPage(WS, "pg_meta");
+        expect(read?.version).toBe(chosen.version);
+        expect(read?.updatedBy).toEqual(AGENT);
       });
 
       it("rejects a create when the page already exists", async () => {
@@ -102,7 +154,7 @@ export function runDocumentStoreConformance(
           WS,
           first.id,
           { title: "Winner", body: "body", parentId: null, tags: [] },
-          first.version,
+          first.version, meta(),
         );
 
         const conflict = await store
@@ -111,6 +163,7 @@ export function runDocumentStoreConformance(
             first.id,
             { title: "Loser", body: "body", parentId: null, tags: [] },
             first.version,
+            meta(),
           )
           .catch((error: unknown) => error);
 
@@ -126,7 +179,7 @@ export function runDocumentStoreConformance(
             WS,
             "pg_absent",
             { title: "x", body: "", parentId: null, tags: [] },
-            "some-version",
+            "some-version", meta(),
           ),
         ).rejects.toBeInstanceOf(VersionConflictError);
       });
@@ -269,7 +322,7 @@ export function runDocumentStoreConformance(
       };
 
       it("round-trips a collection", async () => {
-        const created = await store.putCollection(WS, "col_prints", schema, null);
+        const created = await store.putCollection(WS, "col_prints", schema, null, meta());
         expect(created.fields).toHaveLength(4);
         expect(await store.getCollection(WS, "col_prints")).toEqual(created);
 
@@ -280,15 +333,15 @@ export function runDocumentStoreConformance(
       });
 
       it("enforces optimistic concurrency on collections", async () => {
-        const collection = await store.putCollection(WS, "col_conflict", schema, null);
+        const collection = await store.putCollection(WS, "col_conflict", schema, null, meta());
         await store.putCollection(
           WS,
           "col_conflict",
           { ...schema, name: "Renamed" },
-          collection.version,
+          collection.version, meta(),
         );
         await expect(
-          store.putCollection(WS, "col_conflict", schema, collection.version),
+          store.putCollection(WS, "col_conflict", schema, collection.version, meta()),
         ).rejects.toBeInstanceOf(VersionConflictError);
       });
 
@@ -298,7 +351,7 @@ export function runDocumentStoreConformance(
           "col_prints",
           "row_1",
           { values: { title: "Bracket", grams: 12.5, done: false, tags: ["pla"] } },
-          null,
+          null, meta(),
         );
         const read = await store.getRow(WS, "col_prints", "row_1");
         expect(read).toEqual(row);
@@ -313,17 +366,17 @@ export function runDocumentStoreConformance(
           "col_prints",
           "row_conflict",
           { values: { title: "First" } },
-          null,
+          null, meta(),
         );
         await store.putRow(
           WS,
           "col_prints",
           "row_conflict",
           { values: { title: "Second" } },
-          row.version,
+          row.version, meta(),
         );
         const conflict = await store
-          .putRow(WS, "col_prints", "row_conflict", { values: { title: "Third" } }, row.version)
+          .putRow(WS, "col_prints", "row_conflict", { values: { title: "Third" } }, row.version, meta())
           .catch((error: unknown) => error);
         expect(conflict).toBeInstanceOf(VersionConflictError);
         expect((conflict as VersionConflictError<Row>).current?.values["title"]).toBe(
@@ -337,22 +390,22 @@ export function runDocumentStoreConformance(
           "col_prints",
           "row_delete",
           { values: { title: "Gone" } },
-          null,
+          null, meta(),
         );
         await store.deleteRow(WS, "col_prints", row.id, row.version);
         expect(await store.getRow(WS, "col_prints", row.id)).toBeNull();
       });
 
       it("lists rows of one collection only, with paging", async () => {
-        await store.putCollection(WS, "col_other", schema, null);
-        await store.putRow(WS, "col_other", "row_other", { values: { title: "x" } }, null);
+        await store.putCollection(WS, "col_other", schema, null, meta());
+        await store.putRow(WS, "col_other", "row_other", { values: { title: "x" } }, null, meta());
         for (let i = 0; i < 4; i += 1) {
           await store.putRow(
             WS,
             "col_prints",
             `row_list_${i}`,
             { values: { title: `Row ${i}` } },
-            null,
+            null, meta(),
           );
         }
 
@@ -372,6 +425,139 @@ export function runDocumentStoreConformance(
           expect(seen.has("row_other")).toBe(false);
           expect(seen.size).toBeGreaterThanOrEqual(4);
         });
+      });
+    });
+
+    describe("revisions", () => {
+      it("round-trips a revision and reads it back immediately", async () => {
+        const input = revision("pg_rev_a", "v1", null, {
+          actor: AGENT,
+          note: "first draft",
+        });
+        await store.putRevision(WS, input);
+        const read = await store.getRevision(WS, "page", "pg_rev_a", "v1");
+        expect(read).toEqual({ ...input, workspaceId: WS });
+      });
+
+      it("returns null for a revision that does not exist", async () => {
+        expect(await store.getRevision(WS, "page", "pg_rev_a", "nope")).toBeNull();
+      });
+
+      it("keeps a row's snapshot and collection", async () => {
+        const input = revision("col_x/row_1", "rv1", null, {
+          kind: "row",
+          collectionId: "col_x",
+          snapshot: { collectionId: "col_x", values: { title: "Bracket", grams: 12.5 } },
+        });
+        await store.putRevision(WS, input);
+        const read = await store.getRevision(WS, "row", "col_x/row_1", "rv1");
+        expect(read?.collectionId).toBe("col_x");
+        expect(read?.snapshot).toEqual(input.snapshot);
+      });
+
+      it("keeps the deleted flag", async () => {
+        await store.putRevision(WS, revision("pg_rev_del", "d1", null, { deleted: true }));
+        expect((await store.getRevision(WS, "page", "pg_rev_del", "d1"))?.deleted).toBe(true);
+      });
+
+      it("lists one record's revisions, newest first", async () => {
+        const base = Date.parse("2026-09-12T10:00:00.000Z");
+        for (let i = 0; i < 3; i += 1) {
+          await store.putRevision(
+            WS,
+            revision("pg_rev_list", `l${i}`, i === 0 ? null : `l${i - 1}`, {
+              createdAt: new Date(base + i * 1000).toISOString(),
+            }),
+          );
+        }
+        await store.putRevision(WS, revision("pg_rev_other", "o1", null));
+
+        await eventually(async () => {
+          const listed = await store.listRevisions(WS, "page", "pg_rev_list");
+          expect(listed.items.map((r) => r.version)).toEqual(["l2", "l1", "l0"]);
+        });
+      });
+
+      it("does not mix up kinds that share a record id", async () => {
+        await store.putRevision(WS, revision("shared_id", "p1", null));
+        await store.putRevision(
+          WS,
+          revision("shared_id", "r1", null, {
+            kind: "row",
+            collectionId: "col_y",
+            snapshot: { collectionId: "col_y", values: {} },
+          }),
+        );
+        await eventually(async () => {
+          const pages = await store.listRevisions(WS, "page", "shared_id");
+          expect(pages.items.map((r) => r.version)).toEqual(["p1"]);
+        });
+        expect(await store.getRevision(WS, "row", "shared_id", "p1")).toBeNull();
+      });
+
+      it("pages through one record's revisions with a cursor", async () => {
+        const base = Date.parse("2026-09-12T11:00:00.000Z");
+        for (let i = 0; i < 5; i += 1) {
+          await store.putRevision(
+            WS,
+            revision("pg_rev_paged", `p${i}`, null, {
+              createdAt: new Date(base + i * 1000).toISOString(),
+            }),
+          );
+        }
+        await eventually(async () => {
+          const seen: string[] = [];
+          let cursor: string | null = null;
+          let rounds = 0;
+          do {
+            const batch = await store.listRevisions(WS, "page", "pg_rev_paged", {
+              limit: 2,
+              cursor,
+            });
+            expect(batch.items.length).toBeLessThanOrEqual(2);
+            seen.push(...batch.items.map((r) => r.version));
+            cursor = batch.cursor;
+            rounds += 1;
+          } while (cursor !== null && rounds < 20);
+          expect(seen).toEqual(["p4", "p3", "p2", "p1", "p0"]);
+        });
+      });
+
+      it("lists recent revisions across the workspace, filtered by actor kind", async () => {
+        const later = "2099-01-01T00:00:00.000Z";
+        await store.putRevision(
+          WS,
+          revision("pg_recent_user", "ru1", null, { createdAt: later, actor: OWNER }),
+        );
+        await store.putRevision(
+          WS,
+          revision("pg_recent_agent", "ra1", null, {
+            createdAt: "2099-01-01T00:00:01.000Z",
+            actor: AGENT,
+          }),
+        );
+
+        await eventually(async () => {
+          const all = await store.listRecentRevisions(WS, { limit: 2 });
+          expect(all.items.map((r) => r.version)).toEqual(["ra1", "ru1"]);
+
+          const agents = await store.listRecentRevisions(WS, {
+            limit: 10,
+            actorKind: "agent",
+          });
+          expect(agents.items.every((r) => r.actor.kind === "agent")).toBe(true);
+          expect(agents.items[0]?.version).toBe("ra1");
+        });
+
+        const elsewhere = await store.listRecentRevisions("ws_elsewhere", {});
+        expect(elsewhere.items).toEqual([]);
+      });
+
+      it("deletes a revision, idempotently", async () => {
+        await store.putRevision(WS, revision("pg_rev_gone", "g1", null));
+        await store.deleteRevision(WS, "page", "pg_rev_gone", "g1");
+        await store.deleteRevision(WS, "page", "pg_rev_gone", "g1");
+        expect(await store.getRevision(WS, "page", "pg_rev_gone", "g1")).toBeNull();
       });
     });
 

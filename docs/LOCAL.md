@@ -63,12 +63,16 @@ claude mcp add --transport http cairn http://127.0.0.1:8787/mcp --header "Author
 ```
 
 Then ask Claude to search for something you know is in your notes. The tools
-available are the nine in PRD section 8, plus `create_collection`.
+available are the nine in PRD section 8, plus `create_collection`,
+`get_history` and `get_revision`.
+
+Every write is kept as a revision with who made it and why (ADR-008), so an
+agent edit can always be undone.
 
 ## Other commands
 
 ```
-pnpm rebuild   regenerate every edge and chunk from the pages
+pnpm rebuild   regenerate every edge and chunk, and sweep stray revisions
 pnpm eval      run eval/queries.yaml and report recall@5
 pnpm test      unit, conformance and MCP contract tests
 ```

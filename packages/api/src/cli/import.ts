@@ -1,7 +1,7 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import { basename, extname, join, relative, sep } from "node:path";
 import { ConfigError, loadConfig } from "../config.js";
-import { closeContext, createContext, type AppContext } from "../context.js";
+import { closeContext, createContext, ownerVia, type AppContext } from "../context.js";
 
 /**
  * Import a folder of Markdown, one page per file, with the folder tree
@@ -65,6 +65,7 @@ export async function importFolder(
 ): Promise<ImportResult> {
   const result: ImportResult = { created: 0, updated: 0, skipped: 0, folders: 0 };
   const ws = context.workspaceId;
+  const by = { actor: ownerVia("import"), note: `Imported from ${basename(root)}` };
   const folderPages = new Map<string, string>();
 
   /** Create a page per folder, so the hierarchy survives the import. */
@@ -84,9 +85,9 @@ export async function importFolder(
       tags: [],
     };
     if (existing) {
-      await context.pages.update(ws, id, input, existing.version);
+      await context.pages.update(ws, id, input, existing.version, by);
     } else {
-      await context.pages.create(ws, input, id);
+      await context.pages.create(ws, input, by, id);
       result.folders += 1;
     }
     folderPages.set(relativeDir, id);
@@ -112,10 +113,10 @@ export async function importFolder(
 
     const existing = await context.store.getPage(ws, id);
     if (existing) {
-      await context.pages.update(ws, id, input, existing.version);
+      await context.pages.update(ws, id, input, existing.version, by);
       result.updated += 1;
     } else {
-      await context.pages.create(ws, input, id);
+      await context.pages.create(ws, input, by, id);
       result.created += 1;
     }
     options.onProgress?.(`${existing ? "updated" : "created"} ${id}  ${relativePath}`);

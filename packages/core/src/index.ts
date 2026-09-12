@@ -9,3 +9,5 @@ export * from "./indexer/chunk.js";
 export * from "./indexer/extract.js";
 export * from "./services/pages.js";
 export * from "./services/collections.js";
+export * from "./history/diff.js";
+export * from "./history/revisions.js";

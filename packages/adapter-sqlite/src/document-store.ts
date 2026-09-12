@@ -1,7 +1,7 @@
 import { DatabaseSync } from "node:sqlite";
-import { randomUUID } from "node:crypto";
 import {
   VersionConflictError,
+  type Actor,
   type Collection,
   type CollectionInput,
   type DocumentStore,
@@ -13,9 +13,14 @@ import {
   type Page,
   type PageInput,
   type Paged,
+  type Revision,
+  type RevisionInput,
+  type RevisionKind,
   type Row,
   type RowInput,
+  type Version,
   type WorkspaceId,
+  type WriteMeta,
 } from "@cairn/core";
 
 /**
@@ -27,6 +32,16 @@ import {
  * core, which keeps the in-memory path exercised on every run.
  */
 
+/**
+ * The actor recorded for rows written before revisions existed (ADR-008).
+ * Used as a column default so an existing database migrates in place.
+ */
+const LEGACY_ACTOR = JSON.stringify({
+  kind: "user",
+  id: "legacy",
+  label: "Before history was recorded",
+} satisfies Actor);
+
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS pages (
   workspace_id TEXT NOT NULL,
@@ -37,6 +52,7 @@ CREATE TABLE IF NOT EXISTS pages (
   body         TEXT NOT NULL,
   created_at   TEXT NOT NULL,
   updated_at   TEXT NOT NULL,
+  updated_by   TEXT NOT NULL DEFAULT '${LEGACY_ACTOR}',
   version      TEXT NOT NULL,
   PRIMARY KEY (workspace_id, id)
 );
@@ -61,9 +77,32 @@ CREATE TABLE IF NOT EXISTS collections (
   fields       TEXT NOT NULL,
   created_at   TEXT NOT NULL,
   updated_at   TEXT NOT NULL,
+  updated_by   TEXT NOT NULL DEFAULT '${LEGACY_ACTOR}',
   version      TEXT NOT NULL,
   PRIMARY KEY (workspace_id, id)
 );
+
+CREATE TABLE IF NOT EXISTS revisions (
+  workspace_id   TEXT NOT NULL,
+  kind           TEXT NOT NULL,
+  record_id      TEXT NOT NULL,
+  version        TEXT NOT NULL,
+  collection_id  TEXT,
+  parent_version TEXT,
+  actor          TEXT NOT NULL,
+  actor_kind     TEXT NOT NULL,
+  note           TEXT,
+  created_at     TEXT NOT NULL,
+  deleted        INTEGER NOT NULL,
+  snapshot       TEXT NOT NULL,
+  PRIMARY KEY (workspace_id, kind, record_id, version)
+);
+CREATE INDEX IF NOT EXISTS revisions_by_record
+  ON revisions (workspace_id, kind, record_id, created_at DESC, version DESC);
+CREATE INDEX IF NOT EXISTS revisions_recent
+  ON revisions (workspace_id, created_at DESC, version DESC);
+CREATE INDEX IF NOT EXISTS revisions_recent_by_actor
+  ON revisions (workspace_id, actor_kind, created_at DESC, version DESC);
 
 CREATE TABLE IF NOT EXISTS rows_ (
   workspace_id  TEXT NOT NULL,
@@ -72,6 +111,7 @@ CREATE TABLE IF NOT EXISTS rows_ (
   values_       TEXT NOT NULL,
   created_at    TEXT NOT NULL,
   updated_at    TEXT NOT NULL,
+  updated_by    TEXT NOT NULL DEFAULT '${LEGACY_ACTOR}',
   version       TEXT NOT NULL,
   PRIMARY KEY (workspace_id, collection_id, id)
 );
@@ -86,6 +126,7 @@ interface PageRecord {
   body: string;
   created_at: string;
   updated_at: string;
+  updated_by: string;
   version: string;
 }
 
@@ -96,6 +137,7 @@ interface CollectionRecord {
   fields: string;
   created_at: string;
   updated_at: string;
+  updated_by: string;
   version: string;
 }
 
@@ -106,7 +148,56 @@ interface RowRecord {
   values_: string;
   created_at: string;
   updated_at: string;
+  updated_by: string;
   version: string;
+}
+
+interface RevisionRecord {
+  workspace_id: string;
+  kind: string;
+  record_id: string;
+  version: string;
+  collection_id: string | null;
+  parent_version: string | null;
+  actor: string;
+  actor_kind: string;
+  note: string | null;
+  created_at: string;
+  deleted: number;
+  snapshot: string;
+}
+
+function toRevision(record: RevisionRecord): Revision {
+  return {
+    workspaceId: record.workspace_id,
+    kind: record.kind as RevisionKind,
+    recordId: record.record_id,
+    collectionId: record.collection_id,
+    version: record.version,
+    parentVersion: record.parent_version,
+    actor: JSON.parse(record.actor) as Actor,
+    note: record.note,
+    createdAt: record.created_at,
+    deleted: record.deleted === 1,
+    snapshot: JSON.parse(record.snapshot) as Revision["snapshot"],
+  };
+}
+
+/** Keyset cursor for revision lists: the last item's time and version. */
+function encodeRevisionCursor(revision: Revision): string {
+  return Buffer.from(JSON.stringify([revision.createdAt, revision.version]), "utf8").toString(
+    "base64url",
+  );
+}
+
+function decodeRevisionCursor(cursor: string | null | undefined): [string, string] | null {
+  if (!cursor) return null;
+  try {
+    const value = JSON.parse(Buffer.from(cursor, "base64url").toString("utf8")) as unknown;
+    return Array.isArray(value) && value.length === 2 ? [String(value[0]), String(value[1])] : null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -118,8 +209,6 @@ function asRecords<T>(records: unknown[]): T[] {
   return records as T[];
 }
 
-const newVersion = (): string => randomUUID();
-const now = (): string => new Date().toISOString();
 
 function toPage(record: PageRecord): Page {
   return {
@@ -131,6 +220,7 @@ function toPage(record: PageRecord): Page {
     body: record.body,
     createdAt: record.created_at,
     updatedAt: record.updated_at,
+    updatedBy: JSON.parse(record.updated_by) as Actor,
     version: record.version,
   };
 }
@@ -143,6 +233,7 @@ function toCollection(record: CollectionRecord): Collection {
     fields: JSON.parse(record.fields) as Collection["fields"],
     createdAt: record.created_at,
     updatedAt: record.updated_at,
+    updatedBy: JSON.parse(record.updated_by) as Actor,
     version: record.version,
   };
 }
@@ -155,6 +246,7 @@ function toRow(record: RowRecord): Row {
     values: JSON.parse(record.values_) as Row["values"],
     createdAt: record.created_at,
     updatedAt: record.updated_at,
+    updatedBy: JSON.parse(record.updated_by) as Actor,
     version: record.version,
   };
 }
@@ -192,6 +284,23 @@ export class SqliteDocumentStore implements DocumentStore {
   }
 
   async init(): Promise<void> {
+    // Tables created before revisions existed lack `updated_by`. CREATE TABLE
+    // IF NOT EXISTS does not add columns, so add it here before the schema's
+    // indexes run. Idempotent.
+    for (const table of ["pages", "collections", "rows_"]) {
+      const exists = this.db
+        .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?")
+        .get(table);
+      if (!exists) continue;
+      const columns = asRecords<{ name: string }>(
+        this.db.prepare(`PRAGMA table_info(${table})`).all(),
+      );
+      if (!columns.some((column) => column.name === "updated_by")) {
+        this.db.exec(
+          `ALTER TABLE ${table} ADD COLUMN updated_by TEXT NOT NULL DEFAULT '${LEGACY_ACTOR}'`,
+        );
+      }
+    }
     this.db.exec(SCHEMA);
   }
 
@@ -213,11 +322,11 @@ export class SqliteDocumentStore implements DocumentStore {
     id: Id,
     input: PageInput,
     expectedVersion: ExpectedVersion,
+    meta: WriteMeta,
   ): Promise<Page> {
     const existing = await this.getPage(workspaceId, id);
     this.assertVersion("page", id, existing, expectedVersion);
 
-    const timestamp = now();
     const page: Page = {
       id,
       workspaceId,
@@ -225,9 +334,10 @@ export class SqliteDocumentStore implements DocumentStore {
       parentId: input.parentId ?? null,
       tags: input.tags ?? [],
       body: input.body,
-      createdAt: existing?.createdAt ?? timestamp,
-      updatedAt: timestamp,
-      version: newVersion(),
+      createdAt: existing?.createdAt ?? meta.at,
+      updatedAt: meta.at,
+      updatedBy: meta.actor,
+      version: meta.version,
     };
 
     // The WHERE clause makes the check-and-set atomic, so two concurrent
@@ -236,7 +346,7 @@ export class SqliteDocumentStore implements DocumentStore {
       ? this.db
           .prepare(
             `UPDATE pages SET title = ?, parent_id = ?, tags = ?, body = ?,
-             updated_at = ?, version = ?
+             updated_at = ?, updated_by = ?, version = ?
              WHERE workspace_id = ? AND id = ? AND version = ?`,
           )
           .run(
@@ -245,6 +355,7 @@ export class SqliteDocumentStore implements DocumentStore {
             JSON.stringify(page.tags),
             page.body,
             page.updatedAt,
+            JSON.stringify(page.updatedBy),
             page.version,
             workspaceId,
             id,
@@ -253,8 +364,8 @@ export class SqliteDocumentStore implements DocumentStore {
       : this.db
           .prepare(
             `INSERT OR IGNORE INTO pages
-             (workspace_id, id, title, parent_id, tags, body, created_at, updated_at, version)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             (workspace_id, id, title, parent_id, tags, body, created_at, updated_at, updated_by, version)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           )
           .run(
             workspaceId,
@@ -265,6 +376,7 @@ export class SqliteDocumentStore implements DocumentStore {
             page.body,
             page.createdAt,
             page.updatedAt,
+            JSON.stringify(page.updatedBy),
             page.version,
           );
 
@@ -396,31 +508,33 @@ export class SqliteDocumentStore implements DocumentStore {
     id: Id,
     input: CollectionInput,
     expectedVersion: ExpectedVersion,
+    meta: WriteMeta,
   ): Promise<Collection> {
     const existing = await this.getCollection(workspaceId, id);
     this.assertVersion("collection", id, existing, expectedVersion);
 
-    const timestamp = now();
     const collection: Collection = {
       id,
       workspaceId,
       name: input.name,
       fields: input.fields,
-      createdAt: existing?.createdAt ?? timestamp,
-      updatedAt: timestamp,
-      version: newVersion(),
+      createdAt: existing?.createdAt ?? meta.at,
+      updatedAt: meta.at,
+      updatedBy: meta.actor,
+      version: meta.version,
     };
 
     const applied = existing
       ? this.db
           .prepare(
-            `UPDATE collections SET name = ?, fields = ?, updated_at = ?, version = ?
+            `UPDATE collections SET name = ?, fields = ?, updated_at = ?, updated_by = ?, version = ?
              WHERE workspace_id = ? AND id = ? AND version = ?`,
           )
           .run(
             collection.name,
             JSON.stringify(collection.fields),
             collection.updatedAt,
+            JSON.stringify(collection.updatedBy),
             collection.version,
             workspaceId,
             id,
@@ -429,8 +543,8 @@ export class SqliteDocumentStore implements DocumentStore {
       : this.db
           .prepare(
             `INSERT OR IGNORE INTO collections
-             (workspace_id, id, name, fields, created_at, updated_at, version)
-             VALUES (?, ?, ?, ?, ?, ?, ?)`,
+             (workspace_id, id, name, fields, created_at, updated_at, updated_by, version)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
           )
           .run(
             workspaceId,
@@ -439,6 +553,7 @@ export class SqliteDocumentStore implements DocumentStore {
             JSON.stringify(collection.fields),
             collection.createdAt,
             collection.updatedAt,
+            JSON.stringify(collection.updatedBy),
             collection.version,
           );
 
@@ -481,30 +596,32 @@ export class SqliteDocumentStore implements DocumentStore {
     id: Id,
     input: RowInput,
     expectedVersion: ExpectedVersion,
+    meta: WriteMeta,
   ): Promise<Row> {
     const existing = await this.getRow(workspaceId, collectionId, id);
     this.assertVersion("row", id, existing, expectedVersion);
 
-    const timestamp = now();
     const row: Row = {
       id,
       workspaceId,
       collectionId,
       values: input.values,
-      createdAt: existing?.createdAt ?? timestamp,
-      updatedAt: timestamp,
-      version: newVersion(),
+      createdAt: existing?.createdAt ?? meta.at,
+      updatedAt: meta.at,
+      updatedBy: meta.actor,
+      version: meta.version,
     };
 
     const applied = existing
       ? this.db
           .prepare(
-            `UPDATE rows_ SET values_ = ?, updated_at = ?, version = ?
+            `UPDATE rows_ SET values_ = ?, updated_at = ?, updated_by = ?, version = ?
              WHERE workspace_id = ? AND collection_id = ? AND id = ? AND version = ?`,
           )
           .run(
             JSON.stringify(row.values),
             row.updatedAt,
+            JSON.stringify(row.updatedBy),
             row.version,
             workspaceId,
             collectionId,
@@ -514,8 +631,8 @@ export class SqliteDocumentStore implements DocumentStore {
       : this.db
           .prepare(
             `INSERT OR IGNORE INTO rows_
-             (workspace_id, collection_id, id, values_, created_at, updated_at, version)
-             VALUES (?, ?, ?, ?, ?, ?, ?)`,
+             (workspace_id, collection_id, id, values_, created_at, updated_at, updated_by, version)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
           )
           .run(
             workspaceId,
@@ -524,6 +641,7 @@ export class SqliteDocumentStore implements DocumentStore {
             JSON.stringify(row.values),
             row.createdAt,
             row.updatedAt,
+            JSON.stringify(row.updatedBy),
             row.version,
           );
 
@@ -573,7 +691,134 @@ export class SqliteDocumentStore implements DocumentStore {
     return this.paginate(records.map(toRow), limit);
   }
 
+  // Revisions (ADR-008). Immutable: inserted once, deleted only to clean up
+  // after a version conflict, never updated.
+
+  async putRevision(workspaceId: WorkspaceId, revision: RevisionInput): Promise<void> {
+    this.db
+      .prepare(
+        `INSERT INTO revisions
+         (workspace_id, kind, record_id, version, collection_id, parent_version,
+          actor, actor_kind, note, created_at, deleted, snapshot)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        workspaceId,
+        revision.kind,
+        revision.recordId,
+        revision.version,
+        revision.collectionId,
+        revision.parentVersion,
+        JSON.stringify(revision.actor),
+        revision.actor.kind,
+        revision.note,
+        revision.createdAt,
+        revision.deleted ? 1 : 0,
+        JSON.stringify(revision.snapshot),
+      );
+  }
+
+  async getRevision(
+    workspaceId: WorkspaceId,
+    kind: RevisionKind,
+    recordId: Id,
+    version: Version,
+  ): Promise<Revision | null> {
+    const record = this.db
+      .prepare(
+        `SELECT * FROM revisions
+         WHERE workspace_id = ? AND kind = ? AND record_id = ? AND version = ?`,
+      )
+      .get(workspaceId, kind, recordId, version) as RevisionRecord | undefined;
+    return record ? toRevision(record) : null;
+  }
+
+  async deleteRevision(
+    workspaceId: WorkspaceId,
+    kind: RevisionKind,
+    recordId: Id,
+    version: Version,
+  ): Promise<void> {
+    this.db
+      .prepare(
+        `DELETE FROM revisions
+         WHERE workspace_id = ? AND kind = ? AND record_id = ? AND version = ?`,
+      )
+      .run(workspaceId, kind, recordId, version);
+  }
+
+  async listRevisions(
+    workspaceId: WorkspaceId,
+    kind: RevisionKind,
+    recordId: Id,
+    options: { limit?: number; cursor?: string | null } = {},
+  ): Promise<Paged<Revision>> {
+    const limit = clampLimit(options.limit);
+    const after = decodeRevisionCursor(options.cursor);
+    const records = asRecords<RevisionRecord>(
+      after
+        ? this.db
+            .prepare(
+              `SELECT * FROM revisions
+               WHERE workspace_id = ? AND kind = ? AND record_id = ?
+                 AND (created_at < ? OR (created_at = ? AND version < ?))
+               ORDER BY created_at DESC, version DESC LIMIT ?`,
+            )
+            .all(workspaceId, kind, recordId, after[0], after[0], after[1], limit + 1)
+        : this.db
+            .prepare(
+              `SELECT * FROM revisions
+               WHERE workspace_id = ? AND kind = ? AND record_id = ?
+               ORDER BY created_at DESC, version DESC LIMIT ?`,
+            )
+            .all(workspaceId, kind, recordId, limit + 1),
+    );
+    return this.paginateRevisions(records.map(toRevision), limit);
+  }
+
+  async listRecentRevisions(
+    workspaceId: WorkspaceId,
+    options: { limit?: number; cursor?: string | null; actorKind?: Actor["kind"] } = {},
+  ): Promise<Paged<Revision>> {
+    const limit = clampLimit(options.limit);
+    const after = decodeRevisionCursor(options.cursor);
+
+    const conditions = ["workspace_id = ?"];
+    const params: Array<string | number> = [workspaceId];
+    if (options.actorKind) {
+      conditions.push("actor_kind = ?");
+      params.push(options.actorKind);
+    }
+    if (after) {
+      conditions.push("(created_at < ? OR (created_at = ? AND version < ?))");
+      params.push(after[0], after[0], after[1]);
+    }
+    params.push(limit + 1);
+
+    // Conditions are fixed strings chosen above, never caller input, so the
+    // statement text stays a closed set.
+    const records = asRecords<RevisionRecord>(
+      this.db
+        .prepare(
+          `SELECT * FROM revisions WHERE ${conditions.join(" AND ")}
+           ORDER BY created_at DESC, version DESC LIMIT ?`,
+        )
+        .all(...params),
+    );
+    return this.paginateRevisions(records.map(toRevision), limit);
+  }
+
   // Helpers.
+
+  private paginateRevisions(items: Revision[], limit: number): Paged<Revision> {
+    const hasMore = items.length > limit;
+    const window = hasMore ? items.slice(0, limit) : items;
+    const last = window[window.length - 1];
+    return {
+      items: window,
+      cursor: hasMore && last ? encodeRevisionCursor(last) : null,
+    };
+  }
 
   private readEdges(sql: string, ...params: string[]): Edge[] {
     const records = this.db.prepare(sql).all(...params) as Array<{

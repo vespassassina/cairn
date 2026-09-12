@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { closeContext, createContext, loadConfig, type AppContext } from "@cairn/api";
-import type { CollectionInput, PageInput } from "@cairn/core";
+import { closeContext, createContext, loadConfig, ownerVia, type AppContext } from "@cairn/api";
+import type { CollectionInput, PageInput, WriteContext } from "@cairn/core";
 
 /**
  * Seed a local Cairn from the peptide wiki's source data.
@@ -50,6 +50,12 @@ interface Category {
 const peptidePageId = (slug: string): string => `pg_${slug}`;
 const categoryPageId = (slug: string): string => `pg_cat_${slug}`;
 const COLLECTION_ID = "col_peptides";
+
+/** Every seed write says where it came from, so history reads sensibly. */
+const BY: WriteContext = {
+  actor: ownerVia("peptide wiki seed"),
+  note: "Seeded from peptide-wiki/data",
+};
 
 function bullets(items: string[]): string {
   return items.map((item) => `- ${item}`).join("\n");
@@ -106,10 +112,10 @@ async function upsertPage(
 ): Promise<"created" | "updated"> {
   const existing = await context.store.getPage(context.workspaceId, id);
   if (existing) {
-    await context.pages.update(context.workspaceId, id, input, existing.version);
+    await context.pages.update(context.workspaceId, id, input, existing.version, BY);
     return "updated";
   }
-  await context.pages.create(context.workspaceId, input, id);
+  await context.pages.create(context.workspaceId, input, BY, id);
   return "created";
 }
 
@@ -172,9 +178,9 @@ async function main(): Promise<void> {
     };
     const existingCollection = await context.store.getCollection(ws, COLLECTION_ID);
     if (existingCollection) {
-      await context.collections.update(ws, COLLECTION_ID, schema, existingCollection.version);
+      await context.collections.update(ws, COLLECTION_ID, schema, existingCollection.version, BY);
     } else {
-      await context.collections.create(ws, schema, COLLECTION_ID);
+      await context.collections.create(ws, schema, BY, COLLECTION_ID);
     }
 
     let rows = 0;
@@ -196,6 +202,7 @@ async function main(): Promise<void> {
             page: peptidePageId(slug),
           },
         },
+        BY,
         { id: rowId, expectedVersion: existing?.version ?? null },
       );
       rows += 1;

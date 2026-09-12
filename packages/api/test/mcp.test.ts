@@ -27,6 +27,7 @@ async function rpc(method: string, params?: unknown, token = TOKEN) {
         "content-type": "application/json",
         accept: "application/json, text/event-stream",
         authorization: `Bearer ${token}`,
+        "user-agent": "claude-code/2.0.0",
       },
       body: JSON.stringify({
         jsonrpc: "2.0",
@@ -86,7 +87,7 @@ describe("transport and auth", () => {
     expect(body.result.protocolVersion).toBeTruthy();
   });
 
-  it("serves every tool from PRD section 8", async () => {
+  it("serves every tool from PRD section 8, plus history", async () => {
     const { body } = await rpc("tools/list");
     const names = (body.result.tools as Array<{ name: string }>).map((t) => t.name);
     expect(names.sort()).toEqual(
@@ -94,8 +95,10 @@ describe("transport and auth", () => {
         "create_collection",
         "create_page",
         "get_backlinks",
+        "get_history",
         "get_neighbours",
         "get_page",
+        "get_revision",
         "list_collections",
         "query_collection",
         "search",
@@ -376,5 +379,113 @@ describe("replaceSection", () => {
 
   it("returns null when the heading is not there", () => {
     expect(replaceSection("# A\n\nx", "B", "y")).toBeNull();
+  });
+});
+
+describe("history tools (ADR-008)", () => {
+  it("attributes every write to the calling agent, with its change note", async () => {
+    const created = await callTool("create_page", {
+      title: "Print log",
+      body: "first",
+      change_note: "Started a log for the H2S",
+    });
+    expect((created.data["updated_by"] as Record<string, unknown>)["kind"]).toBe("agent");
+    expect((created.data["updated_by"] as Record<string, unknown>)["name"]).toBe(
+      "claude-code/2.0.0",
+    );
+
+    const history = await callTool("get_history", { page_id: created.data["id"] });
+    const revisions = history.data["revisions"] as Array<Record<string, unknown>>;
+    expect(revisions).toHaveLength(1);
+    expect(revisions[0]!["note"]).toBe("Started a log for the H2S");
+    expect((revisions[0]!["by"] as Record<string, unknown>)["kind"]).toBe("agent");
+  });
+
+  it("lists a page's versions newest first and diffs one against the last", async () => {
+    const created = await callTool("create_page", {
+      title: "Quad build",
+      body: "# ESC\n\nold firmware\n\n# Motors\n\n2207 1750kv",
+    });
+    const updated = await callTool("update_page", {
+      page_id: created.data["id"],
+      version: created.data["version"],
+      mode: "replace_section",
+      section: "ESC",
+      content: "BLHeli_32",
+      change_note: "Recorded the firmware flashed today",
+    });
+
+    const history = await callTool("get_history", { page_id: created.data["id"] });
+    const revisions = history.data["revisions"] as Array<Record<string, unknown>>;
+    expect(revisions.map((r) => r["version"])).toEqual([
+      updated.data["version"],
+      created.data["version"],
+    ]);
+
+    const revision = await callTool("get_revision", {
+      page_id: created.data["id"],
+      version: updated.data["version"],
+    });
+    const diff = revision.data["diff"] as string;
+    expect(diff).toContain("- old firmware");
+    expect(diff).toContain("+ BLHeli_32");
+    expect(revision.data["note"]).toBe("Recorded the firmware flashed today");
+
+    const first = await callTool("get_revision", {
+      page_id: created.data["id"],
+      version: created.data["version"],
+    });
+    expect(first.data["diff"]).toBeNull();
+    expect(first.data["body"]).toContain("old firmware");
+  });
+
+  it("gives row history and a field diff", async () => {
+    const collection = await callTool("create_collection", {
+      name: "Parts",
+      fields: [
+        { name: "title", type: "text", required: true },
+        { name: "grams", type: "number" },
+      ],
+    });
+    const row = await callTool("upsert_row", {
+      collection_id: collection.data["id"],
+      values: { title: "Bracket", grams: 12 },
+    });
+    const updated = await callTool("upsert_row", {
+      collection_id: collection.data["id"],
+      row_id: row.data["id"],
+      version: row.data["version"],
+      values: { title: "Bracket", grams: 14 },
+      change_note: "Weighed it after printing",
+    });
+
+    const history = await callTool("get_history", {
+      collection_id: collection.data["id"],
+      row_id: row.data["id"],
+    });
+    expect((history.data["revisions"] as unknown[]).length).toBe(2);
+
+    const revision = await callTool("get_revision", {
+      collection_id: collection.data["id"],
+      row_id: row.data["id"],
+      version: updated.data["version"],
+    });
+    expect(revision.data["diff"]).toContain("+ grams: 14");
+  });
+
+  it("asks for an id rather than guessing when none is given", async () => {
+    const result = await callTool("get_history", {});
+    expect(result.isError).toBe(true);
+    expect(result.data["error"]).toBe("validation_failed");
+  });
+
+  it("reports an unknown version as not found", async () => {
+    const created = await callTool("create_page", { title: "P", body: "x" });
+    const result = await callTool("get_revision", {
+      page_id: created.data["id"],
+      version: "no-such-version",
+    });
+    expect(result.isError).toBe(true);
+    expect(result.data["error"]).toBe("not_found");
   });
 });

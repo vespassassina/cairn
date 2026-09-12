@@ -14,7 +14,8 @@ async function main(): Promise<void> {
     const started = Date.now();
     const result = await context.pages.rebuildWorkspace(config.workspaceId);
     process.stdout.write(
-      `rebuilt ${result.pages} pages in ${Date.now() - started}ms\n`,
+      `rebuilt ${result.pages} pages in ${Date.now() - started}ms\n` +
+        `swept ${result.orphanRevisions} revisions left off their chain by an interrupted write\n`,
     );
   } finally {
     await closeContext(context);
