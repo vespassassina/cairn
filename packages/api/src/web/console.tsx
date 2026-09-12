@@ -24,6 +24,8 @@ import { ASSET_VERSION, CONSOLE_CSS, CONSOLE_JS } from "./assets.js";
 import { ActorPill, Banner, DiffView, Layout, When } from "./layout.js";
 import { createMarkdownRenderer, pageHref, type LinkResolver } from "./markdown.js";
 import { isSameOrigin, SESSION_COOKIE, sessionValue, timingSafeEqual } from "./session.js";
+import type { OAuthServer } from "../oauth/server.js";
+import type { Actor } from "@cairn/core";
 import { NO_LOCAL_TRUST, trustedForConsole, type LocalTrust } from "../trust.js";
 
 /**
@@ -42,6 +44,14 @@ export interface ConsoleOptions {
   /** Null when only trusted local requests are accepted (ADR-010). */
   token: string | null;
   trust?: LocalTrust;
+  /** Sign-in through the OAuth server's provider (ADR-017). */
+  oauth?: OAuthServer | null;
+  /**
+   * The origin people use, such as https://cairn.example.com. Behind a proxy
+   * that ends TLS, the server itself sees http, so form checks and cookies
+   * must use this instead of the request's own URL.
+   */
+  publicOrigin?: string | null;
 }
 
 const renderMarkdown = createMarkdownRenderer();
@@ -63,7 +73,7 @@ const SECURITY_HEADERS: Record<string, string> = {
   "x-frame-options": "DENY",
 };
 
-const PUBLIC_PATHS = [/^\/health$/, /^\/mcp/, /^\/api(\/|$)/, /^\/assets\//, /^\/login$/];
+const PUBLIC_PATHS = [/^\/health$/, /^\/mcp/, /^\/api(\/|$)/, /^\/assets\//, /^\/login$/, /^\/oauth\//, /^\/\.well-known\//];
 
 async function render(c: Context, element: Child, status: 200 | 400 | 404 | 409 = 200) {
   const body = await (element as Promise<string> | string);
@@ -454,7 +464,17 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
   const trust = options.trust ?? NO_LOCAL_TRUST;
   const ws = context.workspaceId;
   const expectedSession = token === null ? Promise.resolve(null) : sessionValue(token);
-  const by = (note: string) => ({ actor: OWNER, note: note.trim() || null });
+  const oauth = options.oauth ?? null;
+  const publicOrigin = options.publicOrigin ?? null;
+  // Who is signed in, per request. A person signed in through the provider is
+  // named in history; the dev token and local trust write as the owner.
+  const signedInAs = new WeakMap<Request, Actor>();
+  const actorFor = (c: Context): Actor => signedInAs.get(c.req.raw) ?? OWNER;
+  const by = (c: Context, note: string) => ({ actor: actorFor(c), note: note.trim() || null });
+  const originOk = (c: Context) =>
+    publicOrigin ? c.req.header("origin") === publicOrigin : isSameOrigin(c.req.raw);
+  const secureCookie = (c: Context) =>
+    publicOrigin ? publicOrigin.startsWith("https:") : new URL(c.req.url).protocol === "https:";
 
   app.get("/assets/console.css", (c) =>
     c.body(CONSOLE_CSS, 200, {
@@ -473,19 +493,21 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
   // route. MCP and /health have their own rules and are left alone.
   app.use("*", async (c, next) => {
     const path = new URL(c.req.url).pathname;
-    if (/^\/(mcp|health)/.test(path) || /^\/api(\/|$)/.test(path)) return next();
+    if (/^\/(mcp|health)/.test(path) || /^\/(api|oauth|\.well-known)(\/|$)/.test(path)) return next();
 
     if (!PUBLIC_PATHS.some((pattern) => pattern.test(path))) {
       const cookie = getCookie(c, SESSION_COOKIE) ?? "";
       const session = await expectedSession;
-      const signedIn = session !== null && timingSafeEqual(cookie, session);
+      const person = oauth && cookie.includes(".") ? await oauth.verifySession(cookie) : null;
+      if (person) signedInAs.set(c.req.raw, { kind: "user", id: person.id, label: person.label });
+      const signedIn = person !== null || (session !== null && timingSafeEqual(cookie, session));
       // Trusted local requests skip sign-in (ADR-010). The Origin check on
       // form posts below still applies to them.
       if (!signedIn && !trustedForConsole(c.req.raw, trust)) {
         if (c.req.method !== "GET") return c.text("sign in first", 401);
         return c.redirect(`/login?next=${encodeURIComponent(path + new URL(c.req.url).search)}`);
       }
-      if (c.req.method === "POST" && !isSameOrigin(c.req.raw)) {
+      if (c.req.method === "POST" && !originOk(c)) {
         return c.text("form posts must come from the console itself", 403);
       }
     }
@@ -506,11 +528,20 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
         <div class="ak-wrap cairn-login">
           <p class="ak-eyebrow">Cairn review console</p>
           <h1>Sign in</h1>
-          <p class="ak-lede">
-            Dev mode: use the CAIRN_TOKEN this server was started with. On localhost no sign-in
-            is needed unless local trust is turned off.
-          </p>
+          {oauth ? (
+            <p class="cairn-actions">
+              <a class="ak-btn ak-btn-primary" href={`/oauth/login?next=${encodeURIComponent(next)}`}>
+                Sign in with {oauth.providerName}
+              </a>
+            </p>
+          ) : (
+            <p class="ak-lede">
+              Dev mode: use the CAIRN_TOKEN this server was started with. On localhost no sign-in
+              is needed unless local trust is turned off.
+            </p>
+          )}
           {failed ? <Banner kind="bad">That token does not match.</Banner> : null}
+          {token === null ? null : (
           <form method="post" action="/login" class="cairn-editor">
             <input type="hidden" name="next" value={next} />
             <label for="token">Token</label>
@@ -524,10 +555,11 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
             />
             <div class="cairn-actions">
               <button class="ak-btn ak-btn-primary" type="submit">
-                Sign in
+                Sign in with the token
               </button>
             </div>
           </form>
+          )}
         </div>
       </body>
     </html>
@@ -540,7 +572,7 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
   });
 
   app.post("/login", async (c) => {
-    if (!isSameOrigin(c.req.raw)) return c.text("form posts must come from the console itself", 403);
+    if (!originOk(c)) return c.text("form posts must come from the console itself", 403);
     const form = await c.req.parseBody();
     const next = safeNext(text(form, "next"));
     const session = await expectedSession;
@@ -551,7 +583,7 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
       httpOnly: true,
       sameSite: "Strict",
       path: "/",
-      secure: new URL(c.req.url).protocol === "https:",
+      secure: secureCookie(c),
       maxAge: 60 * 60 * 24 * 30,
     });
     return c.redirect(next, 303);
@@ -865,7 +897,7 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
     }
 
     try {
-      await context.pages.update(ws, page.id, input, version, by(note));
+      await context.pages.update(ws, page.id, input, version, by(c, note));
       return c.redirect(`${pageHref(page.id)}?saved=1`, 303);
     } catch (error) {
       if (!(error instanceof VersionConflictError)) throw error;
@@ -982,7 +1014,7 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
     const form = await c.req.parseBody();
     try {
       await context.pages.restore(ws, id, c.req.param("version"), text(form, "expected"), {
-        actor: OWNER,
+        actor: actorFor(c),
       });
       return c.redirect(`${pageHref(id)}?restored=1`, 303);
     } catch (error) {
@@ -1056,7 +1088,7 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
         input.title === "" ? 400 : 200,
       );
     }
-    const page = await context.pages.create(ws, input, by(note));
+    const page = await context.pages.create(ws, input, by(c, note));
     return c.redirect(`${pageHref(page.id)}?created=1`, 303);
   });
 
@@ -1312,7 +1344,7 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
     const values = readRowValues(collection, form);
     const note = text(form, "note");
     try {
-      const row = await context.collections.upsertRow(ws, collection.id, { values }, by(note));
+      const row = await context.collections.upsertRow(ws, collection.id, { values }, by(c, note));
       return c.redirect(
         `/c/${encodeURIComponent(collection.id)}/r/${encodeURIComponent(row.id)}?saved=1`,
         303,
@@ -1372,7 +1404,7 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
     const history = () => context.collections.rowHistory(ws, collection.id, row.id, { limit: 50 });
 
     try {
-      await context.collections.upsertRow(ws, collection.id, { values }, by(note), {
+      await context.collections.upsertRow(ws, collection.id, { values }, by(c, note), {
         id: row.id,
         expectedVersion: text(form, "version"),
       });
@@ -1490,7 +1522,7 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
         rid,
         c.req.param("version"),
         text(form, "expected"),
-        { actor: OWNER },
+        { actor: actorFor(c) },
       );
       return c.redirect(`/c/${encodeURIComponent(cid)}/r/${encodeURIComponent(rid)}?restored=1`, 303);
     } catch (error) {

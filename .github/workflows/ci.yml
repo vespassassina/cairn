@@ -1,4 +1,5 @@
-# Tests and the CLI on every OS it ships for (ADR-014).
+# Tests and the CLI on every OS it ships for (ADR-014), the Azure template,
+# and the server image (ADR-018).
 #
 # Each test job builds the CLI for the machine it runs on and smoke-tests it
 # against a real server, so every published executable has been run on its own
@@ -44,6 +45,79 @@ jobs:
           bun-version: ${{ env.BUN_VERSION }}
       - run: pnpm build:cli host
       - run: pnpm smoke:cli
+
+  azure-template:
+    name: azure template
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: compile the Bicep template
+        run: |
+          az bicep install
+          az bicep build --file deploy/azure/main.bicep --stdout > /dev/null
+      - name: lint the shell scripts
+        run: shellcheck deploy/azure/deploy.sh docker/start.sh
+
+  image:
+    name: container image
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - name: build for this runner
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          tags: cairn:test
+      - name: smoke test the image
+        run: |
+          docker run --rm --entrypoint litestream cairn:test version
+          docker run -d --name cairn -p 8787:8787 \
+            -e CAIRN_PUBLIC_URL=https://cairn.example.com \
+            -e CAIRN_AUTH_PROVIDER=github \
+            -e CAIRN_AUTH_SECRET="$(openssl rand -hex 32)" \
+            -e CAIRN_OAUTH_CLIENT_ID=ci \
+            -e CAIRN_OAUTH_CLIENT_SECRET=ci \
+            -e CAIRN_ALLOWED_USERS=github:ci \
+            cairn:test
+          for _ in $(seq 1 30); do curl -fsS localhost:8787/health && break; sleep 1; done
+          curl -fsS localhost:8787/health
+          test "$(curl -s -o /dev/null -w '%{http_code}' -X POST localhost:8787/mcp)" = 401
+          curl -fsS localhost:8787/.well-known/oauth-authorization-server
+          docker logs cairn
+      - name: image tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=edge,branch=main
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+      - name: sign in to ghcr.io
+        if: github.event_name == 'push'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: publish for amd64 and arm64
+        if: github.event_name == 'push'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
 
   release:
     name: release the CLI

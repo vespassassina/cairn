@@ -13,6 +13,19 @@ Rules:
 
 ## 2026-09-12
 
+### Reprocess the wiki, build export and OAuth, deploy to Azure, and let agents install it
+
+> "reprocess the wiki we added, add the data in the updated wiki. build the export. data should be owned by users and be reprocessable. export can work globally or by root. add oauth. add a few extra queries. build instructions to deploy on azure, build the cli in various systems. instructions to clone and deploy must be easy to follow. add instructions for agents to clone and deploy, most users will do it this way. agents should ask where to deploy and follow up with keys or auth."
+
+Lightly cleaned from bullet points. Landed in:
+
+1. The peptide wiki seed, extended for stacks, citations and mixing notes, and rerun: 96 pages, 2 collections.
+2. ADR-016 and `cairn export` and `cairn import`.
+3. ADR-017, the OAuth server, console sign-in and `cairn login`.
+4. Fourteen eval queries, q03 to q16.
+5. ADR-018, the Dockerfile, `deploy/azure/` and `docs/DEPLOY-AZURE.md`. The CLI builds for every OS were already in place (ADR-014).
+6. ADR-019, `docs/AGENT-INSTALL.md` and `AGENTS.md`, and a README that leads with "let your agent do it".
+
 ### Free for anyone, but not for profit
 
 > "done authenticating. change the license, i want anyone to be able to use, change and do whatever BUT not for profit"

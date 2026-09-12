@@ -37,7 +37,7 @@ Agent without a shell    Agent with a shell      Browser (owner)
 
 1. `packages/core`. Domain types, the two ports, the services, and the conformance suites. No dependencies. Nothing here knows which cloud it runs on.
 2. `packages/adapter-sqlite`. The reference implementation of both ports on `node:sqlite`. CI always runs it.
-3. `packages/api`. The Hono app, the MCP tools, and server instructions with a live summary of the workspace (ADR-011, ADR-012), the review console, and the command-line tools. The only package that knows about HTTP. On Node it listens on both loopback addresses, 127.0.0.1 and ::1.
+3. `packages/api`. The Hono app, the MCP tools, and server instructions with a live summary of the workspace (ADR-011, ADR-012), the REST API, the OAuth server (ADR-017), the review console, and the command-line tools. The only package that knows about HTTP. On Node it listens on both loopback addresses, 127.0.0.1 and ::1.
 4. `packages/cli`. The `cairn` command. A thin HTTP client for the REST API with no dependencies, so it works the same against a local or deployed server (ADR-013). It ships as an npm package, and as standalone executables for five platforms built by `scripts/build-cli.mjs` (ADR-014).
 5. `skills/cairn`. The skill file that tells a coding agent when and how to use the CLI.
 6. `examples/`. Dataset-specific scripts, such as the peptide wiki seed. Not part of the product.
@@ -49,6 +49,24 @@ Agent without a shell    Agent with a shell      Browser (owner)
 MCP, REST and the CLI are translations (ADR-013). `api/src/operations.ts` holds what they share: edit modes, section replacement, the error mapping and the JSON shapes of pages, rows and revisions. Both MCP and REST sit behind the same auth check, and REST writes are attributed like MCP writes, by the caller's user agent. Version tokens are ETags on REST and `version` fields on MCP; the check behind them is the same.
 
 `pnpm context-cost` measures what each door costs an agent's context. MCP loads every tool schema in every session; the CLI costs a skill description until it is used.
+
+## Signing in
+
+Local: nothing (ADR-010). Anywhere else, OAuth (ADR-017):
+
+1. `packages/api/src/oauth/` holds a small OAuth 2.1 server: discovery documents, dynamic client registration, authorize with a consent page, tokens, revocation. Sign-in is delegated to GitHub or any OpenID Connect provider; an allowlist decides who gets in.
+2. Access tokens are HS256 JWTs, checked on every MCP and REST request with no store read. The console uses a session cookie from the same sign-in, and writes are attributed to the signed-in person.
+3. Clients, codes and refresh tokens live in the `AuthStore` port, apart from content, with its own conformance suite. SQLite implements it in the same file.
+
+## Export and import
+
+`cairn export` reads pages through `GET /api/v1/export/pages`, parents first, and collections through the rows endpoints, and writes Markdown and JSON (ADR-016). `cairn import` reads that folder and writes through `PUT` at the same ids, comparing first so a repeat changes nothing. Derived data is rebuilt by the writes, as always.
+
+## Deployment
+
+1. **Local:** `pnpm dev`, tsx running the TypeScript directly.
+2. **Container:** `pnpm build:server` bundles the server with esbuild into one file. The image holds that file, Node and Litestream, and is published by CI to `ghcr.io/vespassassina/cairn`.
+3. **Azure (ADR-018):** Container Apps, one replica at most, zero when idle. The database is on the container's disk; Litestream restores it from Blob Storage on start and streams every change back, through the app's managed identity. `deploy/azure/main.bicep` and `deploy.sh` create it all.
 
 ## Data
 

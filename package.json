@@ -16,17 +16,19 @@
     "test": "vitest run",
     "typecheck": "pnpm -r --sequential typecheck",
     "dev": "pnpm --filter @cairn/api dev",
-    "import": "pnpm --filter @cairn/api import",
-    "rebuild": "pnpm --filter @cairn/api rebuild",
+    "import:markdown": "pnpm --filter @cairn/api import:markdown",
+    "reindex": "pnpm --filter @cairn/api reindex",
     "eval": "pnpm --filter @cairn/api eval",
     "cairn": "tsx packages/cli/src/bin.ts",
     "build:cli": "node scripts/build-cli.mjs",
     "smoke:cli": "node scripts/smoke-cli.mjs",
     "context-cost": "pnpm --filter @cairn/api context-cost",
-    "sync:artifactkit": "node scripts/sync-artifactkit.mjs"
+    "sync:artifactkit": "node scripts/sync-artifactkit.mjs",
+    "build:server": "node scripts/build-server.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.10.5",
+    "esbuild": "0.28.2",
     "tsx": "^4.23.13",
     "typescript": "^5.7.3",
     "vite": "^8.3.0",

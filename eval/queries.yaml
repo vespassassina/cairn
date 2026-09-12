@@ -13,4 +13,80 @@ queries:
     expected: []
     lang: en
     notes: "synonym test: warping, adhesion"
-  # add q03 to q30
+
+  # q03 to q16: written by the agent on 2026-09-12 from the peptide wiki seed,
+  # each checked against the wiki text. They measure search on real content
+  # until the owner adds queries from things they actually wanted to find.
+  # Expected pages are the ones a reader would accept as the answer.
+  - id: q03
+    query: "tendon healing peptide"
+    expected: [pg_bpc-157, pg_tb-500]
+    lang: en
+    notes: "plain-language need; the anchor healing compounds"
+  - id: q04
+    query: "Ozempic"
+    expected: [pg_semaglutide]
+    lang: en
+    notes: "brand name, only in the aliases line"
+  - id: q05
+    query: "Mounjaro weight loss"
+    expected: [pg_tirzepatide]
+    lang: en
+    notes: "brand name plus a common word that matches many pages"
+  - id: q06
+    query: "wolverine stack"
+    expected: [pg_stack_bpc-157-tb-500]
+    lang: en
+    notes: "nickname, only in the stack's also-known-as line"
+  - id: q07
+    query: "copper peptide for skin"
+    expected: [pg_ghk-cu, pg_ahk-cu]
+    lang: en
+    notes: "description instead of a name"
+  - id: q08
+    query: "Ibutamoren"
+    expected: [pg_mk-677]
+    lang: en
+    notes: "the other half of a two-name title"
+  - id: q09
+    query: "thymus bioregulator"
+    expected: [pg_thymalin, pg_cat_bioregulators]
+    lang: en
+    notes: "category concept plus organ"
+  - id: q10
+    query: "GLP-1 drugs you should not stack with other peptides"
+    expected: [pg_semaglutide, pg_tirzepatide, pg_retatrutide, pg_mazdutide, pg_survodutide, pg_liraglutide]
+    lang: en
+    notes: "sentence-shaped; the answer is in the mixing caution on each incretin page"
+  - id: q11
+    query: "nasal spray for anxiety"
+    expected: [pg_selank]
+    lang: en
+    notes: "route plus use"
+  - id: q12
+    query: "tanning peptide"
+    expected: [pg_mt-2, pg_mt-1]
+    lang: en
+    notes: "use, not a name"
+  - id: q13
+    query: "elamipretide mitochondria"
+    expected: [pg_ss-31]
+    lang: en
+    notes: "alias plus mechanism"
+  - id: q14
+    query: "senolytic that clears senescent cells"
+    expected: [pg_foxo4-dri]
+    lang: en
+    notes: "mechanism-level description"
+  - id: q15
+    query: "FDA approved libido drug for women"
+    expected: [pg_pt-141]
+    lang: en
+    notes: "several common words; many pages mention FDA"
+  - id: q16
+    query: "CagriSema"
+    expected: [pg_stack_cagrilintide-semaglutide]
+    lang: en
+    notes: "product name only in a stack title"
+
+  # q17 to q30: for the owner, from real searches

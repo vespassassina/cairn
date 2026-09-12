@@ -1,0 +1,14 @@
+# Only what the image build needs: sources, lockfile and scripts.
+.git
+.github
+.claude
+node_modules
+**/node_modules
+dist
+**/dist
+*.sqlite
+*.sqlite-*
+docs
+eval
+deploy
+skills

@@ -29,7 +29,9 @@ interface Section {
 
 function splitIntoSections(body: string): Section[] {
   const sections: Section[] = [];
-  let path: string[] = [];
+  // Open headings, outermost first. A heading closes every open heading at
+  // its own level or deeper, so siblings never nest, however the page starts.
+  const open: Array<{ depth: number; title: string }> = [];
   let current: Section = { headingPath: [], lines: [] };
 
   for (const line of body.split("\n")) {
@@ -40,9 +42,9 @@ function splitIntoSections(body: string): Section[] {
     }
     if (current.lines.some((l) => l.trim() !== "")) sections.push(current);
     const depth = heading[1]!.length;
-    const title = heading[2]!.trim();
-    path = [...path.slice(0, depth - 1), title];
-    current = { headingPath: path, lines: [] };
+    while (open.length > 0 && open[open.length - 1]!.depth >= depth) open.pop();
+    open.push({ depth, title: heading[2]!.trim() });
+    current = { headingPath: open.map((h) => h.title), lines: [] };
   }
   if (current.lines.some((l) => l.trim() !== "")) sections.push(current);
   return sections;

@@ -1,0 +1,177 @@
+/**
+ * The Cairn export format, version 1 (ADR-016).
+ *
+ * A folder anyone can read without Cairn, and that `cairn import` can read
+ * back without losing anything that matters:
+ *
+ *   cairn-export.json          manifest: format, version, when, what
+ *   pages/<slug>.md            one page: a small front matter, then its Markdown
+ *   pages/<slug>/<child>.md    its children, so folders mirror the page tree
+ *   collections/<slug>.json    one collection: schema and rows
+ *
+ * Ids travel in the front matter, not the file name, so links survive an
+ * import and files can be renamed freely. Derived data (links, search chunks)
+ * is not exported; an import rebuilds it.
+ *
+ * Pure functions only: no file access, so both directions are easy to test.
+ */
+
+export const FORMAT = "cairn-export";
+export const FORMAT_VERSION = 1;
+export const MANIFEST = "cairn-export.json";
+
+export interface ExportPage {
+  id: string;
+  title: string;
+  parent_id: string | null;
+  tags: string[];
+  body: string;
+  updated_at?: string;
+  updated_by?: { kind: string; name: string };
+  version?: string;
+}
+
+export interface ExportCollection {
+  id: string;
+  name: string;
+  fields: unknown[];
+  rows: Array<{ id: string; values: Record<string, unknown> }>;
+}
+
+export interface Manifest {
+  format: typeof FORMAT;
+  version: number;
+  exported_at: string;
+  source: string;
+  root: string | null;
+  counts: { pages: number; collections: number; rows: number };
+}
+
+// File names.
+
+/** Names Windows refuses for a file, whatever the extension. */
+const RESERVED = /^(con|prn|aux|nul|com\d|lpt\d)$/i;
+
+/** A readable, portable file name from a title: lower case, dashes, bounded. */
+export function slugify(title: string, fallback: string): string {
+  const slug = title
+    .normalize("NFKD")
+    .replace(/\p{M}+/gu, "") // drop accents left by NFKD
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60)
+    .replace(/-+$/, "");
+  if (slug === "" || RESERVED.test(slug)) return fallback.toLowerCase().replace(/[^a-z0-9_-]+/g, "-");
+  return slug;
+}
+
+/** The slug, else the slug and the id, else those with a counter: never a clash. */
+function freeName(slug: string, id: string, isTaken: (name: string) => boolean): string {
+  if (!isTaken(slug)) return slug;
+  const withId = `${slug}-${slugify(id, id)}`;
+  if (!isTaken(withId)) return withId;
+  let n = 2;
+  while (isTaken(`${withId}-${n}`)) n += 1;
+  return `${withId}-${n}`;
+}
+
+/**
+ * A relative path for every page, parents' folders holding their children.
+ * Two siblings with the same title get their id appended, so no file is
+ * overwritten. Pages must come parents first, as the export endpoint sends them.
+ */
+export function assignPaths(pages: ExportPage[]): Map<string, string> {
+  const paths = new Map<string, string>();
+  const folderOf = new Map<string, string>();
+  const taken = new Set<string>();
+
+  for (const page of pages) {
+    const parentFolder = page.parent_id !== null ? folderOf.get(page.parent_id) : undefined;
+    const base = parentFolder ?? "pages";
+    const name = freeName(slugify(page.title, page.id), page.id, (candidate) => taken.has(`${base}/${candidate}`));
+    taken.add(`${base}/${name}`);
+    paths.set(page.id, `${base}/${name}.md`);
+    folderOf.set(page.id, `${base}/${name}`);
+  }
+  return paths;
+}
+
+export function collectionPath(collection: { id: string; name: string }, taken: Set<string>): string {
+  const name = freeName(slugify(collection.name, collection.id), collection.id, (candidate) => taken.has(candidate));
+  taken.add(name);
+  return `collections/${name}.json`;
+}
+
+// Front matter. A strict subset of YAML: one `key: value` per line, values
+// written as JSON, so any title or tag round-trips exactly and the result
+// still reads as ordinary front matter in Obsidian and on GitHub.
+
+export function pageFile(page: ExportPage): string {
+  const header: Array<[string, unknown]> = [
+    ["id", page.id],
+    ["title", page.title],
+    ["parent", page.parent_id],
+    ["tags", page.tags],
+  ];
+  if (page.updated_at) header.push(["updated", page.updated_at]);
+  if (page.updated_by) header.push(["updated_by", `${page.updated_by.kind}: ${page.updated_by.name}`]);
+  if (page.version) header.push(["version", page.version]);
+  const lines = header.map(([key, value]) => `${key}: ${JSON.stringify(value)}`);
+  // Always exactly one newline after the body, which parsePageFile removes.
+  return `---\n${lines.join("\n")}\n---\n\n${page.body}\n`;
+}
+
+/** The inverse of pageFile. Throws with the file's problem, never guesses. */
+export function parsePageFile(text: string, file: string): ExportPage {
+  const normalised = text.replace(/\r\n?/g, "\n");
+  const match = /^---\n([\s\S]*?)\n---\n\n?([\s\S]*)$/.exec(normalised);
+  if (!match) throw new Error(`${file}: no front matter. An exported page starts with a --- block.`);
+  const fields = new Map<string, unknown>();
+  for (const line of match[1]!.split("\n")) {
+    if (line.trim() === "") continue;
+    const at = line.indexOf(":");
+    if (at <= 0) throw new Error(`${file}: cannot read front matter line "${line}"`);
+    const key = line.slice(0, at).trim();
+    const raw = line.slice(at + 1).trim();
+    try {
+      fields.set(key, JSON.parse(raw));
+    } catch {
+      fields.set(key, raw); // Hand-edited plain text, such as title: My page.
+    }
+  }
+
+  const id = fields.get("id");
+  const title = fields.get("title");
+  if (typeof id !== "string" || id === "") throw new Error(`${file}: front matter has no id`);
+  if (typeof title !== "string" || title === "") throw new Error(`${file}: front matter has no title`);
+  const parent = fields.get("parent");
+  const tags = fields.get("tags");
+  const body = match[2]!;
+
+  return {
+    id,
+    title,
+    parent_id: typeof parent === "string" && parent !== "" ? parent : null,
+    tags: Array.isArray(tags) ? tags.map(String) : [],
+    // pageFile ends every body with one newline; give back what was stored.
+    body: body.endsWith("\n") ? body.slice(0, -1) : body,
+  };
+}
+
+/** Parents before children, and pages whose parent is missing last-resort top level. */
+export function orderForImport(pages: ExportPage[]): ExportPage[] {
+  const byId = new Map(pages.map((page) => [page.id, page]));
+  const ordered: ExportPage[] = [];
+  const done = new Set<string>();
+  const visit = (page: ExportPage, trail: Set<string>) => {
+    if (done.has(page.id) || trail.has(page.id)) return;
+    trail.add(page.id);
+    const parent = page.parent_id !== null ? byId.get(page.parent_id) : undefined;
+    if (parent) visit(parent, trail);
+    done.add(page.id);
+    ordered.push(page);
+  };
+  for (const page of pages) visit(page, new Set());
+  return ordered;
+}

@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
-import { basename } from "node:path";
-import { ConfigError, loadConfig } from "../config.js";
+import { basename, dirname, join } from "node:path";
+import { ConfigError, loadConfig, userPath } from "../config.js";
 import { closeContext, createContext, type AppContext } from "../context.js";
 
 /**
@@ -190,8 +190,11 @@ export function formatReport(report: EvalReport): string {
 }
 
 async function main(): Promise<void> {
-  const path = process.argv[2] ?? "eval/queries.yaml";
   const config = loadConfig();
+  // The default set lives at the repo root, next to cairn.config.json.
+  const path = process.argv[2]
+    ? userPath(process.argv[2])
+    : join(config.configFile ? dirname(config.configFile) : process.cwd(), "eval", "queries.yaml");
   const context = await createContext(config);
   try {
     const queries = parseQueries(await readFile(path, "utf8"));

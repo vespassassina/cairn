@@ -1,9 +1,10 @@
 import {
+  runAuthStoreConformance,
   runDocumentStoreConformance,
   runPushdownConformance,
   runSearchIndexConformance,
 } from "@cairn/core/testing";
-import { SqliteDocumentStore, SqliteSearchIndex } from "../src/index.js";
+import { SqliteAuthStore, SqliteDocumentStore, SqliteSearchIndex } from "../src/index.js";
 
 // The adapter runs the shared suites unchanged (CLAUDE.md hard rule 2).
 runDocumentStoreConformance("sqlite", {
@@ -16,4 +17,8 @@ runSearchIndexConformance("sqlite fts5", {
 
 runPushdownConformance("sqlite", {
   create: async () => new SqliteDocumentStore(),
+});
+
+runAuthStoreConformance("sqlite", {
+  create: async () => new SqliteAuthStore(),
 });

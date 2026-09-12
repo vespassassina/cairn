@@ -14,7 +14,7 @@ A decision that changes is not edited away. Add a new ADR that supersedes it, an
 | [004](ADR-004.md) | Separate chunks store, vector container created on enable | accepted | 2026-09-10 |
 | [005](ADR-005.md) | Adapter boundary: search separate, derived data rebuildable, no cross-document transactions | accepted | 2026-09-11 |
 | [006](ADR-006.md) | Hono plus stateless MCP transport, lowest common denominator | accepted | 2026-09-11 |
-| [007](ADR-007.md) | Auth is one small OAuth server in front of any OIDC provider | accepted | 2026-09-11 |
+| [007](ADR-007.md) | Auth is one small OAuth server in front of any OIDC provider | accepted, amended by 017 | 2026-09-11 |
 | [008](ADR-008.md) | Every write is a revision, and agents write directly | accepted | 2026-09-12 |
 | [009](ADR-009.md) | A server-rendered review console, styled with artifactkit | accepted, rule 5 amended by 010 | 2026-09-12 |
 | [010](ADR-010.md) | No sign-in for trusted local requests | accepted | 2026-09-12 |
@@ -23,6 +23,10 @@ A decision that changes is not edited away. Add a new ADR that supersedes it, an
 | [013](ADR-013.md) | One core, three surfaces: MCP, REST and a CLI | accepted | 2026-09-12 |
 | [014](ADR-014.md) | The CLI ships as an npm package and as standalone executables | accepted | 2026-09-12 |
 | [015](ADR-015.md) | Source-available under PolyForm Noncommercial 1.0.0 | accepted | 2026-09-12 |
+| [016](ADR-016.md) | Export is a folder of Markdown and JSON that imports back without loss | accepted | 2026-09-12 |
+| [017](ADR-017.md) | The OAuth server as built | accepted, amends 007 | 2026-09-12 |
+| [018](ADR-018.md) | The first Azure deployment: Container Apps with Litestream | accepted | 2026-09-12 |
+| [019](ADR-019.md) | Installation is written for an agent to follow, with the person at the checkpoints | accepted | 2026-09-12 |
 
 ## Writing one
 

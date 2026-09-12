@@ -13,6 +13,34 @@ Each entry answers four questions:
 
 ## 2026-09-12
 
+### pnpm's built-in commands silently replaced two of Cairn's
+
+1. **What happened.** `pnpm rebuild` finished quietly, but the stored search chunks still had the old heading paths. Its output mentioned esbuild's postinstall.
+2. **Cause.** `rebuild` and `import` are pnpm built-ins, and a built-in wins over a package script of the same name. `pnpm rebuild` rebuilt native packages; `pnpm import` would have tried to convert an npm lockfile. Neither ever ran Cairn's code, and the docs had recommended both since the PoC.
+3. **Fix.** Renamed to `pnpm reindex` and `pnpm import:markdown`, and every reference updated.
+4. **Lesson.** Never name a script after a package manager's own command (`rebuild`, `import`, `install`, `add`, `update`, `link`, `pack`, `publish`). When a command's output does not mention what it should have done, check it actually ran.
+
+### The chunker nested sibling sections on pages without an H1
+
+1. **What happened.** Search results showed paths like "Cagrilintide > Status > Stacks" for two sections at the same level.
+2. **Cause.** The heading path was cut by depth, `path.slice(0, depth - 1)`, which assumes every page starts at level 1. A page whose first heading is level 2 kept the previous sibling as a parent.
+3. **Fix.** The chunker keeps a stack of open headings and closes every one at the same level or deeper. A test covers pages that start at level 2.
+4. **Lesson.** The earlier fixture started with an H1, like hand-written notes; real imported pages did not. The same lesson as the repeated-title bug: test the indexer on real content.
+
+### zsh does not split a command held in a variable, and aborts on an empty glob
+
+1. **What happened.** Two live checks failed at once: `C="pnpm -s cairn"; $C export ...` reported "command not found: pnpm -s cairn", and a later `rm -f $S/bundle.sqlite*` with no matching file stopped the whole command chain.
+2. **Cause.** The agent's shell is zsh, which does not word-split unquoted variables and treats a glob with no match as an error.
+3. **Fix.** A shell function instead of a variable, and explicit file names instead of a glob.
+4. **Lesson.** For agents running commands here: use functions for repeated commands, and avoid globs that may match nothing, or the checks you think ran did not.
+
+### The file tool's escape problem came back, and the rule caught it
+
+1. **What happened.** Writing the export format module, a regex with `\u0300-\u036f` was saved as raw combining characters, as in the two entries below.
+2. **Cause.** The same tool behaviour.
+3. **Fix.** Checked straight after writing, as hard rule 17 asks, and replaced with the Unicode property escape `\p{M}`, which needs no escape codes.
+4. **Lesson.** Prefer `\p{...}` property escapes to `\u` ranges in regexes an agent writes, and keep checking new files for raw control or combining characters.
+
 ### The Windows smoke test passed, then failed deleting its own temporary folder
 
 1. **What happened.** On the first CI run, the Windows job passed the whole test suite and every smoke test check, then failed with `EPERM, Permission denied` on the temporary data folder.

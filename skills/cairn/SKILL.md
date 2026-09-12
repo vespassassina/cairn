@@ -13,7 +13,8 @@ description: >-
 
 `cairn` talks to the user's Cairn server over HTTP. Run `cairn --help` for every
 command. If it says it cannot reach Cairn, carry on without it, and mention that
-once only if it would have mattered.
+once only if it would have mattered. If it says to sign in, ask the user to run
+`cairn login` themselves: it opens their browser. Never ask for a token.
 
 ## Read before you answer
 

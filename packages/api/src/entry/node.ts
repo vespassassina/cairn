@@ -3,6 +3,7 @@ import { createAdaptorServer } from "@hono/node-server";
 import { createApp } from "../app.js";
 import { ConfigError, loadConfig } from "../config.js";
 import { createContext } from "../context.js";
+import { oauthFromConfig } from "../oauth/setup.js";
 
 /**
  * The Node entry point. The only file that knows about a listening socket.
@@ -32,10 +33,13 @@ function listen(server: Server, port: number, address: string): Promise<void> {
 async function main(): Promise<void> {
   const config = loadConfig();
   const context = await createContext(config);
+  const oauth = oauthFromConfig(config, context);
   const app = createApp({
     context,
     token: config.token,
     trust: { enabled: config.trustLocal, hosts: config.localHosts },
+    oauth,
+    publicOrigin: config.oauth ? new URL(config.oauth.publicUrl).origin : null,
   });
 
   const [primary, ...optional] = listenAddresses(config.host);
@@ -63,14 +67,18 @@ async function main(): Promise<void> {
     }
   }
 
-  const auth = config.trustLocal
-    ? `no sign-in for ${config.localHosts.join(", ")}` +
-      (config.token ? "; token for any other host name" : "")
-    : "token required";
+  const auth = [
+    config.trustLocal ? `no sign-in for ${config.localHosts.join(", ")}` : null,
+    config.oauth ? `OAuth via ${oauth!.providerName} for ${config.oauth.allowedUsers.join(", ")}` : null,
+    config.token ? "service token accepted" : null,
+  ]
+    .filter((part) => part !== null)
+    .join("; ");
+  const base = config.oauth ? config.oauth.publicUrl : `http://localhost:${config.port}`;
   process.stdout.write(
-    `cairn listening on http://localhost:${config.port}\n` +
-      `  console   http://localhost:${config.port}/\n` +
-      `  mcp       http://localhost:${config.port}/mcp\n` +
+    `cairn listening on port ${config.port}\n` +
+      `  console   ${base}/\n` +
+      `  mcp       ${base}/mcp\n` +
       `  bound     ${bound.join(", ")}\n` +
       `  auth      ${auth}\n` +
       `  database  ${config.database}\n` +

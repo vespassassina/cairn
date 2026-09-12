@@ -171,6 +171,17 @@ cairn overview
 
 `cairn -V` prints the version. `cairn overview` needs a running server; without one it says it cannot reach Cairn, which also proves the executable runs.
 
+## Your data: export and import
+
+```
+cairn export <folder>                   everything: pages as Markdown, collections as JSON
+cairn export <folder> --root <page-id>  one page and everything under it
+cairn import <folder> --dry-run         what an import would change
+cairn import <folder>                   read an export back in, keeping ids; safe to repeat
+```
+
+The format is in ADR-016. On Windows, give folders as you normally would, such as `cairn export C:\Users\you\cairn-backup`.
+
 ## Point it at your server
 
 By default `cairn` talks to `http://localhost:8787`, which is where `pnpm dev` runs Cairn. For another server, set `CAIRN_URL`, and `CAIRN_TOKEN` if that server needs one.
@@ -195,6 +206,20 @@ Windows, kept for new windows:
 ```
 
 Keep the token out of shell history and shared files where you can. A password manager's CLI, or your OS keychain, is a better home for it than a dotfile.
+
+### Signing in to a deployed Cairn
+
+A Cairn on Azure asks everyone to sign in (ADR-017). Instead of a token:
+
+```
+cairn login
+cairn whoami
+cairn logout
+```
+
+`cairn login` opens your browser, you sign in and approve the CLI, and it keeps the tokens for that server in `~/.config/cairn/credentials.json` (on Windows, `%APPDATA%\cairn\credentials.json`), readable only by you. They refresh by themselves. `cairn logout` revokes them on the server and forgets them. On a machine with no browser, it prints the address to open elsewhere.
+
+A local Cairn needs no sign-in at all.
 
 ## Teach Claude Code to use it
 

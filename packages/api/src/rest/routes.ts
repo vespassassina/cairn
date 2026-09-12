@@ -1,6 +1,6 @@
 import { Hono, type Context } from "hono";
 import { z } from "zod";
-import type { Actor, Page, Paged, Revision } from "@cairn/core";
+import { NotFoundError, type Actor, type Page, type Paged, type Revision } from "@cairn/core";
 import type { AppContext } from "../context.js";
 import {
   describeError,
@@ -21,12 +21,28 @@ import { workspaceSummary } from "../mcp/summary.js";
  * applied by the app before these routes run.
  */
 
-type ActorFor = (request: Request) => Actor;
+/** Who is calling: set by the app's auth check (ADR-013 rule 3, ADR-017). */
+type CallerFor = (request: Request) => { actor: Actor; via: string; identity: string | null };
 
 const MAX_LIMIT = 200;
 
 /** Characters for /overview. Larger than the initialize budget, still bounded. */
 const OVERVIEW_BUDGET = 4_000;
+
+/** Pages read for one export page of results. Personal scale (PRD goal 2). */
+const MAX_EXPORT_SCAN = 20_000;
+
+/** Offset cursors for export, which walks a list it builds itself. */
+function exportCursor(offset: number): string {
+  return Buffer.from(`x:${offset}`).toString("base64url");
+}
+
+function exportOffset(cursor: string | undefined): number {
+  if (!cursor) return 0;
+  const match = /^x:(\d+)$/.exec(Buffer.from(cursor, "base64url").toString());
+  if (!match) throw new BadRequest("That cursor is not from this export.", [{ field: "cursor", message: "invalid" }]);
+  return Number(match[1]);
+}
 
 const CHANGE_NOTE = z.string().max(500).optional();
 
@@ -60,6 +76,13 @@ const schemas = {
     change_note: CHANGE_NOTE,
   }),
   deleteBody: z.object({ change_note: CHANGE_NOTE }).default({}),
+  putPage: z.object({
+    title: z.string().min(1),
+    body: z.string().default(""),
+    parent_id: z.string().nullable().optional(),
+    tags: z.array(z.string()).default([]),
+    change_note: CHANGE_NOTE,
+  }),
   createCollection: z.object({
     name: z.string().min(1),
     fields: z
@@ -98,6 +121,9 @@ class BadRequest extends Error {
     super(message);
   }
 }
+
+/** A missing record named in a query string, worded like the domain's own. */
+class NotFound extends NotFoundError {}
 
 /** A write to an existing record that did not say which version it read. */
 class PreconditionRequired extends Error {}
@@ -210,11 +236,11 @@ function pageMarkdown(page: Page): string {
   ].join("\n");
 }
 
-export function restRoutes(context: AppContext, actorFor: ActorFor): Hono {
+export function restRoutes(context: AppContext, callerFor: CallerFor): Hono {
   const api = new Hono();
   const ws = context.workspaceId;
   const by = (c: Context, note: string | undefined) => ({
-    actor: actorFor(c.req.raw),
+    actor: callerFor(c.req.raw).actor,
     note: note ?? null,
   });
 
@@ -225,6 +251,18 @@ export function restRoutes(context: AppContext, actorFor: ActorFor): Hono {
 
   api.get("/overview", async (c) => {
     return c.json({ text: await workspaceSummary(context, OVERVIEW_BUDGET) });
+  });
+
+  // Who the server thinks you are, so a CLI or a deploy script can check its
+  // sign-in worked before it writes anything.
+  api.get("/me", (c) => {
+    const caller = callerFor(c.req.raw);
+    return c.json({
+      via: caller.via,
+      identity: caller.identity,
+      actor: { kind: caller.actor.kind, id: caller.actor.id, name: caller.actor.label },
+      workspace: ws,
+    });
   });
 
   // Search.
@@ -281,6 +319,22 @@ export function restRoutes(context: AppContext, actorFor: ActorFor): Hono {
       return c.body(pageMarkdown(page), 200, { "content-type": "text/markdown; charset=utf-8" });
     }
     return c.json({ ...pageSummary(page), body: page.body });
+  });
+
+  // Create or replace a whole page at a given id: the import path, which
+  // keeps ids so links survive (ADR-016). Without If-Match it only creates.
+  api.put("/pages/:id", async (c) => {
+    const version = ifMatch(c);
+    const input = await parseBody(c, schemas.putPage);
+    const page = await context.pages.update(
+      ws,
+      c.req.param("id"),
+      { title: input.title, body: input.body, parentId: input.parent_id ?? null, tags: input.tags },
+      version,
+      by(c, input.change_note),
+    );
+    c.header("ETag", etag(page.version));
+    return c.json(pageSummary(page), version === null ? 201 : 200);
   });
 
   api.patch("/pages/:id", async (c) => {
@@ -370,6 +424,32 @@ export function restRoutes(context: AppContext, actorFor: ActorFor): Hono {
     return c.json(
       { id: collection.id, name: collection.name, version: collection.version, fields: collection.fields },
       201,
+    );
+  });
+
+  // Create a collection at a given id, or change its schema with If-Match.
+  api.put("/collections/:cid", async (c) => {
+    const version = ifMatch(c);
+    const input = await parseBody(c, schemas.createCollection);
+    const collection = await context.collections.update(
+      ws,
+      c.req.param("cid"),
+      {
+        name: input.name,
+        fields: input.fields.map((field) => ({
+          name: field.name,
+          type: field.type,
+          ...(field.required === undefined ? {} : { required: field.required }),
+          ...(field.options === undefined ? {} : { options: field.options }),
+        })),
+      },
+      version,
+      by(c, undefined),
+    );
+    c.header("ETag", etag(collection.version));
+    return c.json(
+      { id: collection.id, name: collection.name, version: collection.version, fields: collection.fields },
+      version === null ? 201 : 200,
     );
   });
 
@@ -472,6 +552,56 @@ export function restRoutes(context: AppContext, actorFor: ActorFor): Hono {
       ...revisionSummary(view.revision),
       values: view.snapshot.values,
       diff: renderDiff(view.diff),
+    });
+  });
+
+  // Export (ADR-016): whole pages, parents before children, so an import can
+  // write them in the order given. `root` limits it to one page and
+  // everything under it.
+
+  api.get("/export/pages", async (c) => {
+    const root = c.req.query("root");
+    const limit = limitParam(c, 100);
+    const offset = exportOffset(c.req.query("cursor"));
+
+    const all: Page[] = [];
+    let cursor: string | null = null;
+    do {
+      const batch: Paged<Page> = await context.store.listPages(ws, { limit: 500, cursor });
+      all.push(...batch.items);
+      cursor = batch.cursor;
+    } while (cursor !== null && all.length < MAX_EXPORT_SCAN);
+
+    const children = new Map<string | null, Page[]>();
+    const ids = new Set(all.map((page) => page.id));
+    for (const page of all) {
+      // A page whose parent is gone is treated as top-level, not lost.
+      const parent = page.parentId !== null && ids.has(page.parentId) ? page.parentId : null;
+      children.set(parent, [...(children.get(parent) ?? []), page]);
+    }
+    for (const list of children.values()) list.sort((a, b) => a.title.localeCompare(b.title) || a.id.localeCompare(b.id));
+
+    const ordered: Page[] = [];
+    const visit = (page: Page, depth: number) => {
+      if (depth > 64) return; // A cycle in bad data must not hang the export.
+      ordered.push(page);
+      for (const child of children.get(page.id) ?? []) visit(child, depth + 1);
+    };
+    if (root !== undefined) {
+      const start = all.find((page) => page.id === root);
+      if (!start) throw new NotFound("page", root);
+      visit(start, 0);
+    } else {
+      for (const top of children.get(null) ?? []) visit(top, 0);
+    }
+
+    const slice = ordered.slice(offset, offset + limit);
+    const next = offset + limit < ordered.length ? exportCursor(offset + limit) : null;
+    return c.json({
+      root: root ?? null,
+      total: ordered.length,
+      pages: slice.map((page) => ({ ...pageSummary(page), body: page.body, created_at: page.createdAt })),
+      cursor: next,
     });
   });
 

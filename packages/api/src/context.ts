@@ -1,6 +1,6 @@
 import { CollectionService, PageService } from "@cairn/core";
-import type { Actor, DocumentStore, SearchIndex } from "@cairn/core";
-import { SqliteDocumentStore, SqliteSearchIndex } from "@cairn/adapter-sqlite";
+import type { Actor, AuthStore, DocumentStore, SearchIndex } from "@cairn/core";
+import { SqliteAuthStore, SqliteDocumentStore, SqliteSearchIndex } from "@cairn/adapter-sqlite";
 import type { Config } from "./config.js";
 
 /**
@@ -15,6 +15,8 @@ export interface AppContext {
   search: SearchIndex;
   pages: PageService;
   collections: CollectionService;
+  /** OAuth clients, codes and refresh tokens, apart from content (ADR-017). */
+  auth: AuthStore;
   workspaceId: string;
 }
 
@@ -35,19 +37,23 @@ export async function createContext(
   // Both adapters open the same file. WAL mode lets them share it.
   const store = new SqliteDocumentStore({ location: config.database });
   const search = new SqliteSearchIndex({ location: config.database });
+  const auth = new SqliteAuthStore({ location: config.database });
   await store.init();
   await search.init();
+  await auth.init();
 
   return {
     store,
     search,
     pages: new PageService(store, search),
     collections: new CollectionService(store),
+    auth,
     workspaceId: config.workspaceId,
   };
 }
 
 export async function closeContext(context: AppContext): Promise<void> {
+  await context.auth.close();
   await context.search.close();
   await context.store.close();
 }

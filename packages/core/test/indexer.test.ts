@@ -97,6 +97,19 @@ describe("chunkPage", () => {
     expect(chunks[1]!.text).toBe("bed adhesion");
   });
 
+  it("keeps sibling sections side by side when the page starts below H1", () => {
+    const chunks = chunkPage(
+      page("tagline\n\n## Status\n\nresearch only\n\n## Origin\n\ngastric\n\n### Detail\n\nfragment\n\n## Stacks\n\nwolverine"),
+    );
+    expect(chunks.map((c) => c.headingPath)).toEqual([
+      ["Self"],
+      ["Self", "Status"],
+      ["Self", "Origin"],
+      ["Self", "Origin", "Detail"],
+      ["Self", "Stacks"],
+    ]);
+  });
+
   it("does not repeat the title when the body opens with a matching H1", () => {
     const chunks = chunkPage(
       page("# Self\n\nintro\n\n## Detail\n\nmore", { title: "Self" }),

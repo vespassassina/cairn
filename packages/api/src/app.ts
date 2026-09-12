@@ -8,7 +8,9 @@ import { cachedInstructions } from "./mcp/summary.js";
 import { registerTools } from "./mcp/tools.js";
 import { restRoutes } from "./rest/routes.js";
 import { NO_LOCAL_TRUST, trustedForMcp, type LocalTrust } from "./trust.js";
+import type { OAuthServer } from "./oauth/server.js";
 import { registerConsole } from "./web/console.js";
+import { SESSION_COOKIE } from "./web/session.js";
 
 /**
  * The Hono app. Handlers use web standard Request and Response only, so the
@@ -25,6 +27,18 @@ export interface AppOptions {
   token: string | null;
   /** Skip the token for trusted local requests (ADR-010). Off unless given. */
   trust?: LocalTrust;
+  /** OAuth sign-in and token checks (ADR-017). Null or absent: not configured. */
+  oauth?: OAuthServer | null;
+  /** The origin people use, when it differs from what the server sees (a TLS proxy). */
+  publicOrigin?: string | null;
+}
+
+/** How a request got in, for attribution and for GET /api/v1/me. */
+export interface Caller {
+  actor: Actor;
+  via: "local" | "token" | "oauth";
+  /** The signed-in person, for OAuth: `github:<login>` and the like. */
+  identity: string | null;
 }
 
 const SERVER_INFO = { name: "cairn", version: "0.1.0" };
@@ -39,6 +53,7 @@ const SERVER_INFO = { name: "cairn", version: "0.1.0" };
 async function handleMcpRequest(
   request: Request,
   context: AppContext,
+  actor: Actor,
 ): Promise<Response> {
   // Instructions are only sent in the initialize result, so the live summary
   // of the workspace (ADR-012) is built for that request and no other.
@@ -46,7 +61,7 @@ async function handleMcpRequest(
     ? await cachedInstructions(context)
     : SERVER_INSTRUCTIONS;
   const server = new McpServer(SERVER_INFO, { instructions });
-  registerTools(server, context, agentActor(request, "mcp"));
+  registerTools(server, context, actor);
 
   // No sessionIdGenerator means stateless: no session to track, and no
   // server-initiated messages. enableJsonResponse returns one JSON body
@@ -111,6 +126,7 @@ export function createApp(options: AppOptions): Hono {
       server: SERVER_INFO,
       workspace: options.context.workspaceId,
       local_trust: trust.enabled,
+      oauth: oauth ? { issuer: oauth.issuer, provider: oauth.providerName } : null,
       adapters: {
         store: options.context.store.constructor.name,
         search: options.context.search.constructor.name,
@@ -122,34 +138,73 @@ export function createApp(options: AppOptions): Hono {
 
   const trust = options.trust ?? NO_LOCAL_TRUST;
 
+  const oauth = options.oauth ?? null;
+  // Who each request is, set by the check below and read by the handlers.
+  const callers = new WeakMap<Request, Caller>();
+  const callerOf = (request: Request, surface: "mcp" | "api"): Caller =>
+    callers.get(request) ?? { actor: agentActor(request, surface), via: "local", identity: null };
+
   // MCP and REST are both agent doors, so one check guards both (ADR-013).
+  // In order: a trusted local request, the static service token, an OAuth
+  // access token.
   const agentAuth: MiddlewareHandler = async (c, next) => {
+    const surface = c.req.path.startsWith("/mcp") ? "mcp" : "api";
     if (trustedForMcp(c.req.raw, trust)) return next();
     const header = c.req.header("authorization") ?? "";
-    const token = header.startsWith("Bearer ") ? header.slice(7) : "";
-    if (options.token === null || !timingSafeEqual(token, options.token)) {
-      return c.json(
-        {
-          error: "unauthorized",
-          message:
-            options.token === null
-              ? "This server only accepts local requests, and this one is not trusted as local."
-              : "Send the dev token as a Bearer token.",
-        },
-        401,
+    const token = header.startsWith("Bearer ") ? header.slice(7).trim() : "";
+    if (token !== "" && options.token !== null && timingSafeEqual(token, options.token)) {
+      callers.set(c.req.raw, { actor: agentActor(c.req.raw, surface), via: "token", identity: null });
+      return next();
+    }
+    if (token !== "" && oauth) {
+      const verified = await oauth.verifyAccessToken(token);
+      if (verified) {
+        callers.set(c.req.raw, { actor: verified.actor, via: "oauth", identity: verified.identity });
+        return next();
+      }
+    }
+    if (oauth) {
+      // RFC 9728: tell the client where to get a token (MCP authorization spec).
+      const metadata = oauth.resourceMetadataUrl(surface === "mcp" ? "/mcp" : "/api/v1");
+      c.header(
+        "www-authenticate",
+        `Bearer resource_metadata="${metadata}"${token !== "" ? ', error="invalid_token"' : ""}`,
       );
     }
-    await next();
+    return c.json(
+      {
+        error: "unauthorized",
+        message: oauth
+          ? "Sign in: this server uses OAuth. MCP clients do it themselves; for the CLI run cairn login."
+          : options.token === null
+            ? "This server only accepts local requests, and this one is not trusted as local."
+            : "Send the dev token as a Bearer token.",
+      },
+      401,
+    );
   };
   app.use("/mcp", agentAuth);
   app.use("/api/*", agentAuth);
 
-  app.all("/mcp", (c) => handleMcpRequest(c.req.raw, options.context));
-  app.route("/api/v1", restRoutes(options.context, (request) => agentActor(request, "api")));
+  if (oauth) {
+    oauth.register(app, {
+      secureCookies: options.publicOrigin?.startsWith("https:") ?? false,
+      sessionCookie: SESSION_COOKIE,
+    });
+  }
+
+  app.all("/mcp", (c) => handleMcpRequest(c.req.raw, options.context, callerOf(c.req.raw, "mcp").actor));
+  app.route("/api/v1", restRoutes(options.context, (request) => callerOf(request, "api")));
 
   // The review console (ADR-009). Registered after MCP so its sign-in never
   // stands in front of the MCP bearer check.
-  registerConsole(app, { context: options.context, token: options.token, trust });
+  registerConsole(app, {
+    context: options.context,
+    token: options.token,
+    trust,
+    oauth,
+    publicOrigin: options.publicOrigin ?? null,
+  });
 
   return app;
 }

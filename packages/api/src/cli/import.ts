@@ -1,6 +1,6 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import { basename, extname, join, relative, sep } from "node:path";
-import { ConfigError, loadConfig } from "../config.js";
+import { ConfigError, loadConfig, userPath } from "../config.js";
 import { closeContext, createContext, ownerVia, type AppContext } from "../context.js";
 
 /**
@@ -126,9 +126,9 @@ export async function importFolder(
 }
 
 async function main(): Promise<void> {
-  const folder = process.argv[2];
+  const folder = process.argv[2] ? userPath(process.argv[2]) : undefined;
   if (!folder) {
-    process.stderr.write("usage: pnpm import <folder-of-markdown>\n");
+    process.stderr.write("usage: pnpm import:markdown <folder-of-markdown>\n");
     process.exit(2);
   }
   const info = await stat(folder).catch(() => null);

@@ -16,8 +16,8 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "dev": "tsx src/entry/node.ts",
-    "import": "tsx src/cli/import.ts",
-    "rebuild": "tsx src/cli/rebuild.ts",
+    "import:markdown": "tsx src/cli/import.ts",
+    "reindex": "tsx src/cli/rebuild.ts",
     "eval": "tsx src/cli/eval.ts",
     "context-cost": "tsx src/cli/context-cost.ts"
   },

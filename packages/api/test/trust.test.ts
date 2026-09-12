@@ -206,7 +206,68 @@ describe("configuration", () => {
     );
   });
 
-  it("still refuses to bind anywhere but loopback", () => {
-    expect(() => loadConfig({ CAIRN_HOST: "0.0.0.0" }, null)).toThrow(/loopback only/);
+  it("refuses to listen beyond loopback without OAuth", () => {
+    expect(() => loadConfig({ CAIRN_HOST: "0.0.0.0" }, null)).toThrow(/without OAuth/);
+  });
+});
+
+describe("public mode with OAuth (ADR-017)", () => {
+  const OAUTH = {
+    CAIRN_HOST: "0.0.0.0",
+    CAIRN_PUBLIC_URL: "https://cairn.example.com/",
+    CAIRN_AUTH_PROVIDER: "github",
+    CAIRN_AUTH_SECRET: "s".repeat(32),
+    CAIRN_OAUTH_CLIENT_ID: "Iv1.abc",
+    CAIRN_OAUTH_CLIENT_SECRET: "shh",
+    CAIRN_ALLOWED_USERS: "github:Vespassassina, email:me@example.com",
+  };
+
+  it("listens publicly with OAuth, and turns local trust off whatever the settings say", () => {
+    const config = loadConfig({ ...OAUTH, CAIRN_TRUST_LOCAL: "1" }, null);
+    expect(config.host).toBe("0.0.0.0");
+    expect(config.trustLocal).toBe(false);
+    expect(config.oauth).toMatchObject({
+      publicUrl: "https://cairn.example.com",
+      provider: { kind: "github", clientId: "Iv1.abc" },
+      allowedUsers: ["github:vespassassina", "email:me@example.com"],
+    });
+  });
+
+  it("names everything missing from a partial OAuth setup", () => {
+    expect(() => loadConfig({ CAIRN_PUBLIC_URL: "https://cairn.example.com" }, null)).toThrow(
+      /CAIRN_AUTH_PROVIDER.*CAIRN_AUTH_SECRET.*CAIRN_OAUTH_CLIENT_ID.*CAIRN_OAUTH_CLIENT_SECRET.*CAIRN_ALLOWED_USERS/,
+    );
+  });
+
+  it("refuses a short secret, a plain http public URL, and a malformed allowlist", () => {
+    expect(() => loadConfig({ ...OAUTH, CAIRN_AUTH_SECRET: "short" }, null)).toThrow(/at least 32/);
+    expect(() => loadConfig({ ...OAUTH, CAIRN_PUBLIC_URL: "http://cairn.example.com" }, null)).toThrow(/must be https/);
+    expect(() => loadConfig({ ...OAUTH, CAIRN_ALLOWED_USERS: "vespassassina" }, null)).toThrow(/github:yourlogin/);
+    expect(() => loadConfig({ ...OAUTH, CAIRN_TOKEN: "x".repeat(20) }, null)).toThrow(/at least 32/);
+  });
+
+  it("allows http://localhost as the public URL for trying OAuth on one machine", () => {
+    const config = loadConfig({ ...OAUTH, CAIRN_HOST: "127.0.0.1", CAIRN_PUBLIC_URL: "http://localhost:8787" }, null);
+    expect(config.oauth?.publicUrl).toBe("http://localhost:8787");
+  });
+
+  it("keeps secrets out of the config file: only the environment sets them", () => {
+    const path = join(mkdtempSync(join(tmpdir(), "cairn-oauth-")), "cairn.config.json");
+    writeFileSync(
+      path,
+      JSON.stringify({
+        auth: {
+          oauth: {
+            publicUrl: "https://cairn.example.com",
+            provider: "github",
+            allowedUsers: ["github:owner"],
+            clientSecret: "written-in-the-file-by-mistake",
+          },
+        },
+      }),
+    );
+    expect(() => loadConfig({ CAIRN_OAUTH_CLIENT_ID: "Iv1.abc" }, path)).toThrow(
+      /CAIRN_AUTH_SECRET, CAIRN_OAUTH_CLIENT_SECRET/,
+    );
   });
 });

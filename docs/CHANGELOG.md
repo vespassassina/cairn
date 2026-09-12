@@ -6,6 +6,64 @@ Entries link to the ADR when there is one. A change of direction that has no ADR
 
 ## 2026-09-12
 
+### Decision: installation is written for agents first (ADR-019)
+
+`docs/AGENT-INSTALL.md` is a script for a coding agent: ask where Cairn should run, check prerequisites, run and check each step, hand over. Credentials stay with the person: they sign in to Azure and create the OAuth app themselves, and paste the client secret into the deploy script's private settings file, which the agent is told never to read. `AGENTS.md` and the top of CLAUDE.md point agents at it, and the README leads with "clone it and ask your agent".
+
+Why: the owner expects most people to install Cairn this way.
+
+### Decision: Azure runs Cairn as one container with Litestream (ADR-018)
+
+Container Apps on the consumption plan, scaled to zero, one replica at most. The database stays on the container's disk and Litestream streams it to Blob Storage, restoring on start, through the app's managed identity, so no storage key exists anywhere. No Log Analytics. `deploy/azure/main.bicep` and `deploy.sh` do it in two passes, because the OAuth app needs the address the first pass reveals. `docs/DEPLOY-AZURE.md` is the guide.
+
+Why: the owner asked for Azure deployment now. The PRD's Functions and Cosmos path needs an adapter and a spike that are not done; the container path works today inside the free grants and leaves that path open.
+
+Checked: CI compiles the template, lints the scripts, and builds and starts the image. Not yet checked: a real deployment.
+
+### Added: the server image and a bundled server
+
+`pnpm build:server` bundles the server with esbuild into one 2 MB file that runs with nothing but Node; checked from a folder with no config and no `node_modules`. The `Dockerfile` adds Node and Litestream v0.5.7, pinned by checksum. CI publishes it to `ghcr.io/vespassassina/cairn` for amd64 and arm64: `edge` from `main`, versions and `latest` from tags.
+
+### Decision: the OAuth server as built (ADR-017)
+
+A small OAuth 2.1 server: discovery (RFC 8414, RFC 9728), dynamic client registration, authorization code with PKCE, a consent page, single-use rotating refresh tokens with reuse detection, revocation. Sign-in through GitHub or any OpenID Connect provider, against an allowlist. Access tokens are HS256 JWTs checked locally. Auth records live in a new `AuthStore` port with a conformance suite, apart from content. The console signs people in through the same provider and attributes their writes to them. `cairn login`, `whoami` and `logout` sign the CLI in through the browser.
+
+It amends ADR-007 in five places, each with its reason in ADR-017. The largest: a consent page, because dynamic registration plus a provider that approves silently would otherwise let another site obtain a token for the owner's Cairn.
+
+Public mode: a non-loopback bind now starts, but only with OAuth fully configured, and it forces local trust off, because there the Host header is attacker-controlled. A partial OAuth setup is a startup error that names every missing setting. Secrets come only from the environment.
+
+Checked: 18 end-to-end tests of the flow and its attacks with a stand-in provider, 5 of `cairn login` through a real loopback listener, 6 of the configuration rules, and a live run of the real entry point with GitHub settings showing the metadata, the sign-in button and the redirect to GitHub. Not yet checked: a sign-in against real GitHub, and a claude.ai connector.
+
+### Fixed: console form checks and cookies behind a TLS proxy
+
+Behind Azure's ingress the server sees plain HTTP, so comparing a form's Origin with the request's own URL would have refused every console form in the cloud. With a public URL configured, the check and the cookies' Secure flag use it instead. Found while reading the code for OAuth, before it failed anywhere.
+
+### Decision: export is Markdown and JSON that imports back without loss (ADR-016)
+
+`cairn export <folder>` writes pages as Markdown with a small front matter, in folders that mirror the page tree, collections as JSON, and a manifest; `--root` exports one page and everything under it. `cairn import` reads it back keeping every id, compares before writing, and changes nothing on a second run; `--dry-run` shows the plan. REST gained `GET /api/v1/export/pages` and `PUT` for pages and collections at a given id.
+
+Why: the owner asked for data owned by its users and reprocessable, whole or by root. Checked on the peptide wiki: exported, imported into an empty database, exported again, and the two exports were identical.
+
+### Changed: the peptide wiki seed follows the updated wiki
+
+The wiki grew to 79 peptides, 8 categories, and a new stacks file, with citations and mixing notes per peptide. The seed now writes a Stacks page with a page per stack, links stack components and mixing notes, lists citations, and fills a second collection, Stacks. Reseeded in place: 63 pages created, 33 updated, 96 in all, every change a revision.
+
+### Added: fourteen eval queries, and a first recall number
+
+q03 to q16, written from the wiki and each checked against its text: brand names, aliases, nicknames, descriptions and sentence-shaped questions. recall@5 is 1.00 on all fourteen, eleven at rank 1. Caveat: they were written by the agent that knows the content, so they are easier than real searches; q17 to q30 are left for the owner. The eval also shows the known weakness: q01 and q02, about content Cairn does not hold, return four or five unrelated pages instead of nothing.
+
+### Fixed: heading paths nested sibling sections
+
+A page starting at level 2 recorded "Status > Origin" for two sibling sections, because the chunker cut the path by heading depth. It now keeps a stack of open headings. Every search result showed the wrong path; found on the reseeded wiki.
+
+### Fixed: `pnpm import` and `pnpm rebuild` ran pnpm's own commands
+
+Both names are pnpm built-ins, which win over package scripts, so the documented commands never ran Cairn's. They are now `pnpm import:markdown` and `pnpm reindex`. The docs were wrong since the PoC.
+
+### Fixed: `pnpm eval` and `import:markdown` looked for paths in the wrong folder
+
+pnpm runs package scripts from the package folder, so `eval/queries.yaml` and relative folders were looked for under `packages/api`. The eval file now resolves next to `cairn.config.json`, and paths you type resolve against the folder you typed them in.
+
 ### Finding: the first CI run, on every OS
 
 The test suite passed on Linux x64, Linux Arm, macOS and Windows on the first run, with no Windows-specific failures. Every CLI executable passed its smoke test on its own OS. The one failure was the smoke script deleting its temporary folder before the server had exited, which Windows does not allow; the script now waits and retries. `docs/CLI.md` now says what has been tested where.

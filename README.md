@@ -12,61 +12,76 @@ Three doors for agents, over one core:
 | MCP | claude.ai, Claude Desktop, Cowork | about 2,700 tokens |
 | REST at `/api/v1` | scripts, cron jobs, other agents | none |
 
-Characters measured with `pnpm context-cost` on a 33-page wiki, tokens estimated at four characters each.
+Characters measured with `pnpm context-cost` on a 96-page wiki, tokens estimated at four characters each.
 
-Status: early and working locally. MCP, REST, the CLI and the review console run on your machine today; the cloud deployments and OAuth are not built yet. See `docs/ROADMAP.md`.
+Status: early, and working. It runs on your machine, with the console, MCP, REST and the CLI, and deploys to Azure with sign-in through GitHub or any OpenID Connect provider. See `docs/ROADMAP.md`.
 
 Source: https://github.com/vespassassina/cairn
 
-## Start here
+## Install
 
-1. Read `docs/README.md` for a map of the docs, then `docs/PRD.md` and `docs/decisions/`
-2. Open this folder in Claude Code; it picks up `CLAUDE.md`
-3. Fill `eval/queries.yaml` with 30 real queries before any search work
+### The easy way: let your agent do it
 
-## Run it locally
+Most people will. Clone the repository, open it in Claude Code (or Codex, Cursor and so on), and say:
 
-See `docs/LOCAL.md`. Short version, with Node 22 or later:
+> Install Cairn for me.
+
+The agent follows `docs/AGENT-INSTALL.md`. It asks whether Cairn should run on your computer or on Azure. It tells you exactly what to click where a person has to act, such as signing in to Azure or creating a GitHub OAuth app, and it keeps your secrets out of the chat.
 
 ```
-corepack enable && pnpm install
-pnpm import ~/notes
+git clone https://github.com/vespassassina/cairn.git
+cd cairn
+claude
+```
+
+### On your computer, by hand
+
+Node 22 or later. Five commands, and `docs/LOCAL.md` has the detail:
+
+```
+corepack enable
+pnpm install
+pnpm import:markdown ~/notes
 pnpm dev
-```
-
-Open http://localhost:8787 for the review console, and point Claude Code at it:
-
-```
 claude mcp add --transport http --scope user cairn http://localhost:8787/mcp
 ```
 
-No token on localhost (ADR-010). Settings are in `cairn.config.json`. Start a new Claude session after adding it: sessions load MCP servers when they start. Cairn tells Claude when to use it (ADR-011).
+The third line is optional: it brings in a folder of Markdown. Open http://localhost:8787 for the review console. No sign-in on your own machine (ADR-010). Start a new Claude session after adding the server.
 
-Or, for Claude Code, use the CLI and skill instead. It runs on Windows, macOS and Linux, as a single downloadable file or through npm; `docs/CLI.md` has the steps for each. From this repository, with Node:
+For Claude Code, the `cairn` command with its skill costs less context than MCP. It runs on Windows, macOS and Linux; `docs/CLI.md` has the steps.
+
+### On Azure
+
+Reachable from anywhere, including Claude on the web and your phone, within Azure's free grants. `docs/DEPLOY-AZURE.md` walks through it; the short version is two runs of one script with an OAuth app created in between:
 
 ```
-pnpm build && npm install -g ./packages/cli
-cp -r skills/cairn ~/.claude/skills/
-cairn overview
+az login
+deploy/azure/deploy.sh
 ```
 
-`pnpm build:cli` builds standalone executables for all five platforms into `dist/cli/`.
+## Your data
+
+`cairn export <folder>` writes every page as a Markdown file, in folders that mirror your page tree, and every collection as JSON. It needs no Cairn to read. `cairn import <folder>` reads it back into any Cairn, keeping ids and links, and running it twice changes nothing. Export everything, or one page and everything under it with `--root` (ADR-016).
 
 ## What exists
 
-1. `packages/core`. Domain logic and the two adapter interfaces, plus the
-   conformance suites every adapter runs. No cloud dependencies.
+1. `packages/core`. Domain logic, the adapter interfaces (documents, search,
+   auth records), and the conformance suites every adapter runs. No cloud
+   dependencies.
 2. `packages/adapter-sqlite`. The reference adapter, on Node's built-in
    `node:sqlite`. FTS5 gives keyword search with no native dependency.
-3. `packages/api`. Hono app, the MCP server over stateless streamable HTTP,
-   the review console, no sign-in on localhost (ADR-010), server
-   instructions that tell Claude when to use Cairn (ADR-011), the REST API
-   and changes feed (ADR-013), and the import, rebuild and eval commands.
-4. `packages/cli`. The `cairn` command, and `skills/cairn`, the skill that
-   teaches a coding agent to use it.
+3. `packages/api`. The Hono app: MCP over stateless streamable HTTP, the REST
+   API and changes feed (ADR-013), the review console, the OAuth server
+   (ADR-017), and the `import:markdown`, `reindex`, `eval` and `context-cost`
+   commands.
+4. `packages/cli`. The `cairn` command, with export and import (ADR-016) and
+   `cairn login`, and `skills/cairn`, the skill that teaches a coding agent to
+   use it.
+5. `Dockerfile`, `docker/` and `deploy/azure/`. The server image and the Azure
+   deployment (ADR-018).
 
-Not yet: OAuth, the Cosmos and DynamoDB adapters, the web editor, embeddings,
-attachments and export.
+Not yet: the Cosmos and DynamoDB adapters, AWS, the web editor, embeddings,
+attachments, and exporting history.
 
 ## Licence
 

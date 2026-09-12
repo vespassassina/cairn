@@ -2,6 +2,10 @@
 
 Project context for Claude Code. Read this first, then `docs/PRD.md`.
 
+## Asked to install or deploy Cairn?
+
+Follow `docs/AGENT-INSTALL.md` instead of the rest of this file. Ask the person where it should run before doing anything, keep their credentials out of the chat, and never read `deploy/azure/.cairn-deploy.env` (ADR-019). The rest of this file is for working on Cairn's code.
+
 ## What this is
 
 Cairn (working name): a source-available, self-hosted document and collection store where Claude is the primary client through MCP. Web editor comes second. Runs on Azure or AWS free tier, or as a single container.
@@ -55,8 +59,10 @@ packages/
   indexer/       link extraction, chunking, optional embeddings
   web/           (Phase 2)
 deploy/
-  azure/         Bicep
+  azure/         Bicep template and deploy.sh (ADR-018)
   aws/           (P1)
+docker/          the container's start script (Litestream, ADR-018)
+Dockerfile       the server image, published to ghcr.io by CI
 skills/
   cairn/         the skill file that tells a coding agent how to use the CLI
 scripts/         artifactkit sync, CLI build (build-cli.mjs) and smoke test
@@ -86,8 +92,10 @@ docs/
 13. Route handlers use web standard `Request` and `Response`. Platform-specific code lives only in `api/src/entry/*` (ADR-006).
 14. MCP, REST and the CLI translate; they never decide (ADR-013). Logic two surfaces need, such as edit modes and error mapping, lives in `api/src/operations.ts`. A capability added to one surface is added to the others, or the ADR says why not.
 15. The CLI talks HTTP only. It never opens the database.
-16. The CLI runs on Node from npm and on Bun as a compiled executable (ADR-014). Its code uses only `fetch`, `node:util` `parseArgs`, `node:fs/promises` and `process`. Anything else needs checking on both, and `pnpm smoke:cli` must pass.
+16. The CLI runs on Node from npm and on Bun as a compiled executable (ADR-014). Its code uses only `fetch`, Web Crypto, `node:util` `parseArgs`, `node:fs/promises`, `node:path`, `node:os`, `node:http` (the `cairn login` listener), `node:child_process` (opening the browser) and `process`. Anything else needs checking on both, and `pnpm smoke:cli` must pass.
 17. Never put a raw control character in a source file. Write separators and escapes so the file stays plain text (see `docs/LESSONS.md`).
+18. Secrets come only from the environment, never from `cairn.config.json` or any tracked file. On a non-loopback bind, local trust is always off and OAuth is required (ADR-017).
+19. An install or deploy step changes in the person's guide and in `docs/AGENT-INSTALL.md` in the same commit (ADR-019).
 
 ## Verification before calling a task done
 

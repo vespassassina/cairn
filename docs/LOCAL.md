@@ -43,7 +43,7 @@ Search quality only means something against real pages. Point the import at a
 folder of Markdown: one page per file, folders becoming the page hierarchy.
 
 ```
-pnpm import ~/notes
+pnpm import:markdown ~/notes
 ```
 
 Re-running it updates the same pages rather than duplicating them, because the
@@ -118,21 +118,40 @@ The same operations are on the REST API at `/api/v1`, with version tokens as `ET
 
 Open http://localhost:8787. There is no sign-in on localhost. The home page lists recent changes, newest first; "Agents only" shows what Claude wrote. Every page has Edit and History, and any version can be restored.
 
+## 7. Export and import
+
+Your data leaves easily (ADR-016):
+
+```
+cairn export ~/cairn-backup
+cairn export ~/stacks --root pg_stacks
+cairn import ~/cairn-backup --dry-run
+cairn import ~/cairn-backup
+```
+
+An export is Markdown files in folders that mirror your page tree, plus one JSON file per collection, readable without Cairn. Importing keeps ids, so links still work, and running it again changes nothing. Use it to back up, to move to another machine or to Azure, or to edit offline and bring the changes back.
+
 ## Other commands
 
 ```
-pnpm rebuild   regenerate every edge and chunk, and sweep stray revisions
+pnpm reindex   regenerate every edge and chunk, and sweep stray revisions
+               (not `pnpm rebuild`: that is pnpm's own command, see docs/LESSONS.md)
 pnpm eval      run eval/queries.yaml and report recall@5
 pnpm test      unit, conformance, MCP, REST, CLI and console contract tests
 pnpm cairn     run the CLI from the repo, for example: pnpm cairn search firmware
 pnpm context-cost   what MCP and the CLI cost an agent's context, per session
 pnpm build:cli      standalone CLI executables for every OS, into dist/cli (docs/CLI.md)
+pnpm build:server   the server bundled into one file, dist/server/server.mjs, as the container runs it
 pnpm smoke:cli      run a built executable against a real server
 pnpm sync:artifactkit   re-embed artifactkit after changing it, then commit
 ```
 
-Run `pnpm rebuild` after changing chunking, and `pnpm eval` before and after
+Run `pnpm reindex` after changing chunking, and `pnpm eval` before and after
 any search change (CLAUDE.md hard rule 7).
+
+## Going online
+
+To reach Cairn from anywhere, including Claude on the web, deploy it to Azure with sign-in: `docs/DEPLOY-AZURE.md`. Or ask your agent, which follows `docs/AGENT-INSTALL.md`.
 
 ## What is not here yet
 

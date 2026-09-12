@@ -5,10 +5,15 @@ import { dirname, join, resolve } from "node:path";
  * Configuration, read once at startup from the environment and an optional
  * `cairn.config.json`.
  *
- * Dev mode is loopback only (PRD section 7), enforced at startup rather than
- * documented and hoped for. On loopback, requests addressed to a trusted local
- * host name need no token at all (ADR-010). The token is then only needed for
- * host names outside that list.
+ * Two modes, decided at startup rather than documented and hoped for:
+ *
+ * 1. Local: bound to loopback. Requests addressed to a trusted local host name
+ *    need no token (ADR-010).
+ * 2. Public: bound to any other address, such as 0.0.0.0 in a container. Only
+ *    allowed with OAuth configured (ADR-017). Local trust is forced off,
+ *    because on a public server the Host header is whatever a caller sends.
+ *
+ * Secrets come only from the environment, never from the committed file.
  */
 
 export interface Config {
@@ -29,6 +34,22 @@ export interface Config {
   localHosts: string[];
   /** Where the config file was found, for the startup banner. Null if none. */
   configFile: string | null;
+  /** OAuth sign-in (ADR-017), or null when not configured. */
+  oauth: OAuthConfig | null;
+}
+
+export type ProviderConfig =
+  | { kind: "github"; clientId: string; clientSecret: string }
+  | { kind: "oidc"; issuer: string; clientId: string; clientSecret: string; name?: string };
+
+export interface OAuthConfig {
+  /** The address people and clients reach Cairn at, without a trailing slash. */
+  publicUrl: string;
+  /** Signing secrets, the current one first; a second one covers a rotation. */
+  secrets: string[];
+  provider: ProviderConfig;
+  /** `github:<login>`, `oidc:<sub>` or `email:<address>`, lower case. */
+  allowedUsers: string[];
 }
 
 /** The shape of `cairn.config.json`. Every key is optional. */
@@ -41,6 +62,14 @@ export interface ConfigFile {
     trustLocal?: boolean;
     /** Extra host names to trust, such as a name in /etc/hosts. */
     localHosts?: string[];
+    /** OAuth settings that are not secret. Secrets only come from the environment. */
+    oauth?: {
+      publicUrl?: string;
+      provider?: "github" | "oidc";
+      issuer?: string;
+      providerName?: string;
+      allowedUsers?: string[];
+    };
   };
 }
 
@@ -58,6 +87,15 @@ export class ConfigError extends Error {}
  * The nearest `cairn.config.json` at or above `start`, so it is found whether
  * the server is started from the repo root or from a package folder.
  */
+/**
+ * A path the user typed, resolved against the folder they typed it in. pnpm
+ * runs package scripts from the package's own folder and records the
+ * original one in INIT_CWD, so a plain resolve() would look in packages/api.
+ */
+export function userPath(path: string, env: NodeJS.ProcessEnv = process.env): string {
+  return resolve(env["INIT_CWD"] ?? process.cwd(), path);
+}
+
 export function findConfigFile(start: string = process.cwd()): string | null {
   let dir = resolve(start);
   for (;;) {
@@ -85,6 +123,72 @@ function parseBoolean(value: string | undefined): boolean | undefined {
   return !/^(0|false|no|off)$/i.test(value);
 }
 
+const MIN_SECRET = 32;
+
+function loadOAuth(env: NodeJS.ProcessEnv, file: ConfigFile, hostIsLoopback: boolean): OAuthConfig | null {
+  const fromFile = file.auth?.oauth ?? {};
+  const publicUrl = (env["CAIRN_PUBLIC_URL"] ?? fromFile.publicUrl ?? "").trim().replace(/\/+$/, "");
+  const provider = (env["CAIRN_AUTH_PROVIDER"] ?? fromFile.provider ?? "").trim().toLowerCase();
+  const secret = env["CAIRN_AUTH_SECRET"] ?? "";
+  const clientId = env["CAIRN_OAUTH_CLIENT_ID"] ?? "";
+  const clientSecret = env["CAIRN_OAUTH_CLIENT_SECRET"] ?? "";
+  const allowedUsers = (env["CAIRN_ALLOWED_USERS"]?.split(",") ?? fromFile.allowedUsers ?? [])
+    .map((entry) => entry.trim().toLowerCase())
+    .filter((entry) => entry !== "");
+
+  const anything = publicUrl || provider || secret || clientId || clientSecret;
+  if (!anything) return null;
+
+  const missing: string[] = [];
+  if (!publicUrl) missing.push("CAIRN_PUBLIC_URL");
+  if (!provider) missing.push("CAIRN_AUTH_PROVIDER (github or oidc)");
+  if (!secret) missing.push("CAIRN_AUTH_SECRET");
+  if (!clientId) missing.push("CAIRN_OAUTH_CLIENT_ID");
+  if (!clientSecret) missing.push("CAIRN_OAUTH_CLIENT_SECRET");
+  if (allowedUsers.length === 0) missing.push("CAIRN_ALLOWED_USERS");
+  if (provider === "oidc" && !(env["CAIRN_OIDC_ISSUER"] ?? fromFile.issuer)) missing.push("CAIRN_OIDC_ISSUER");
+  if (missing.length > 0) {
+    throw new ConfigError(`OAuth is partly configured. Also set: ${missing.join(", ")}. See docs/DEPLOY-AZURE.md.`);
+  }
+  if (provider !== "github" && provider !== "oidc") {
+    throw new ConfigError(`CAIRN_AUTH_PROVIDER must be github or oidc, got ${provider}`);
+  }
+  if (secret.length < MIN_SECRET) {
+    throw new ConfigError(`CAIRN_AUTH_SECRET must be at least ${MIN_SECRET} characters. Generate one with: openssl rand -hex 32`);
+  }
+  let url: URL;
+  try {
+    url = new URL(publicUrl);
+  } catch {
+    throw new ConfigError(`CAIRN_PUBLIC_URL is not a URL: ${publicUrl}`);
+  }
+  if (url.protocol !== "https:" && !(hostIsLoopback && url.protocol === "http:" && isLoopback(url.hostname))) {
+    throw new ConfigError("CAIRN_PUBLIC_URL must be https, except http://localhost for trying OAuth locally.");
+  }
+  for (const entry of allowedUsers) {
+    if (!/^(github|oidc|email):.+/.test(entry)) {
+      throw new ConfigError(`CAIRN_ALLOWED_USERS entries look like github:yourlogin or email:you@example.com, got "${entry}"`);
+    }
+  }
+  const previous = env["CAIRN_AUTH_SECRET_PREVIOUS"] ?? "";
+
+  return {
+    publicUrl,
+    secrets: previous ? [secret, previous] : [secret],
+    provider:
+      provider === "github"
+        ? { kind: "github", clientId, clientSecret }
+        : {
+            kind: "oidc",
+            issuer: (env["CAIRN_OIDC_ISSUER"] ?? fromFile.issuer)!.replace(/\/+$/, ""),
+            clientId,
+            clientSecret,
+            ...(fromFile.providerName ? { name: fromFile.providerName } : {}),
+          },
+    allowedUsers,
+  };
+}
+
 export function loadConfig(
   env: NodeJS.ProcessEnv = process.env,
   configPath: string | null = env["CAIRN_CONFIG"] ?? findConfigFile(),
@@ -93,7 +197,11 @@ export function loadConfig(
   const token = env["CAIRN_TOKEN"] ?? "";
   const host = env["CAIRN_HOST"] ?? "127.0.0.1";
   const port = Number(env["CAIRN_PORT"] ?? file.port ?? 8787);
-  const trustLocal = parseBoolean(env["CAIRN_TRUST_LOCAL"]) ?? file.auth?.trustLocal ?? true;
+  const loopback = isLoopback(host);
+  // Local trust needs a loopback bind: anywhere else the Host header is chosen
+  // by whoever sends the request, so it cannot mean "this machine".
+  const trustLocal = loopback && (parseBoolean(env["CAIRN_TRUST_LOCAL"]) ?? file.auth?.trustLocal ?? true);
+  const oauth = loadOAuth(env, file, loopback);
   const localHosts = [
     ...new Set(
       [...DEFAULT_LOCAL_HOSTS, ...(file.auth?.localHosts ?? [])].map((name) =>
@@ -102,19 +210,20 @@ export function loadConfig(
     ),
   ];
 
-  if (!isLoopback(host)) {
-    // Dev mode has no real auth. Binding it to a public interface would put an
-    // unauthenticated write API on the network, so refuse to start instead.
+  if (!loopback && !oauth) {
+    // Without OAuth, binding to a public interface would put an unprotected
+    // write API on the network, so refuse to start instead.
     throw new ConfigError(
-      `dev mode refuses to bind to ${host}. It is loopback only until OAuth lands (ADR-007).`,
+      `refusing to listen on ${host} without OAuth. Configure it (docs/DEPLOY-AZURE.md), or use 127.0.0.1.`,
     );
   }
-  if (token !== "" && token.length < 16) {
+  const minToken = loopback ? 16 : MIN_SECRET;
+  if (token !== "" && token.length < minToken) {
     throw new ConfigError(
-      "CAIRN_TOKEN must be at least 16 characters. Generate one with: openssl rand -hex 24",
+      `CAIRN_TOKEN must be at least ${minToken} characters. Generate one with: openssl rand -hex 32`,
     );
   }
-  if (token === "" && !trustLocal) {
+  if (token === "" && !trustLocal && !oauth) {
     throw new ConfigError(
       "Local trust is off, so CAIRN_TOKEN is required. Set one, or turn trustLocal back on.",
     );
@@ -137,5 +246,6 @@ export function loadConfig(
     trustLocal,
     localHosts,
     configFile: configPath,
+    oauth,
   };
 }

@@ -102,6 +102,8 @@ What no one combines: typed tables next to the wiki, a revision for every write 
 
 The MCP server runs in stateless streamable HTTP mode, and platform differences live only in a thin entry point per platform. See ADR-006.
 
+**First cloud deployment (ADR-018):** until the Cosmos adapter and spike S1 are done, Azure runs the Node server as one container on Container Apps, consumption plan, scaled to zero, with SQLite kept in Blob Storage by Litestream. Functions with Cosmos remains the path to scaling out.
+
 ### Storage adapters
 
 Search is a separate adapter from the document store, so a deployment pairs them freely. See ADR-005 for the reasoning and the full rules.
@@ -155,7 +157,9 @@ Cairn contains one small OAuth 2.1 authorization server that delegates login to 
 1. MCP: OAuth 2.1, authorization code with PKCE, dynamic client registration, rotating refresh tokens, JWT access tokens verified locally. This is the highest-risk piece (see R1).
 2. Web UI: the same server, same session.
 3. Identity: whatever the provider asserts, keyed by issuer plus subject, against an allowlist. No user database, no passwords, no roles in v1.
-4. Dev mode: loopback only, refuses to start if bound to a public interface. Requests addressed to a trusted local host name need no token; a static bearer token covers anything else (ADR-010).
+4. Dev mode: loopback only. Requests addressed to a trusted local host name need no token; a static bearer token covers anything else (ADR-010).
+5. Public mode: any other bind address requires OAuth, and forces local trust off (ADR-017).
+6. As built (ADR-017): a consent page names each client before it gets a token; GitHub is supported as plain OAuth, any other provider through OpenID Connect; tokens are HS256, checked locally; auth records live in their own store, never in content or exports.
 
 ## 8. MCP tools (v1)
 
@@ -203,6 +207,7 @@ Given a collection with a required date field, when `upsert_row` omits it, then 
 
 **P0.5 MCP server usable from claude.ai as a custom connector.**
 Given a deployed instance, when the owner adds the connector URL in Claude, then OAuth completes and all tools in section 8 are callable.
+Status 2026-09-12: the OAuth server is built and tested end to end with a stand-in provider (ADR-017). Proven when a deployed instance is connected from claude.ai.
 
 **P0.6 Storage and search adapter interfaces with Cosmos and SQLite implementations.**
 Given the conformance test suite, when run against both adapters, then all tests pass with no adapter-specific branches in business logic.
@@ -222,9 +227,11 @@ Given a workspace whose edges and chunks have been deleted, when the owner runs 
 
 **P0.7 Export.**
 Given a workspace, when the owner runs export, then they get a zip with one Markdown file per page (folder tree mirrors hierarchy), one JSON file per collection, and all attachments.
+Status 2026-09-12: done as a folder rather than a zip, written by `cairn export`, whole or from one root, and read back by `cairn import` without loss (ADR-016). Attachments do not exist yet; history is not exported yet.
 
 **P0.8 Azure free-tier deployment.**
 Given a fresh subscription with Cosmos free tier unused, when the owner runs the deploy script, then the instance is live with no resource on a paid SKU except Blob Storage.
+Status 2026-09-12: the first Azure path uses Container Apps and Blob Storage instead of Functions and Cosmos (ADR-018), and meets the same test: nothing on a paid SKU but Blob Storage. Template and scripts are checked in CI; a first real deployment is still to be run.
 
 ### P1: fast follow
 

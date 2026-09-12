@@ -3,6 +3,7 @@ export * from "./errors.js";
 export * from "./ids.js";
 export * from "./ports/document-store.js";
 export * from "./ports/search-index.js";
+export * from "./ports/auth-store.js";
 export * from "./query/filter.js";
 export * from "./query/validate.js";
 export * from "./indexer/chunk.js";
