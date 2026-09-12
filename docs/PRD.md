@@ -145,7 +145,7 @@ Cairn contains one small OAuth 2.1 authorization server that delegates login to 
 1. MCP: OAuth 2.1, authorization code with PKCE, dynamic client registration, rotating refresh tokens, JWT access tokens verified locally. This is the highest-risk piece (see R1).
 2. Web UI: the same server, same session.
 3. Identity: whatever the provider asserts, keyed by issuer plus subject, against an allowlist. No user database, no passwords, no roles in v1.
-4. Dev mode: static bearer token, localhost only, refuses to start if bound to a public interface.
+4. Dev mode: loopback only, refuses to start if bound to a public interface. Requests addressed to a trusted local host name need no token; a static bearer token covers anything else (ADR-010).
 
 ## 8. MCP tools (v1)
 

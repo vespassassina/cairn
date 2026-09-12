@@ -4,6 +4,7 @@ import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/
 import type { Actor } from "@cairn/core";
 import type { AppContext } from "./context.js";
 import { registerTools } from "./mcp/tools.js";
+import { NO_LOCAL_TRUST, trustedForMcp, type LocalTrust } from "./trust.js";
 import { registerConsole } from "./web/console.js";
 
 /**
@@ -14,8 +15,13 @@ import { registerConsole } from "./web/console.js";
 
 export interface AppOptions {
   context: AppContext;
-  /** Dev-mode bearer token. Every route except /health requires it. */
-  token: string;
+  /**
+   * Dev-mode bearer token. Required on every route except /health, unless the
+   * request is trusted as local. Null means only local requests get in.
+   */
+  token: string | null;
+  /** Skip the token for trusted local requests (ADR-010). Off unless given. */
+  trust?: LocalTrust;
 }
 
 const SERVER_INFO = { name: "cairn", version: "0.1.0" };
@@ -78,6 +84,7 @@ export function createApp(options: AppOptions): Hono {
       status: "ok",
       server: SERVER_INFO,
       workspace: options.context.workspaceId,
+      local_trust: trust.enabled,
       adapters: {
         store: options.context.store.constructor.name,
         search: options.context.search.constructor.name,
@@ -87,11 +94,23 @@ export function createApp(options: AppOptions): Hono {
     }),
   );
 
+  const trust = options.trust ?? NO_LOCAL_TRUST;
+
   app.use("/mcp", async (c, next) => {
+    if (trustedForMcp(c.req.raw, trust)) return next();
     const header = c.req.header("authorization") ?? "";
     const token = header.startsWith("Bearer ") ? header.slice(7) : "";
-    if (!timingSafeEqual(token, options.token)) {
-      return c.json({ error: "unauthorized" }, 401);
+    if (options.token === null || !timingSafeEqual(token, options.token)) {
+      return c.json(
+        {
+          error: "unauthorized",
+          message:
+            options.token === null
+              ? "This server only accepts local requests, and this one is not trusted as local."
+              : "Send the dev token as a Bearer token.",
+        },
+        401,
+      );
     }
     await next();
   });
@@ -100,7 +119,7 @@ export function createApp(options: AppOptions): Hono {
 
   // The review console (ADR-009). Registered after MCP so its sign-in never
   // stands in front of the MCP bearer check.
-  registerConsole(app, { context: options.context, token: options.token });
+  registerConsole(app, { context: options.context, token: options.token, trust });
 
   return app;
 }

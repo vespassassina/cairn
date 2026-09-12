@@ -1,0 +1,8 @@
+{
+  "database": "cairn.sqlite",
+  "port": 8787,
+  "auth": {
+    "trustLocal": true,
+    "localHosts": []
+  }
+}

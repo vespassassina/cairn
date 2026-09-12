@@ -11,14 +11,25 @@ import { createContext } from "../context.js";
 async function main(): Promise<void> {
   const config = loadConfig();
   const context = await createContext(config);
-  const app = createApp({ context, token: config.token });
+  const app = createApp({
+    context,
+    token: config.token,
+    trust: { enabled: config.trustLocal, hosts: config.localHosts },
+  });
 
   serve({ fetch: app.fetch, port: config.port, hostname: config.host }, (info) => {
+    const auth = config.trustLocal
+      ? `no sign-in for ${config.localHosts.join(", ")}` +
+        (config.token ? "; token for any other host name" : "")
+      : "token required";
     process.stdout.write(
-      `cairn listening on http://${config.host}:${info.port}\n` +
+      `cairn listening on http://localhost:${info.port}\n` +
+        `  console   http://localhost:${info.port}/\n` +
+        `  mcp       http://localhost:${info.port}/mcp\n` +
+        `  auth      ${auth}\n` +
         `  database  ${config.database}\n` +
         `  workspace ${config.workspaceId}\n` +
-        `  mcp       http://${config.host}:${info.port}/mcp (bearer token required)\n`,
+        `  config    ${config.configFile ?? "none (defaults)"}\n`,
     );
   });
 }

@@ -14,23 +14,28 @@ pnpm install
 
 ## 2. Configure
 
-Cairn reads its configuration from the environment and refuses to start if
-anything is unsafe. Put this in a `.env` you source, or export it in your
-shell.
+Nothing is required. On localhost Cairn needs no token (ADR-010).
+
+Settings live in `cairn.config.json` at the repo root, which is committed and holds no secrets:
 
 ```
-export CAIRN_TOKEN=$(openssl rand -hex 24)
-export CAIRN_DB=$HOME/cairn/cairn.sqlite
+{
+  "database": "cairn.sqlite",
+  "port": 8787,
+  "auth": {
+    "trustLocal": true,
+    "localHosts": []
+  }
+}
 ```
 
-Optional: `CAIRN_PORT` (default 8787), `CAIRN_HOST` (default 127.0.0.1),
-`CAIRN_WORKSPACE` (default ws_default).
+1. `database` is resolved relative to the config file.
+2. `auth.localHosts` adds host names to trust, such as a name you mapped to 127.0.0.1 in `/etc/hosts`. Only add names that always point at this machine.
+3. `auth.trustLocal: false` requires `CAIRN_TOKEN` for every request, even on localhost.
 
-Two rules are enforced at startup rather than documented and hoped for.
+Environment variables override the file: `CAIRN_DB`, `CAIRN_PORT`, `CAIRN_WORKSPACE`, `CAIRN_TRUST_LOCAL`, `CAIRN_TOKEN`, and `CAIRN_CONFIG` for a different config file.
 
-1. `CAIRN_TOKEN` must be at least 16 characters.
-2. `CAIRN_HOST` must be loopback. Dev mode has no real auth, so binding it to a
-   public interface would put an unauthenticated write API on the network.
+Dev mode still refuses to bind anything but loopback, whatever the settings say.
 
 ## 3. Load content
 
@@ -53,14 +58,17 @@ pnpm dev
 Check it:
 
 ```
-curl http://127.0.0.1:8787/health
+curl http://localhost:8787/health
 ```
 
 ## 5. Connect Claude Code
 
 ```
-claude mcp add --transport http cairn http://127.0.0.1:8787/mcp --header "Authorization: Bearer $CAIRN_TOKEN"
+claude mcp add --transport http cairn http://localhost:8787/mcp
 ```
+
+No header is needed on localhost. If you turned local trust off, add
+`--header "Authorization: Bearer $CAIRN_TOKEN"`.
 
 Then ask Claude to search for something you know is in your notes. The tools
 available are the nine in PRD section 8, plus `create_collection`,
@@ -71,7 +79,7 @@ agent edit can always be undone.
 
 ## 6. Review in the console
 
-Open http://127.0.0.1:8787 and sign in with `CAIRN_TOKEN`. The home page lists recent changes, newest first; "Agents only" shows what Claude wrote. Every page has Edit and History, and any version can be restored.
+Open http://localhost:8787. There is no sign-in on localhost. The home page lists recent changes, newest first; "Agents only" shows what Claude wrote. Every page has Edit and History, and any version can be restored.
 
 ## Other commands
 

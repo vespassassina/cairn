@@ -16,7 +16,8 @@ A decision that changes is not edited away. Add a new ADR that supersedes it, an
 | [006](ADR-006.md) | Hono plus stateless MCP transport, lowest common denominator | accepted | 2026-09-11 |
 | [007](ADR-007.md) | Auth is one small OAuth server in front of any OIDC provider | accepted | 2026-09-11 |
 | [008](ADR-008.md) | Every write is a revision, and agents write directly | accepted | 2026-09-12 |
-| [009](ADR-009.md) | A server-rendered review console, styled with artifactkit | accepted | 2026-09-12 |
+| [009](ADR-009.md) | A server-rendered review console, styled with artifactkit | accepted, rule 5 amended by 010 | 2026-09-12 |
+| [010](ADR-010.md) | No sign-in for trusted local requests | accepted | 2026-09-12 |
 
 ## Writing one
 

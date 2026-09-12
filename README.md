@@ -16,16 +16,17 @@ See `docs/LOCAL.md`. Short version, with Node 22 or later:
 
 ```
 corepack enable && pnpm install
-export CAIRN_TOKEN=$(openssl rand -hex 24)
 pnpm import ~/notes
 pnpm dev
 ```
 
-Then point Claude Code at it:
+Open http://localhost:8787 for the review console, and point Claude Code at it:
 
 ```
-claude mcp add --transport http cairn http://127.0.0.1:8787/mcp --header "Authorization: Bearer $CAIRN_TOKEN"
+claude mcp add --transport http cairn http://localhost:8787/mcp
 ```
+
+No token on localhost (ADR-010). Settings are in `cairn.config.json`.
 
 ## What exists
 
@@ -34,7 +35,8 @@ claude mcp add --transport http cairn http://127.0.0.1:8787/mcp --header "Author
 2. `packages/adapter-sqlite`. The reference adapter, on Node's built-in
    `node:sqlite`. FTS5 gives keyword search with no native dependency.
 3. `packages/api`. Hono app, the MCP server over stateless streamable HTTP,
-   dev-mode bearer auth, and the import, rebuild and eval commands.
+   the review console, no sign-in on localhost (ADR-010), and the import,
+   rebuild and eval commands.
 
 Not yet: OAuth, the Cosmos and DynamoDB adapters, the web editor, embeddings,
 attachments and export.

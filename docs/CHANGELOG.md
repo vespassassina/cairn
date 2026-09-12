@@ -6,6 +6,32 @@ Entries link to the ADR when there is one. A change of direction that has no ADR
 
 ## 2026-09-12
 
+### Decision: no sign-in on localhost (ADR-010)
+
+On the loopback dev server, requests addressed to a trusted local host name need no token, in the console or over MCP. `CAIRN_TOKEN` is now optional. Extra host names and an off switch live in a new, committed `cairn.config.json`.
+
+Why: the owner asked for it, and a token on a loopback-only server protected against little while making the console look broken.
+
+What keeps it safe: the Host header must be on the trusted list, which defeats DNS rebinding, and MCP refuses any request carrying a foreign Origin, which defeats cross-site requests from a page in the owner's browser. Both attacks have tests.
+
+### Fixed: the console did not start from the app's launcher
+
+The launch config ran `bash -c` from a working directory it could not read, and relied on `$PWD` and an nvm-installed pnpm that a non-interactive shell does not have on its PATH. The server never started. It now uses absolute paths and sets PATH. The config stays untracked because it names machine-specific paths.
+
+### Fixed: a relative database path depended on the start directory
+
+`./cairn.sqlite` resolved under `packages/api` when started through `pnpm dev`, and under the repo root when started elsewhere. A relative path now resolves against the config file, or the working directory when there is none.
+
+### Verified: the review console, visually
+
+Checked in the browser pane on the seeded wiki:
+
+1. Recent changes with actor pills and notes.
+2. The page view with its tree, breadcrumb and rail of links and tags at desktop width.
+3. The collection table.
+
+This closes the visual check that the console entry below left open.
+
 ### Added: review console (ADR-009)
 
 A server-rendered console in the same Hono app. It has these screens:

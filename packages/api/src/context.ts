@@ -29,7 +29,9 @@ export function ownerVia(tool: string): Actor {
   return { ...OWNER, label: `Owner, via ${tool}` };
 }
 
-export async function createContext(config: Config): Promise<AppContext> {
+export async function createContext(
+  config: Pick<Config, "database" | "workspaceId">,
+): Promise<AppContext> {
   // Both adapters open the same file. WAL mode lets them share it.
   const store = new SqliteDocumentStore({ location: config.database });
   const search = new SqliteSearchIndex({ location: config.database });

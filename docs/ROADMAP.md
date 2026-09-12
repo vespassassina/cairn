@@ -23,7 +23,8 @@ Status key: done, in progress, next, later, blocked.
 | Import, rebuild, eval commands | done | |
 | Peptide wiki seed | done | `examples/peptide-wiki` |
 | Revisions: history, actor, change notes | done | ADR-008. MCP `get_history`, `get_revision`, `change_note` |
-| Review console | done, visual check owed | ADR-009. 24 contract tests; not yet looked at in a browser |
+| Review console | done | ADR-009. 24 contract tests, checked visually |
+| No sign-in on localhost | done | ADR-010. `cairn.config.json` |
 | Search precision: OR matching over-matches | later | Tune against the eval set once expected pages exist |
 | Cosmos adapter | later | Needs Q1, Q7, Q8 answered |
 | OAuth server | later | ADR-007, time-boxed to 3 days (R1) |

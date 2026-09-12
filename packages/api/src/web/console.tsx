@@ -24,6 +24,7 @@ import { ASSET_VERSION, CONSOLE_CSS, CONSOLE_JS } from "./assets.js";
 import { ActorPill, Banner, DiffView, Layout, When } from "./layout.js";
 import { createMarkdownRenderer, pageHref, type LinkResolver } from "./markdown.js";
 import { isSameOrigin, SESSION_COOKIE, sessionValue, timingSafeEqual } from "./session.js";
+import { NO_LOCAL_TRUST, trustedForConsole, type LocalTrust } from "../trust.js";
 
 /**
  * The review console (ADR-009): recent changes, read-mode pages, a Markdown
@@ -38,7 +39,9 @@ import { isSameOrigin, SESSION_COOKIE, sessionValue, timingSafeEqual } from "./s
 
 export interface ConsoleOptions {
   context: AppContext;
-  token: string;
+  /** Null when only trusted local requests are accepted (ADR-010). */
+  token: string | null;
+  trust?: LocalTrust;
 }
 
 const renderMarkdown = createMarkdownRenderer();
@@ -448,8 +451,9 @@ const RowForm: FC<{
 
 export function registerConsole(app: Hono, options: ConsoleOptions): void {
   const { context, token } = options;
+  const trust = options.trust ?? NO_LOCAL_TRUST;
   const ws = context.workspaceId;
-  const expectedSession = sessionValue(token);
+  const expectedSession = token === null ? Promise.resolve(null) : sessionValue(token);
   const by = (note: string) => ({ actor: OWNER, note: note.trim() || null });
 
   app.get("/assets/console.css", (c) =>
@@ -473,7 +477,11 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
 
     if (!PUBLIC_PATHS.some((pattern) => pattern.test(path))) {
       const cookie = getCookie(c, SESSION_COOKIE) ?? "";
-      if (!timingSafeEqual(cookie, await expectedSession)) {
+      const session = await expectedSession;
+      const signedIn = session !== null && timingSafeEqual(cookie, session);
+      // Trusted local requests skip sign-in (ADR-010). The Origin check on
+      // form posts below still applies to them.
+      if (!signedIn && !trustedForConsole(c.req.raw, trust)) {
         if (c.req.method !== "GET") return c.text("sign in first", 401);
         return c.redirect(`/login?next=${encodeURIComponent(path + new URL(c.req.url).search)}`);
       }
@@ -498,7 +506,10 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
         <div class="ak-wrap cairn-login">
           <p class="ak-eyebrow">Cairn review console</p>
           <h1>Sign in</h1>
-          <p class="ak-lede">Dev mode: use the CAIRN_TOKEN this server was started with.</p>
+          <p class="ak-lede">
+            Dev mode: use the CAIRN_TOKEN this server was started with. On localhost no sign-in
+            is needed unless local trust is turned off.
+          </p>
           {failed ? <Banner kind="bad">That token does not match.</Banner> : null}
           <form method="post" action="/login" class="cairn-editor">
             <input type="hidden" name="next" value={next} />
@@ -522,16 +533,21 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
     </html>
   );
 
-  app.get("/login", (c) => render(c, <LoginPage next={safeNext(c.req.query("next"))} />));
+  app.get("/login", (c) => {
+    const next = safeNext(c.req.query("next"));
+    if (trustedForConsole(c.req.raw, trust)) return c.redirect(next);
+    return render(c, <LoginPage next={next} />);
+  });
 
   app.post("/login", async (c) => {
     if (!isSameOrigin(c.req.raw)) return c.text("form posts must come from the console itself", 403);
     const form = await c.req.parseBody();
     const next = safeNext(text(form, "next"));
-    if (!timingSafeEqual(text(form, "token"), token)) {
+    const session = await expectedSession;
+    if (token === null || session === null || !timingSafeEqual(text(form, "token"), token)) {
       return render(c, <LoginPage next={next} failed />, 400);
     }
-    setCookie(c, SESSION_COOKIE, await expectedSession, {
+    setCookie(c, SESSION_COOKIE, session, {
       httpOnly: true,
       sameSite: "Strict",
       path: "/",
