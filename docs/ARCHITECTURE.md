@@ -5,16 +5,18 @@ The blueprint: how Cairn is built today, and why it is shaped that way. The PRD 
 ## The shape
 
 ```
-Claude (MCP client)        Browser (owner)
-        |                        |
-        |  stateless MCP         |  HTML forms
-        v                        v
-  +-------------------------------------------+
-  |  api: Hono app, web standard Req/Res       |
-  |    /mcp       MCP tools                    |
-  |    /          review console (ADR-009)     |
-  |    entry/node.ts   (lambda, azure later)   |
-  +-------------------------------------------+
+Agent without a shell    Agent with a shell      Browser (owner)
+(claude.ai, Desktop)     (Claude Code, Codex)
+        |                  cairn CLI + skill            |
+        |  stateless MCP         |  HTTP                |  HTML forms
+        v                        v                      v
+  +-----------------------------------------------------------+
+  |  api: Hono app, web standard Req/Res                       |
+  |    /mcp        MCP tools            \  one auth check,     |
+  |    /api/v1     REST, changes feed   /  operations.ts      |
+  |    /           review console (ADR-009)                    |
+  |    entry/node.ts   (lambda, azure later)                   |
+  +-----------------------------------------------------------+
         |
         v
   +-------------------------------------------+
@@ -35,8 +37,16 @@ Claude (MCP client)        Browser (owner)
 
 1. `packages/core`. Domain types, the two ports, the services, and the conformance suites. No dependencies. Nothing here knows which cloud it runs on.
 2. `packages/adapter-sqlite`. The reference implementation of both ports on `node:sqlite`. CI always runs it.
-3. `packages/api`. The Hono app, the MCP tools and server instructions (ADR-011), the review console, and the command-line tools. The only package that knows about HTTP. On Node it listens on both loopback addresses, 127.0.0.1 and ::1.
-4. `examples/`. Dataset-specific scripts, such as the peptide wiki seed. Not part of the product.
+3. `packages/api`. The Hono app, the MCP tools, and server instructions with a live summary of the workspace (ADR-011, ADR-012), the review console, and the command-line tools. The only package that knows about HTTP. On Node it listens on both loopback addresses, 127.0.0.1 and ::1.
+4. `packages/cli`. The `cairn` command. A thin HTTP client for the REST API with no dependencies, so it works the same against a local or deployed server (ADR-013).
+5. `skills/cairn`. The skill file that tells a coding agent when and how to use the CLI.
+6. `examples/`. Dataset-specific scripts, such as the peptide wiki seed. Not part of the product.
+
+## Three doors, one core
+
+MCP, REST and the CLI are translations (ADR-013). `api/src/operations.ts` holds what they share: edit modes, section replacement, the error mapping and the JSON shapes of pages, rows and revisions. Both MCP and REST sit behind the same auth check, and REST writes are attributed like MCP writes, by the caller's user agent. Version tokens are ETags on REST and `version` fields on MCP; the check behind them is the same.
+
+`pnpm context-cost` measures what each door costs an agent's context. MCP loads every tool schema in every session; the CLI costs a skill description until it is used.
 
 ## Data
 

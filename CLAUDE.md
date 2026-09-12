@@ -32,7 +32,7 @@ Rules:
 5. Record findings as well as decisions: a spike result, a surprising library behaviour, a probe of search quality. They are the evidence decisions rest on.
 6. When the owner gives a new instruction, log it in `docs/DIRECTIONS.md` before or with the work it starts.
 7. When something fails and gets fixed, add a `docs/LESSONS.md` entry before committing. Read that file before repeating a kind of task it covers.
-8. The MCP server instructions (`packages/api/src/mcp/instructions.ts`) change agent behaviour. Changing them needs a changelog entry saying why (ADR-011).
+8. The MCP server instructions (`packages/api/src/mcp/instructions.ts`), the workspace summary that follows them (`summary.ts`) and the skill (`skills/cairn/SKILL.md`) change agent behaviour, and must say the same things. Changing any of them needs a changelog entry saying why (ADR-011, ADR-012, ADR-013), and a fresh `pnpm context-cost` if the README numbers move. Stored text in the summary is untrusted and must stay quoted and bounded.
 
 ## Stack
 
@@ -50,12 +50,15 @@ packages/
   adapter-sqlite/
   adapter-cosmos/
   adapter-dynamo/   (P1)
-  api/           Hono app, REST plus MCP routes
+  api/           Hono app: MCP, REST at /api/v1, review console
+  cli/           the `cairn` command, a thin HTTP client (ADR-013)
   indexer/       link extraction, chunking, optional embeddings
   web/           (Phase 2)
 deploy/
   azure/         Bicep
   aws/           (P1)
+skills/
+  cairn/         the skill file that tells a coding agent how to use the CLI
 eval/
   queries.yaml
 docs/
@@ -78,12 +81,14 @@ docs/
 11. Derived reads (backlinks, neighbours, search) are eventually consistent. Tests poll to the 10 second bound, they never read once straight after a write.
 12. Collection filtering runs in core. Pushdown is an optional adapter capability that must produce identical results.
 13. Route handlers use web standard `Request` and `Response`. Platform-specific code lives only in `api/src/entry/*` (ADR-006).
+14. MCP, REST and the CLI translate; they never decide (ADR-013). Logic two surfaces need, such as edit modes and error mapping, lives in `api/src/operations.ts`. A capability added to one surface is added to the others, or the ADR says why not.
+15. The CLI talks HTTP only. It never opens the database.
 
 ## Verification before calling a task done
 
 1. `pnpm build` and `pnpm test` pass
 2. Conformance suite passes for every adapter touched
-3. New MCP tools have a contract test with a realistic payload
+3. New MCP tools, REST endpoints and CLI commands have a contract test with a realistic payload
 4. PRD or an ADR updated if behaviour changed
 5. `docs/CHANGELOG.md` has an entry saying what changed and why, and `docs/ROADMAP.md` reflects the new status
 6. New owner directions are in `docs/DIRECTIONS.md`, and failures met along the way are in `docs/LESSONS.md`

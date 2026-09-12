@@ -95,7 +95,8 @@ describe("transport and auth", () => {
       clientInfo: { name: "claude-code", version: "2.0.0" },
     });
     const instructions = body.result.instructions as string;
-    expect(instructions).toBe(SERVER_INSTRUCTIONS);
+    // The fixed text first, then the live summary (ADR-012).
+    expect(instructions.startsWith(SERVER_INSTRUCTIONS)).toBe(true);
     expect(instructions.length).toBeLessThanOrEqual(INSTRUCTIONS_BUDGET);
     // Every tool the instructions name must exist, or the client is sent
     // looking for something that is not there.

@@ -13,6 +13,27 @@ Each entry answers four questions:
 
 ## 2026-09-12
 
+### A mounted Hono app's not-found handler never ran
+
+1. **What happened.** An unknown REST path such as `/api/v1/nothing-here` returned the console's HTML 404 instead of the API's JSON error.
+2. **Cause.** The REST routes are a separate Hono app mounted with `app.route`. Hono calls the parent app's not-found handler, not the mounted one's, so `api.notFound(...)` was dead code.
+3. **Fix.** A catch-all `api.all("*")` registered last in the REST routes returns the JSON 404.
+4. **Lesson.** In Hono, a sub-app's `onError` does apply when mounted, but its `notFound` does not. Test an unknown path on every mounted app.
+
+### A test assumed an order that two writes in one millisecond do not have
+
+1. **What happened.** The changes feed test failed about one run in five: the newest change was sometimes "Owner note" instead of "Second agent page".
+2. **Cause.** The two writes landed in the same millisecond. Revisions are ordered by time, then by version id, and version ids are random, so ties come out in any order. The feed was right; the test's expectation was wrong.
+3. **Fix.** The test checks that times never increase and which changes are present, not which one is first. It then passed 15 runs in a row. ADR-013 now says same-millisecond changes have no defined order.
+4. **Lesson.** Timestamps tie in tests that write quickly. Never assert an order between records written back to back unless the store defines one; run a new ordering test several times before trusting it.
+
+### Unicode escapes written by the agent's file tool became raw characters
+
+1. **What happened.** The new summary module failed to compile with "Unterminated regular expression literal", and every test file that imported it failed too.
+2. **Cause.** The agent wrote a regex containing `\u2028` and similar escapes. The file-writing tool decoded them into the raw characters, and a raw line separator inside a regex literal ends the line. The shell tool refuses such characters outright, so a scripted fix was blocked as well.
+3. **Fix.** The check became a small function comparing code points, with no escapes in the source. The test builds its input with `String.fromCharCode`.
+4. **Lesson.** When an agent writes source code, avoid `\u` escapes for control or separator characters. Compare code points in code instead. Typecheck straight after writing a new file.
+
 ### `pnpm dev` failed with EADDRINUSE while the console looked fine
 
 1. **What happened.** The owner ran `pnpm dev` and got a Node stack trace ending in `listen EADDRINUSE 127.0.0.1:8787`.

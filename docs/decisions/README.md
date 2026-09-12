@@ -8,7 +8,7 @@ A decision that changes is not edited away. Add a new ADR that supersedes it, an
 
 | ADR | Decision | Status | Date |
 |---|---|---|---|
-| [001](ADR-001.md) | MCP server is the primary interface | accepted | 2026-09-10 |
+| [001](ADR-001.md) | MCP server is the primary interface | accepted, refined by 013 | 2026-09-10 |
 | [002](ADR-002.md) | Graph as edge documents, no Gremlin | accepted | 2026-09-10 |
 | [003](ADR-003.md) | Bring-your-own embeddings endpoint | accepted | 2026-09-10 |
 | [004](ADR-004.md) | Separate chunks store, vector container created on enable | accepted | 2026-09-10 |
@@ -18,7 +18,9 @@ A decision that changes is not edited away. Add a new ADR that supersedes it, an
 | [008](ADR-008.md) | Every write is a revision, and agents write directly | accepted | 2026-09-12 |
 | [009](ADR-009.md) | A server-rendered review console, styled with artifactkit | accepted, rule 5 amended by 010 | 2026-09-12 |
 | [010](ADR-010.md) | No sign-in for trusted local requests | accepted | 2026-09-12 |
-| [011](ADR-011.md) | Cairn tells clients when to use it | accepted | 2026-09-12 |
+| [011](ADR-011.md) | Cairn tells clients when to use it | accepted, extended by 012 | 2026-09-12 |
+| [012](ADR-012.md) | The server instructions carry a live summary of the workspace | accepted | 2026-09-12 |
+| [013](ADR-013.md) | One core, three surfaces: MCP, REST and a CLI | accepted | 2026-09-12 |
 
 ## Writing one
 

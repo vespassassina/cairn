@@ -6,6 +6,56 @@ Entries link to the ADR when there is one. A change of direction that has no ADR
 
 ## 2026-09-12
 
+### Decision: one core, three surfaces (ADR-013)
+
+Agents now get in three ways: MCP, a REST API at `/api/v1`, and a `cairn` command with a skill file. All three sit on the same core, the same auth check and the same error codes. ADR-001 is refined, not replaced: the agent is still the primary client, and MCP is now one of its doors.
+
+Why: MCP loads every tool schema into every session, used or not. The most common Hacker News complaint about agent memory tools is exactly that cost. Agents with a shell can use a command that costs nothing until it runs.
+
+### Added: REST API at `/api/v1`
+
+Pages, collections, rows, history, revisions, search and an overview, with version tokens as `ETag` and `If-Match`. `PATCH` and `DELETE` without `If-Match` get 428, and a wildcard is refused, so no write skips the concurrency check. A stale version gets 409 with the current content. Pages can be read as Markdown with `?format=markdown`, the cheapest read for an agent. 20 contract tests.
+
+### Added: the changes feed
+
+`GET /api/v1/changes?since=<time>&actor=agent|user` lists revisions newest first. `since` is inclusive, and the response says which value to pass next time. This is how a second agent, a script or another machine finds out what changed, instead of searching again.
+
+### Added: the `cairn` CLI and skill
+
+`packages/cli` is a dependency-free HTTP client with compact text output and `--json` for scripts. `skills/cairn/SKILL.md` tells a coding agent when to use it, in the same terms as the MCP server instructions. `cairn append` may skip `--version`, because appending never overwrites; every other edit needs the version the agent read. Checked live against a copy of the seeded wiki, and by 9 tests that drive the real app.
+
+### Changed: MCP and REST share one operations module
+
+Edit modes, section replacement, error mapping and the JSON shapes of pages, rows and revisions moved from the MCP tools into `packages/api/src/operations.ts`. The MCP tools now translate only. No change to their behaviour; the existing contract tests pass unchanged.
+
+### Finding: MCP costs about 23 times more context than the CLI
+
+`pnpm context-cost` measures what each door sends. On the peptide wiki, MCP sends 10,721 characters per session, about 2,700 tokens: 8,912 for the 12 tool schemas, 1,809 for the instructions and summary. The skill description is 459 characters, about 115 tokens, and the skill body, about 724 tokens, loads only when Cairn is used. Tokens are estimated at four characters each. The README states these numbers.
+
+### Changed: the workspace summary no longer names an MCP tool
+
+The collections heading said "query with query_collection", which is wrong for a CLI user reading `cairn overview`. It now just says "Collections".
+
+### Direction: the tagline is "a wiki and tables your agents can write to, with every change reviewable"
+
+The owner chose it from the project review. The PRD and the README lead with it, and the README now shows the three doors and their context cost.
+
+### Finding: the landscape, and what to fix before publishing
+
+A review against similar projects on Hacker News and elsewhere. Agent memory is crowded and HN is tired of it: a typical comment on a 71-point Show HN called another memory tool "about the same as grep in a memory/ directory". The closest projects are Basic Memory (Markdown and MCP, no typed tables, history only in its paid cloud) and Remnus (pages and databases over MCP on SQLite). No one found combines typed tables, a revision for every write, a review screen for agent writes, and one codebase for local and free-tier cloud. PRD section 1 records the landscape.
+
+The same review found gaps to close before launch, now the roadmap's launch checklist: the eval set has 2 of 30 queries, export is not built, nothing runs on a cloud yet, OAuth is missing so claude.ai cannot connect, and the online and offline model is not designed.
+
+It also answered parts of Q1 and Q7 from Microsoft's docs. Cosmos vector indexing is not supported on shared-throughput accounts, so vectors on the free tier need a dedicated container. Flex Consumption grants 250,000 executions and 100,000 GB-s a month. Cosmos full-text lists Italian, but multi-language support is in preview and Dutch is not listed.
+
+### Decision: a live summary of the workspace in the server instructions (ADR-012)
+
+At initialize, the instructions now end with what the workspace holds: collections with row counts, the page total, top-level pages largest first with the number of pages under each, and up to 12 common tags. On the peptide wiki the whole text is 1,838 of the 2,000 characters.
+
+Why: ADR-011 told Claude to search Cairn when it might hold a topic, but Claude could not know what it held without searching first. The owner asked whether Cairn advertised its topics; it did not.
+
+Safety: titles and tags are written by agents too, and this text reaches every session. Each value is flattened to one line, cut to 60 characters and written as a JSON string, and the summary says they are data, never instructions. A test stores a title that tries to inject new lines and a fake entry, and checks it stays on one quoted line. The summary is built only for initialize, cached for 60 seconds, and a failure to build it falls back to the fixed text.
+
 ### Decision: Cairn tells clients when to use it (ADR-011)
 
 Cairn now sends MCP server instructions at initialize: search before answering, save lasting knowledge without being asked, prefer updating an existing page, give every write a change note, merge on a version conflict, never store secrets. The text is 1,221 characters in `packages/api/src/mcp/instructions.ts`. A contract test holds it under a 2,000 character budget and checks that every tool it names exists.

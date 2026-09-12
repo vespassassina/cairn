@@ -1,16 +1,19 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import {
-  NotFoundError,
-  ValidationError,
-  VersionConflictError,
-  type Actor,
-  type Diff,
-  type Page,
-  type Revision,
-} from "@cairn/core";
+import type { Actor, Revision } from "@cairn/core";
 import { budgetList, budgetText, DEFAULT_TOKEN_BUDGET } from "../budget.js";
 import type { AppContext } from "../context.js";
+import {
+  describeError,
+  editPage,
+  EDIT_MODES,
+  pageSummary,
+  renderDiff,
+  revisionSummary,
+  rowJson,
+} from "../operations.js";
+
+export { replaceSection } from "../operations.js";
 
 /**
  * The MCP tools from PRD section 8, plus `create_collection`, which section 8
@@ -39,37 +42,15 @@ function failure(value: unknown): ToolResult {
   return { ...json(value), isError: true };
 }
 
-/**
- * Turns a domain error into something Claude can act on rather than a stack
- * trace. A version conflict carries the current content so the next call can
- * merge; a validation error names every bad field at once.
- */
+/** A domain error, worded for an MCP client (the mapping is shared, ADR-013). */
 function toolError(error: unknown): ToolResult {
-  if (error instanceof VersionConflictError) {
-    return failure({
-      error: "version_conflict",
-      message: `${error.kind} changed since you read it. Merge your change into current_content and retry with current_version.`,
-      current_version: (error.current as { version?: string } | null)?.version ?? null,
-      current_content: error.current,
-    });
-  }
-  if (error instanceof ValidationError) {
-    return failure({
-      error: "validation_failed",
-      message: "Fix the named fields and call again.",
-      fields: error.errors,
-    });
-  }
-  if (error instanceof NotFoundError) {
-    return failure({
-      error: "not_found",
-      message: `${error.kind} ${error.id} does not exist. Use search to find the right id.`,
-    });
-  }
-  return failure({
-    error: "internal",
-    message: error instanceof Error ? error.message : String(error),
-  });
+  return failure(
+    describeError(error, {
+      conflict: "Merge your change into current_content and retry with current_version.",
+      notFound: (kind, id) => `${kind} ${id} does not exist. Use search to find the right id.`,
+      validation: "Fix the named fields and call again.",
+    }).body,
+  );
 }
 
 const CHANGE_NOTE = z
@@ -79,50 +60,6 @@ const CHANGE_NOTE = z
   .describe(
     "One line saying why you made this change. Shown to the owner next to the change in their review of recent edits. Write it for them, not for yourself.",
   );
-
-function revisionSummary(revision: Revision): Record<string, unknown> {
-  return {
-    version: revision.version,
-    replaced: revision.parentVersion,
-    at: revision.createdAt,
-    by: { kind: revision.actor.kind, name: revision.actor.label },
-    note: revision.note,
-    deleted: revision.deleted || undefined,
-  };
-}
-
-/** A compact unified-style diff: only changed lines and a little context. */
-function renderDiff(diff: Diff | null, context = 2): string | null {
-  if (!diff) return null;
-  const keep = new Set<number>();
-  diff.lines.forEach((line, i) => {
-    if (line.op === "equal") return;
-    for (let j = Math.max(0, i - context); j <= Math.min(diff.lines.length - 1, i + context); j += 1) {
-      keep.add(j);
-    }
-  });
-  const out: string[] = [];
-  let last = -1;
-  for (const i of [...keep].sort((a, b) => a - b)) {
-    if (last !== -1 && i > last + 1) out.push("…");
-    const line = diff.lines[i]!;
-    out.push(`${line.op === "add" ? "+" : line.op === "remove" ? "-" : " "} ${line.text}`);
-    last = i;
-  }
-  return out.join("\n");
-}
-
-function pageSummary(page: Page): Record<string, unknown> {
-  return {
-    id: page.id,
-    title: page.title,
-    parent_id: page.parentId,
-    tags: page.tags,
-    updated_at: page.updatedAt,
-    updated_by: { kind: page.updatedBy.kind, name: page.updatedBy.label },
-    version: page.version,
-  };
-}
 
 export function registerTools(server: McpServer, context: AppContext, actor: Actor): void {
   const ws = context.workspaceId;
@@ -252,7 +189,7 @@ export function registerTools(server: McpServer, context: AppContext, actor: Act
       inputSchema: {
         page_id: z.string(),
         version: z.string().describe("From get_page. Not optional."),
-        mode: z.enum(["replace_body", "append", "replace_section"]).default("append"),
+        mode: z.enum(EDIT_MODES).default("append"),
         content: z.string().describe("Markdown to write."),
         section: z
           .string()
@@ -265,41 +202,11 @@ export function registerTools(server: McpServer, context: AppContext, actor: Act
     },
     async ({ page_id, version, mode, content, section, title, tags, change_note }): Promise<ToolResult> => {
       try {
-        const page = await context.pages.get(ws, page_id);
-        let body: string;
-
-        if (mode === "replace_body") {
-          body = content;
-        } else if (mode === "append") {
-          body = page.body.trimEnd() === "" ? content : `${page.body.trimEnd()}\n\n${content}`;
-        } else {
-          if (!section) {
-            return failure({
-              error: "validation_failed",
-              message: "mode 'replace_section' needs the heading text in `section`.",
-              fields: [{ field: "section", message: "required for replace_section" }],
-            });
-          }
-          const replaced = replaceSection(page.body, section, content);
-          if (!replaced) {
-            return failure({
-              error: "not_found",
-              message: `no heading matching "${section}" on this page. Read it with get_page, or append instead.`,
-            });
-          }
-          body = replaced;
-        }
-
-        const updated = await context.pages.update(
-          ws,
+        const updated = await editPage(
+          context,
           page_id,
-          {
-            title: title ?? page.title,
-            body,
-            parentId: page.parentId,
-            tags: tags ?? page.tags,
-          },
           version,
+          { mode, content, section, title, tags },
           by(change_note),
         );
         return json(pageSummary(updated));
@@ -484,11 +391,7 @@ export function registerTools(server: McpServer, context: AppContext, actor: Act
         });
         const budgeted = budgetList(result.items, (row) => JSON.stringify(row.values));
         return json({
-          rows: budgeted.items.map((row) => ({
-            id: row.id,
-            values: row.values,
-            version: row.version,
-          })),
+          rows: budgeted.items.map(rowJson),
           truncated: budgeted.truncated || result.cursor !== null,
           cursor: result.cursor,
         });
@@ -528,7 +431,7 @@ export function registerTools(server: McpServer, context: AppContext, actor: Act
             ...(version !== undefined ? { expectedVersion: version } : {}),
           },
         );
-        return json({ id: row.id, values: row.values, version: row.version });
+        return json(rowJson(row));
       } catch (error) {
         return toolError(error);
       }
@@ -625,49 +528,4 @@ export function registerTools(server: McpServer, context: AppContext, actor: Act
       }
     },
   );
-}
-
-/**
- * Replace the body under a Markdown heading, leaving the rest of the page
- * untouched. This is the Markdown equivalent of PRD user story 5: update one
- * block without overwriting the user's edits elsewhere.
- */
-export function replaceSection(
-  body: string,
-  heading: string,
-  content: string,
-): string | null {
-  const lines = body.split("\n");
-  const target = heading.trim().toLowerCase();
-  const headingAt = (line: string): number | null => {
-    const match = /^(#{1,6})\s+(.*)$/.exec(line);
-    return match ? match[1]!.length : null;
-  };
-
-  const start = lines.findIndex((line) => {
-    const match = /^(#{1,6})\s+(.*)$/.exec(line);
-    return match?.[2]!.trim().toLowerCase() === target;
-  });
-  if (start === -1) return null;
-
-  const depth = headingAt(lines[start]!)!;
-  let end = lines.length;
-  for (let i = start + 1; i < lines.length; i += 1) {
-    const level = headingAt(lines[i]!);
-    if (level !== null && level <= depth) {
-      end = i;
-      break;
-    }
-  }
-
-  return [
-    ...lines.slice(0, start + 1),
-    "",
-    content.trim(),
-    "",
-    ...lines.slice(end),
-  ]
-    .join("\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .trimEnd();
 }

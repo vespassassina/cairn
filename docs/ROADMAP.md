@@ -27,6 +27,7 @@ Status key: done, in progress, next, later, blocked.
 | Review console | done | ADR-009. 24 contract tests, checked visually |
 | No sign-in on localhost | done | ADR-010. `cairn.config.json` |
 | MCP server instructions | done | ADR-011. Read first, write back, change notes |
+| Live workspace summary in the instructions | done | ADR-012. Collections, top-level pages, tags, within the budget |
 | Daily use from Claude Code | in progress | Server added with `--scope user`. Watch agent writes in the console (ADR-011 consequence 4) |
 | Search precision: OR matching over-matches | later | Tune against the eval set once expected pages exist |
 | Cosmos adapter | later | Needs Q1, Q7, Q8 answered |
@@ -34,6 +35,36 @@ Status key: done, in progress, next, later, blocked.
 | Azure deploy | later | Needs S1 |
 
 Gate: usage and recall targets from PRD section 10 met for two weeks. If not, stop or rethink.
+
+## Surfaces and what sets Cairn apart
+
+Added after the project review of 2026-09-12. Done in this order, before the cloud work, because each one is small and sharpens the pitch.
+
+| Item | Status | Notes |
+|---|---|---|
+| REST API at `/api/v1` | done | ADR-013. Same core, auth and errors as MCP. ETag and If-Match. 20 contract tests |
+| Changes feed | done | ADR-013. `GET /api/v1/changes?since=` |
+| `cairn` CLI and skill file | done | ADR-013. About 115 tokens per session against about 2,700 for MCP. 9 tests, checked live |
+| Publish the CLI to npm | later | Needs the name and licence decided |
+| Provenance: `sources` on every write | next | Where a fact came from, shown in the console |
+| Freshness: `verified_at` on pages | later | When a fact was last confirmed, separate from last edited |
+| Sync design on the revision log | later | An ADR only. Local and cloud as one workspace |
+
+## Launch checklist
+
+Before publishing on GitHub and posting to Hacker News. From the review of 2026-09-12.
+
+| Item | Status | Notes |
+|---|---|---|
+| Eval set: 30 real queries with expected pages, and a recall@5 number | next | Blocks any claim about search |
+| Two weeks of daily use, against the PRD kill criterion | in progress | |
+| Export (P0.7) | next | "Your data leaves easily" is a principle, and the first question HN will ask |
+| One cloud target deployed, with a month of real cost | later | Needs S1. The cost table must hold measured numbers |
+| OAuth, so claude.ai can connect | later | ADR-007, time-boxed to 3 days |
+| Name and licence decided | next | PRD Q4, Q5. Check GitHub and npm for the name |
+| Online and offline model decided | later | The sync design above |
+| Search over-matching fixed | later | Visible in the first demo |
+| README leads with the tagline and a console screenshot | next | |
 
 ## Phase 2: editor
 

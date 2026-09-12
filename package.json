@@ -14,6 +14,8 @@
     "import": "pnpm --filter @cairn/api import",
     "rebuild": "pnpm --filter @cairn/api rebuild",
     "eval": "pnpm --filter @cairn/api eval",
+    "cairn": "tsx packages/cli/src/bin.ts",
+    "context-cost": "pnpm --filter @cairn/api context-cost",
     "sync:artifactkit": "node scripts/sync-artifactkit.mjs"
   },
   "devDependencies": {

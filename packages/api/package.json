@@ -12,7 +12,8 @@
     "dev": "tsx src/entry/node.ts",
     "import": "tsx src/cli/import.ts",
     "rebuild": "tsx src/cli/rebuild.ts",
-    "eval": "tsx src/cli/eval.ts"
+    "eval": "tsx src/cli/eval.ts",
+    "context-cost": "tsx src/cli/context-cost.ts"
   },
   "dependencies": {
     "@cairn/adapter-sqlite": "workspace:*",

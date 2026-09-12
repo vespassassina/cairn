@@ -8,9 +8,9 @@ Last updated: 11 September 2026
 
 ## tl;dr
 
-An open-source, self-hosted document and collection store where Claude is the primary client.
+**A wiki and tables your agents can write to, with every change reviewable.**
 
-The MCP server is the product. The web editor comes second.
+An open-source, self-hosted document and collection store where agents are the primary client. They get in through MCP, a REST API or a command-line tool (ADR-013). The web editor comes second.
 
 It runs on the free tier of Azure (Cosmos DB) or AWS (DynamoDB) and scales by configuration, not rewrite.
 
@@ -25,6 +25,16 @@ I want structured, queryable state that Claude can read and write across chats: 
 Notion solves this with a connector, but it's closed, SaaS-only, and its AI features cost €20+ per seat for capabilities I already get from Claude.
 
 The open-source alternatives (Docmost, Outline, AppFlowy, AFFiNE) need Postgres plus Redis, don't run on serverless free tiers and treat AI access as an afterthought.
+
+### Landscape, September 2026
+
+Agent memory is a crowded field, and Hacker News is tired of it. The recurring comment is that most memory tools are "about the same as grep in a memory/ directory", and the typical commenter keeps a MEMORY.md and a SQLite file of their own. Where Cairn sits:
+
+1. **Memory layers** (Mem0 and OpenMemory, Letta, Zep and Graphiti, Cognee) extract facts from conversations into fragments or graphs, built for retrieval by software rather than reading by a person. Cairn stores documents a person reads and edits.
+2. **Basic Memory** is closest in spirit: Markdown on disk, wiki links, MCP, AGPL, about 3,900 GitHub stars. It has no typed collections, edit history only in its paid cloud, and a local install cannot be reached by claude.ai or another machine.
+3. **Remnus** is closest in data model: pages plus databases with JSON schemas, 14 MCP tools, SQLite, OAuth 2.1, AGPL. A one-person project, and proof the niche exists.
+
+What no one combines: typed tables next to the wiki, a revision for every write by every actor, a review screen that shows agent writes first, and one codebase that runs as a SQLite file or on a cloud free tier. That combination is the pitch. "Memory for agents" is not.
 
 ## 2. Goals
 
@@ -166,7 +176,9 @@ Cairn contains one small OAuth 2.1 authorization server that delegates login to 
 
 Write tools (`create_page`, `update_page`, `upsert_row`) accept an optional `change_note` so an agent can say why it made a change. It is shown in the review console's recent changes.
 
-Server instructions: at initialize, Cairn also tells the client when to use it: search before answering, save durable knowledge without being asked, prefer updating an existing page, and give every write a change note (ADR-011). Tools alone are available but never required, so without this Claude uses Cairn only when asked.
+Server instructions: at initialize, Cairn also tells the client when to use it: search before answering, save durable knowledge without being asked, prefer updating an existing page, and give every write a change note (ADR-011). Tools alone are available but never required, so without this Claude uses Cairn only when asked. The instructions end with a live summary of what the workspace holds: collections with row counts, top-level pages with their size, and common tags, so Claude knows which questions Cairn can answer (ADR-012).
+
+The same capabilities are on a REST API at `/api/v1` and a `cairn` command-line tool with a skill file, for agents that have a shell and would rather not pay for tool schemas in every session (ADR-013). A changes feed, `GET /api/v1/changes?since=`, lets an agent or script ask what changed since it last looked.
 
 Result size: every tool truncates at a configurable token budget and says so, with a cursor for the next page.
 
@@ -274,10 +286,10 @@ Mitigation: phase gate below. No editor code until the MCP-only phase passes its
 
 | # | Question | Owner | Blocking? |
 |---|---|---|---|
-| Q1 | Which Cosmos full-text languages are GA today, and is Dutch or Italian among them? | Engineering | Yes, before P0.2 |
+| Q1 | Which Cosmos full-text languages are GA today, and is Dutch or Italian among them? Partly answered 2026-09-12: English, German, French, Italian, Portuguese and Spanish are listed, multi-language is still preview, stopword removal is English only, and Dutch is not listed. | Engineering | Yes, before P0.2 |
 | Q2 | ~~Full-text on AWS~~ Answered by ADR-005: serialized BM25 index in S3, built by the indexer at concurrency 1, loaded by query functions with ETag caching. Still to prove at 5,000 pages. | Engineering | No |
 | Q3 | ~~OAuth approach for MCP~~ Answered by ADR-007: own small OAuth 2.1 server delegating to any OIDC provider. | Engineering | No |
-| Q7 | Does Cosmos free tier support full-text and vector indexes on shared throughput? Does Flex Consumption have a free monthly allowance? How does the AWS credit-based free plan of July 2025 affect the always-free services on a new account? | Engineering | Yes, before Phase 1 |
+| Q7 | Does Cosmos free tier support full-text and vector indexes on shared throughput? Does Flex Consumption have a free monthly allowance? How does the AWS credit-based free plan of July 2025 affect the always-free services on a new account? Partly answered 2026-09-12 from Microsoft docs: vector indexing is not supported on shared-throughput accounts, so vectors on the free tier need a dedicated container. Flex Consumption grants 250,000 executions and 100,000 GB-s a month per pay-as-you-go subscription. The AWS question and full-text on shared throughput are still open. | Engineering | Yes, before Phase 1 |
 | Q8 | Does the Cosmos emulator support full-text search? If not, search conformance on Cosmos needs a nightly run against a real account. | Engineering | Yes, before P0.2 |
 | Q4 | Licence: AGPL (protects against SaaS wrapping) or MIT (adoption)? Leaning AGPL. | Owner | No |
 | Q5 | Final name. Check GitHub, npm and domain availability. | Owner | No |
@@ -310,5 +322,7 @@ Record decisions in `docs/decisions/` as short ADRs. Already decided in design d
 9. ADR-009: A server-rendered review console, styled with artifactkit.
 10. ADR-010: No sign-in for trusted local requests.
 11. ADR-011: Cairn tells clients when to use it, through MCP server instructions.
+12. ADR-012: The server instructions carry a live summary of the workspace.
+13. ADR-013: One core, three surfaces: MCP, REST and a CLI.
 
 The full index, with status, is in `docs/decisions/README.md`. What changed and why, in order, is in `docs/CHANGELOG.md`. The owner's instructions are in `docs/DIRECTIONS.md`, and failures and lessons in `docs/LESSONS.md`. Live status is in `docs/ROADMAP.md`.

@@ -1,0 +1,21 @@
+{
+  "name": "@cairn/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Command-line client for Cairn: a wiki and tables your agents can write to, with every change reviewable.",
+  "bin": {
+    "cairn": "./dist/bin.js"
+  },
+  "exports": {
+    ".": "./src/main.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@cairn/api": "workspace:*",
+    "@cairn/core": "workspace:*"
+  }
+}

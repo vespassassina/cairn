@@ -63,7 +63,7 @@ const SECURITY_HEADERS: Record<string, string> = {
   "x-frame-options": "DENY",
 };
 
-const PUBLIC_PATHS = [/^\/health$/, /^\/mcp/, /^\/assets\//, /^\/login$/];
+const PUBLIC_PATHS = [/^\/health$/, /^\/mcp/, /^\/api(\/|$)/, /^\/assets\//, /^\/login$/];
 
 async function render(c: Context, element: Child, status: 200 | 400 | 404 | 409 = 200) {
   const body = await (element as Promise<string> | string);
@@ -473,7 +473,7 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
   // route. MCP and /health have their own rules and are left alone.
   app.use("*", async (c, next) => {
     const path = new URL(c.req.url).pathname;
-    if (/^\/(mcp|health)/.test(path)) return next();
+    if (/^\/(mcp|health)/.test(path) || /^\/api(\/|$)/.test(path)) return next();
 
     if (!PUBLIC_PATHS.some((pattern) => pattern.test(path))) {
       const cookie = getCookie(c, SESSION_COOKIE) ?? "";

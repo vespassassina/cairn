@@ -1,10 +1,12 @@
-import { Hono } from "hono";
+import { Hono, type MiddlewareHandler } from "hono";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import type { Actor } from "@cairn/core";
 import type { AppContext } from "./context.js";
 import { SERVER_INSTRUCTIONS } from "./mcp/instructions.js";
+import { cachedInstructions } from "./mcp/summary.js";
 import { registerTools } from "./mcp/tools.js";
+import { restRoutes } from "./rest/routes.js";
 import { NO_LOCAL_TRUST, trustedForMcp, type LocalTrust } from "./trust.js";
 import { registerConsole } from "./web/console.js";
 
@@ -38,8 +40,13 @@ async function handleMcpRequest(
   request: Request,
   context: AppContext,
 ): Promise<Response> {
-  const server = new McpServer(SERVER_INFO, { instructions: SERVER_INSTRUCTIONS });
-  registerTools(server, context, agentActor(request));
+  // Instructions are only sent in the initialize result, so the live summary
+  // of the workspace (ADR-012) is built for that request and no other.
+  const instructions = (await isInitialize(request))
+    ? await cachedInstructions(context)
+    : SERVER_INSTRUCTIONS;
+  const server = new McpServer(SERVER_INFO, { instructions });
+  registerTools(server, context, agentActor(request, "mcp"));
 
   // No sessionIdGenerator means stateless: no session to track, and no
   // server-initiated messages. enableJsonResponse returns one JSON body
@@ -51,19 +58,37 @@ async function handleMcpRequest(
   return transport.handleRequest(request);
 }
 
+/** Whether the JSON-RPC body, single or batched, carries an initialize. */
+async function isInitialize(request: Request): Promise<boolean> {
+  if (request.method !== "POST") return false;
+  try {
+    const body: unknown = await request.clone().json();
+    const messages = Array.isArray(body) ? body : [body];
+    return messages.some(
+      (message) =>
+        typeof message === "object" &&
+        message !== null &&
+        (message as { method?: unknown }).method === "initialize",
+    );
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Who is calling, for attributing writes (ADR-008 rule 4).
  *
  * In stateless mode the MCP client's name arrives only at initialize, never on
  * a tool call, so the user agent header is the best label available until
- * OAuth client registrations exist (ADR-007).
+ * OAuth client registrations exist (ADR-007). REST callers are labelled the
+ * same way; the CLI sends its own name (ADR-013 rule 3).
  */
-export function agentActor(request: Request): Actor {
+export function agentActor(request: Request, surface: "mcp" | "api" = "mcp"): Actor {
   const userAgent = request.headers.get("user-agent")?.trim();
   return {
     kind: "agent",
-    id: "mcp:dev",
-    label: userAgent ? userAgent.slice(0, 120) : "MCP client",
+    id: `${surface}:dev`,
+    label: userAgent ? userAgent.slice(0, 120) : surface === "mcp" ? "MCP client" : "API client",
   };
 }
 
@@ -97,7 +122,8 @@ export function createApp(options: AppOptions): Hono {
 
   const trust = options.trust ?? NO_LOCAL_TRUST;
 
-  app.use("/mcp", async (c, next) => {
+  // MCP and REST are both agent doors, so one check guards both (ADR-013).
+  const agentAuth: MiddlewareHandler = async (c, next) => {
     if (trustedForMcp(c.req.raw, trust)) return next();
     const header = c.req.header("authorization") ?? "";
     const token = header.startsWith("Bearer ") ? header.slice(7) : "";
@@ -114,9 +140,12 @@ export function createApp(options: AppOptions): Hono {
       );
     }
     await next();
-  });
+  };
+  app.use("/mcp", agentAuth);
+  app.use("/api/*", agentAuth);
 
   app.all("/mcp", (c) => handleMcpRequest(c.req.raw, options.context));
+  app.route("/api/v1", restRoutes(options.context, (request) => agentActor(request, "api")));
 
   // The review console (ADR-009). Registered after MCP so its sign-in never
   // stands in front of the MCP bearer check.

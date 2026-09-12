@@ -74,6 +74,15 @@ importers:
         specifier: ^14.2.0
         version: 14.2.0
 
+  packages/cli:
+    devDependencies:
+      '@cairn/api':
+        specifier: workspace:*
+        version: link:../api
+      '@cairn/core':
+        specifier: workspace:*
+        version: link:../core
+
   packages/core:
     devDependencies:
       typescript:

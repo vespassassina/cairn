@@ -13,6 +13,36 @@ Rules:
 
 ## 2026-09-12
 
+### Write it down, then start
+
+> "write then start working"
+
+Landed in: ADR-013, the REST API with its changes feed, the `cairn` CLI and skill, and a measured context cost in the README.
+
+### Keep the tagline; add an API next to MCP
+
+> "i love the: a wiki and tables your agents can write to, with every change reviewable. we keep this. anything i could pivot this to make it more useful, and slightly different from everything out there? What about adding an API next to the MCP, and the API can be a tool and require less context?"
+
+Landed in:
+
+1. The tagline, in the PRD and the README.
+2. ADR-013: MCP, REST and a CLI with a skill file, over one core, with a changes feed.
+3. The roadmap: provenance (`sources` on writes), freshness (`verified_at`), and a sync design built on the revision log, in that order after the three surfaces.
+
+Not taken, and why: fact extraction from conversations (it fills the wiki with fragments nobody reads), per-agent access control, and bundled embeddings.
+
+### Review the project before publishing
+
+> "review the project, goals, ideas and status. validate if it makes sense, if there are any obvious failures or it is 'just another repo' (check hacker news for similar projects). my goal is to build something simple, that is useful to me and many, can run local/azure/aws practically for free and can be deployed by anyone (hence the docs). i will publish this as opensource on github and advertise on hacker news. The basic idea is to have a good, fast, structured, safe repo of information and memories and 'stuff' to be shared between multiple agents, online and offline."
+
+Landed in: the landscape and launch findings in the changelog, PRD section 1 and section 13, and a launch checklist in the roadmap.
+
+### Build the live summary
+
+> "build the live summary"
+
+Landed in: ADR-012. The server instructions now end with what the workspace holds: collections with row counts, top-level pages with their size, and common tags.
+
 ### Use Cairn from every session, and advertise what it holds
 
 > "can we amend the main claude guide to use cairn when available? is cairn advertising the topics/projects it holds?"
@@ -20,7 +50,7 @@ Rules:
 Landed in:
 
 1. The owner's global Claude Code instructions (outside this repo): a short section saying to check Cairn before answering on topics with history, save what lasts, never store secrets, and carry on without it when the server is down.
-2. Advertising topics: not yet. Cairn's instructions are fixed text today, so Claude does not know what Cairn holds until it searches. Proposed next, pending the owner's go-ahead.
+2. Advertising topics: at the time, not yet, because the instructions were fixed text. Proposed, then built on the owner's go-ahead (next entry).
 
 ### Keep logs of instructions, failures, lessons and decisions
 

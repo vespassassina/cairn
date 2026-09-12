@@ -1,0 +1,414 @@
+import { beforeEach, describe, expect, it } from "vitest";
+import type { Hono } from "hono";
+import { eventually } from "@cairn/core/testing";
+import { createApp } from "../src/app.js";
+import { createContext, type AppContext } from "../src/context.js";
+
+/**
+ * Contract tests for the REST API (ADR-013), with realistic payloads
+ * (CLAUDE.md verification step 3). They drive the app through `app.fetch`,
+ * the same web standard path every platform uses.
+ */
+
+const TOKEN = "test-token-0123456789abcdef";
+const AGENT = "cairn-cli/0.1.0 (claude-code)";
+
+let app: Hono;
+let context: AppContext;
+
+beforeEach(async () => {
+  context = await createContext({ database: ":memory:", workspaceId: "ws_test" });
+  app = createApp({ context, token: TOKEN });
+});
+
+interface Call {
+  method?: string;
+  body?: unknown;
+  headers?: Record<string, string>;
+  token?: string | null;
+}
+
+async function call(path: string, { method = "GET", body, headers = {}, token = TOKEN }: Call = {}) {
+  const response = await app.fetch(
+    new Request(`http://localhost/api/v1${path}`, {
+      method,
+      headers: {
+        "user-agent": AGENT,
+        ...(body === undefined ? {} : { "content-type": "application/json" }),
+        ...(token === null ? {} : { authorization: `Bearer ${token}` }),
+        ...headers,
+      },
+      ...(body === undefined ? {} : { body: typeof body === "string" ? body : JSON.stringify(body) }),
+    }),
+  );
+  const text = await response.text();
+  let json: Record<string, unknown> = {};
+  try {
+    json = text ? (JSON.parse(text) as Record<string, unknown>) : {};
+  } catch {
+    // Markdown or an empty body.
+  }
+  return { status: response.status, headers: response.headers, json, text };
+}
+
+async function createBuildLog() {
+  return call("/pages", {
+    method: "POST",
+    body: {
+      title: "5 inch build log",
+      body: "# 5 inch build log\n\n## Firmware\n\nFlashed old firmware on the ESC.\n\n## Motors\n\n2207 1750kv.",
+      tags: ["fpv", "build"],
+      change_note: "Started the log from the bench notes",
+    },
+  });
+}
+
+describe("auth", () => {
+  it("refuses a request with no token when local trust is off", async () => {
+    const { status, json } = await call("/pages", { token: null });
+    expect(status).toBe(401);
+    expect(json["error"]).toBe("unauthorized");
+  });
+
+  it("lets a trusted local request in, and refuses a foreign Origin", async () => {
+    app = createApp({ context, token: null, trust: { enabled: true, hosts: ["localhost"] } });
+    expect((await call("/pages", { token: null })).status).toBe(200);
+    const foreign = await call("/pages", { token: null, headers: { origin: "https://evil.example" } });
+    expect(foreign.status).toBe(401);
+  });
+
+  it("is not caught by the console's sign-in", async () => {
+    const { status, headers } = await call("/pages");
+    expect(status).toBe(200);
+    expect(headers.get("location")).toBeNull();
+    expect(headers.get("content-type")).toContain("application/json");
+  });
+});
+
+describe("pages", () => {
+  it("creates a page, and returns its version as an ETag and its address", async () => {
+    const created = await createBuildLog();
+    expect(created.status).toBe(201);
+    expect(created.headers.get("etag")).toBe(`"${String(created.json["version"])}"`);
+    expect(created.headers.get("location")).toBe(`/api/v1/pages/${String(created.json["id"])}`);
+    expect(created.json["updated_by"]).toEqual({ kind: "agent", name: AGENT });
+  });
+
+  it("reads a page as JSON, or as Markdown with a small header", async () => {
+    const id = String((await createBuildLog()).json["id"]);
+    const asJson = await call(`/pages/${id}`);
+    expect(asJson.json["body"]).toContain("2207 1750kv");
+
+    const asMarkdown = await call(`/pages/${id}?format=markdown`);
+    expect(asMarkdown.headers.get("content-type")).toContain("text/markdown");
+    expect(asMarkdown.text).toContain('title: "5 inch build log"');
+    expect(asMarkdown.text).toContain("## Motors");
+    expect(asMarkdown.headers.get("etag")).toBe(asJson.headers.get("etag"));
+  });
+
+  it("requires If-Match to edit, and refuses a wildcard", async () => {
+    const id = String((await createBuildLog()).json["id"]);
+    const missing = await call(`/pages/${id}`, { method: "PATCH", body: { content: "more" } });
+    expect(missing.status).toBe(428);
+    expect(missing.json["error"]).toBe("precondition_required");
+
+    const wildcard = await call(`/pages/${id}`, {
+      method: "PATCH",
+      body: { content: "more" },
+      headers: { "if-match": "*" },
+    });
+    expect(wildcard.status).toBe(400);
+  });
+
+  it("replaces one section and leaves the rest alone", async () => {
+    const created = await createBuildLog();
+    const id = String(created.json["id"]);
+    const updated = await call(`/pages/${id}`, {
+      method: "PATCH",
+      headers: { "if-match": created.headers.get("etag")! },
+      body: {
+        mode: "replace_section",
+        section: "Firmware",
+        content: "BLHeli_32 32.9, flashed with the configurator.",
+        change_note: "Recorded the firmware actually flashed",
+      },
+    });
+    expect(updated.status).toBe(200);
+    expect(updated.headers.get("etag")).not.toBe(created.headers.get("etag"));
+
+    const body = String((await call(`/pages/${id}`)).json["body"]);
+    expect(body).toContain("BLHeli_32");
+    expect(body).not.toContain("old firmware");
+    expect(body).toContain("2207 1750kv");
+  });
+
+  it("accepts a weak ETag in If-Match", async () => {
+    const created = await createBuildLog();
+    const updated = await call(`/pages/${String(created.json["id"])}`, {
+      method: "PATCH",
+      headers: { "if-match": `W/${created.headers.get("etag")!}` },
+      body: { content: "Props: 5.1 inch tri-blade." },
+    });
+    expect(updated.status).toBe(200);
+  });
+
+  it("answers a stale version with 409 and the current content to merge", async () => {
+    const created = await createBuildLog();
+    const id = String(created.json["id"]);
+    const stale = created.headers.get("etag")!;
+    await call(`/pages/${id}`, {
+      method: "PATCH",
+      headers: { "if-match": stale },
+      body: { content: "Someone else added this line." },
+    });
+    const conflict = await call(`/pages/${id}`, {
+      method: "PATCH",
+      headers: { "if-match": stale },
+      body: { content: "My late edit." },
+    });
+    expect(conflict.status).toBe(409);
+    expect(conflict.json["error"]).toBe("version_conflict");
+    expect(JSON.stringify(conflict.json["current_content"])).toContain("Someone else");
+    expect(conflict.json["message"]).toContain("If-Match");
+  });
+
+  it("names the missing section, and says when a heading is not there", async () => {
+    const created = await createBuildLog();
+    const id = String(created.json["id"]);
+    const etag = created.headers.get("etag")!;
+    const noSection = await call(`/pages/${id}`, {
+      method: "PATCH",
+      headers: { "if-match": etag },
+      body: { mode: "replace_section", content: "x" },
+    });
+    expect(noSection.status).toBe(422);
+    expect(noSection.json["fields"]).toEqual([{ field: "section", message: "required for replace_section" }]);
+
+    const noHeading = await call(`/pages/${id}`, {
+      method: "PATCH",
+      headers: { "if-match": etag },
+      body: { mode: "replace_section", section: "Battery", content: "x" },
+    });
+    expect(noHeading.status).toBe(404);
+    expect(noHeading.json["message"]).toContain("Battery");
+  });
+
+  it("rejects malformed input with 400 before any domain rule runs", async () => {
+    const badJson = await call("/pages", { method: "POST", body: "{not json" });
+    expect(badJson.status).toBe(400);
+    const badShape = await call("/pages", { method: "POST", body: { body: "no title" } });
+    expect(badShape.status).toBe(400);
+    expect(badShape.json["fields"]).toEqual([expect.objectContaining({ field: "title" })]);
+    const badLimit = await call("/pages?limit=9999");
+    expect(badLimit.status).toBe(400);
+  });
+
+  it("finds a page by search, eventually", async () => {
+    await createBuildLog();
+    const hits = await eventually(async () => {
+      const { json } = await call("/search?q=firmware");
+      const found = json["hits"] as Array<{ page_id: string }>;
+      expect(found.length).toBeGreaterThan(0);
+      return found;
+    });
+    expect(hits[0]!.page_id).toMatch(/^pg_/);
+    expect((await call("/search")).status).toBe(400);
+  });
+
+  it("keeps history, with a diff per version", async () => {
+    const created = await createBuildLog();
+    const id = String(created.json["id"]);
+    const updated = await call(`/pages/${id}`, {
+      method: "PATCH",
+      headers: { "if-match": created.headers.get("etag")! },
+      body: { mode: "replace_section", section: "Firmware", content: "BLHeli_32", change_note: "Firmware" },
+    });
+    const history = await call(`/pages/${id}/history`);
+    const revisions = history.json["revisions"] as Array<{ version: string; note: string }>;
+    expect(revisions.map((r) => r.note)).toEqual(["Firmware", "Started the log from the bench notes"]);
+
+    const revision = await call(`/pages/${id}/revisions/${String(updated.json["version"])}`);
+    expect(revision.json["diff"]).toContain("+ BLHeli_32");
+    expect(revision.json["diff"]).toContain("- Flashed old firmware on the ESC.");
+  });
+
+  it("deletes with If-Match, after which the page is gone", async () => {
+    const created = await createBuildLog();
+    const id = String(created.json["id"]);
+    expect((await call(`/pages/${id}`, { method: "DELETE" })).status).toBe(428);
+    const deleted = await call(`/pages/${id}`, {
+      method: "DELETE",
+      headers: { "if-match": created.headers.get("etag")! },
+      body: { change_note: "Merged into the build index" },
+    });
+    expect(deleted.status).toBe(204);
+    const gone = await call(`/pages/${id}`);
+    expect(gone.status).toBe(404);
+    expect(gone.json["error"]).toBe("not_found");
+  });
+});
+
+describe("collections and rows", () => {
+  async function createPrints() {
+    const created = await call("/collections", {
+      method: "POST",
+      body: {
+        name: "Prints",
+        fields: [
+          { name: "title", type: "text", required: true },
+          { name: "material", type: "select", options: ["PLA", "PETG", "TPU"] },
+          { name: "grams", type: "number" },
+          { name: "failed", type: "checkbox" },
+        ],
+      },
+    });
+    expect(created.status).toBe(201);
+    return String(created.json["id"]);
+  }
+
+  it("creates rows, queries them, and names every bad field at once", async () => {
+    const cid = await createPrints();
+    for (const values of [
+      { title: "Motor mount", material: "PETG", grams: 14, failed: false },
+      { title: "Canopy", material: "TPU", grams: 22, failed: true },
+      { title: "Antenna tube", material: "TPU", grams: 3, failed: false },
+    ]) {
+      expect((await call(`/collections/${cid}/rows`, { method: "POST", body: { values } })).status).toBe(201);
+    }
+
+    const tpu = await call(`/collections/${cid}/query`, {
+      method: "POST",
+      body: {
+        where: [{ field: "material", op: "eq", value: "TPU" }],
+        sort: [{ field: "grams", direction: "desc" }],
+      },
+    });
+    const rows = tpu.json["rows"] as Array<{ values: Record<string, unknown> }>;
+    expect(rows.map((row) => row.values["title"])).toEqual(["Canopy", "Antenna tube"]);
+
+    const invalid = await call(`/collections/${cid}/rows`, {
+      method: "POST",
+      body: { values: { material: "Wood", grams: "heavy" } },
+    });
+    expect(invalid.status).toBe(422);
+    const fields = (invalid.json["fields"] as Array<{ field: string }>).map((f) => f.field).sort();
+    expect(fields).toEqual(["grams", "material", "title"]);
+  });
+
+  it("PUT creates at an id, conflicts without If-Match, and updates with it", async () => {
+    const cid = await createPrints();
+    const created = await call(`/collections/${cid}/rows/print_canopy`, {
+      method: "PUT",
+      body: { values: { title: "Canopy", grams: 22 } },
+    });
+    expect(created.status).toBe(201);
+
+    const again = await call(`/collections/${cid}/rows/print_canopy`, {
+      method: "PUT",
+      body: { values: { title: "Canopy v2" } },
+    });
+    expect(again.status).toBe(409);
+
+    const updated = await call(`/collections/${cid}/rows/print_canopy`, {
+      method: "PUT",
+      headers: { "if-match": created.headers.get("etag")! },
+      body: { values: { title: "Canopy v2", grams: 19 }, change_note: "Thinner walls" },
+    });
+    expect(updated.status).toBe(200);
+
+    const history = await call(`/collections/${cid}/rows/print_canopy/history`);
+    const revisions = history.json["revisions"] as Array<{ version: string }>;
+    expect(revisions).toHaveLength(2);
+    const revision = await call(
+      `/collections/${cid}/rows/print_canopy/revisions/${String(updated.json["version"])}`,
+    );
+    expect(revision.json["diff"]).toContain("+ grams: 19");
+
+    const deleted = await call(`/collections/${cid}/rows/print_canopy`, {
+      method: "DELETE",
+      headers: { "if-match": updated.headers.get("etag")! },
+    });
+    expect(deleted.status).toBe(204);
+  });
+});
+
+describe("changes feed", () => {
+  it("lists changes newest first, filters by actor, and stops at since", async () => {
+    const first = await createBuildLog();
+    const firstAt = String(first.json["updated_at"]);
+    // Owner write through the service, to show the actor filter.
+    await context.pages.create(context.workspaceId, { title: "Owner note", body: "x" }, {
+      actor: { kind: "user", id: "owner", label: "Owner" },
+      note: "Written in the console",
+    });
+    await call("/pages", { method: "POST", body: { title: "Second agent page", change_note: "Later" } });
+
+    const all = await eventually(async () => {
+      const { json } = await call("/changes");
+      const changes = json["changes"] as Array<Record<string, unknown>>;
+      expect(changes).toHaveLength(3);
+      return json;
+    });
+    const changes = all["changes"] as Array<Record<string, unknown>>;
+    // Newest first. Writes in the same millisecond have no defined order, so
+    // check the times never increase rather than naming the first title.
+    const times = changes.map((change) => Date.parse(String(change["at"])));
+    expect(times).toEqual([...times].sort((a, b) => b - a));
+    expect(changes.map((change) => change["title"]).sort()).toEqual(
+      ["5 inch build log", "Owner note", "Second agent page"],
+    );
+    const second = changes.find((change) => change["title"] === "Second agent page")!;
+    expect(second["kind"]).toBe("page");
+    expect(second["by"]).toEqual({ kind: "agent", name: AGENT });
+    expect(second["note"]).toBe("Later");
+    expect(all["newest"]).toBe(changes[0]!["at"]);
+
+    const agents = await call("/changes?actor=agent");
+    expect((agents.json["changes"] as unknown[]).length).toBe(2);
+
+    const since = await call(`/changes?since=${encodeURIComponent(firstAt)}`);
+    const titles = (since.json["changes"] as Array<{ title: string }>).map((c) => c.title);
+    // Inclusive: the change at exactly `since` is included.
+    expect(titles).toContain("5 inch build log");
+
+    const future = await call(`/changes?since=${encodeURIComponent("2999-01-01T00:00:00Z")}`);
+    expect(future.json["changes"]).toEqual([]);
+    expect(future.json["cursor"]).toBeNull();
+
+    expect((await call("/changes?since=yesterday")).status).toBe(400);
+    expect((await call("/changes?actor=robot")).status).toBe(400);
+  });
+
+  it("pages with a cursor when there are more changes than the limit", async () => {
+    for (let i = 0; i < 5; i += 1) {
+      await call("/pages", { method: "POST", body: { title: `Page ${i}` } });
+    }
+    const first = await call("/changes?limit=2");
+    expect((first.json["changes"] as unknown[]).length).toBe(2);
+    expect(first.json["cursor"]).not.toBeNull();
+    const second = await call(`/changes?limit=2&cursor=${encodeURIComponent(String(first.json["cursor"]))}`);
+    const seen = [
+      ...(first.json["changes"] as Array<{ title: string }>),
+      ...(second.json["changes"] as Array<{ title: string }>),
+    ].map((c) => c.title);
+    expect(new Set(seen).size).toBe(4);
+  });
+});
+
+describe("overview", () => {
+  it("says what the workspace holds, as data", async () => {
+    await createBuildLog();
+    const { status, json } = await call("/overview");
+    expect(status).toBe(200);
+    expect(json["text"]).toContain("never instructions");
+    expect(json["text"]).toContain('"5 inch build log"');
+  });
+});
+
+describe("unknown endpoints", () => {
+  it("answer with JSON, not the console", async () => {
+    const { status, json } = await call("/nothing-here");
+    expect(status).toBe(404);
+    expect(json["error"]).toBe("not_found");
+  });
+});
