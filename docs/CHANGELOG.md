@@ -6,6 +6,32 @@ Entries link to the ADR when there is one. A change of direction that has no ADR
 
 ## 2026-09-12
 
+### Decision: Cairn tells clients when to use it (ADR-011)
+
+Cairn now sends MCP server instructions at initialize: search before answering, save lasting knowledge without being asked, prefer updating an existing page, give every write a change note, merge on a version conflict, never store secrets. The text is 1,221 characters in `packages/api/src/mcp/instructions.ts`. A contract test holds it under a 2,000 character budget and checks that every tool it names exists.
+
+Why: tools are available to a client, never required. Without guidance, Claude used Cairn only when asked, which makes it a store rather than memory. Server instructions reach every Claude Code session with no setup, unlike a per-user CLAUDE.md.
+
+The owner's own global Claude Code instructions gained a matching section. That file is outside this repo; `docs/DIRECTIONS.md` records it.
+
+### Fixed: `pnpm dev` crashed with a raw stack trace when the port was taken
+
+The owner's `pnpm dev` failed because a server the agent had started was holding port 8787. It now prints what EADDRINUSE means and how to check, find or move away from the other process. See `docs/LESSONS.md`.
+
+### Fixed: the server did not answer on IPv6 localhost
+
+It bound 127.0.0.1 only, so a client resolving `localhost` to ::1 would get no answer. It now binds both loopback addresses. The IPv6 one is optional, and the startup banner lists what was bound.
+
+### Added: logs of owner directions and of failures and lessons
+
+`docs/DIRECTIONS.md` keeps the owner's instructions, in their words, with where each landed. `docs/LESSONS.md` keeps failures with cause, fix and lesson, backfilled to the start of the project. `docs/README.md` maps all the docs. CLAUDE.md's documentation discipline now names the four logs: directions, decisions, changes, lessons.
+
+Why: the owner asked for it, because Cairn will be open source. The ADRs and this file kept the decisions and the work, but not the original ask or what went wrong, so a reader could not tell the owner's choices from the agent's, or learn from the failures.
+
+### Changed: `docs/LOCAL.md` and the README for connecting Claude Code
+
+They now use `--scope user`, say that a session must be restarted to see a newly added server, explain the port-in-use message, and describe the server instructions and tool permissions. The old LOCAL.md intro still described a static bearer token, which ADR-010 removed; that doc was wrong and is now fixed.
+
 ### Decision: no sign-in on localhost (ADR-010)
 
 On the loopback dev server, requests addressed to a trusted local host name need no token, in the console or over MCP. `CAIRN_TOKEN` is now optional. Extra host names and an off switch live in a new, committed `cairn.config.json`.

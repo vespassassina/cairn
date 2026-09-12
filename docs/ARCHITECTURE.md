@@ -35,7 +35,7 @@ Claude (MCP client)        Browser (owner)
 
 1. `packages/core`. Domain types, the two ports, the services, and the conformance suites. No dependencies. Nothing here knows which cloud it runs on.
 2. `packages/adapter-sqlite`. The reference implementation of both ports on `node:sqlite`. CI always runs it.
-3. `packages/api`. The Hono app, the MCP tools, the review console, and the command-line tools. The only package that knows about HTTP.
+3. `packages/api`. The Hono app, the MCP tools and server instructions (ADR-011), the review console, and the command-line tools. The only package that knows about HTTP. On Node it listens on both loopback addresses, 127.0.0.1 and ::1.
 4. `examples/`. Dataset-specific scripts, such as the peptide wiki seed. Not part of the product.
 
 ## Data
@@ -67,4 +67,4 @@ See CLAUDE.md, "Hard rules". The short version: no cloud SDK outside an adapter,
 
 ## Where the decisions live
 
-`docs/decisions/README.md` indexes every ADR. `docs/CHANGELOG.md` records what changed and why, in order.
+`docs/decisions/README.md` indexes every ADR. `docs/CHANGELOG.md` records what changed and why, in order. `docs/DIRECTIONS.md` keeps the owner's instructions, and `docs/LESSONS.md` keeps failures and what they taught. `docs/README.md` maps them all.

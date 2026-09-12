@@ -1,7 +1,7 @@
 # Running Cairn locally
 
-The PoC: one Node process, one SQLite file, the MCP server on loopback with a
-static bearer token. No cloud account, no OAuth, no tunnel.
+The PoC: one Node process, one SQLite file, the MCP server on loopback. No
+token on localhost, no cloud account, no OAuth, no tunnel.
 
 ## 1. Install
 
@@ -61,18 +61,28 @@ Check it:
 curl http://localhost:8787/health
 ```
 
+It listens on 127.0.0.1 and ::1, so `localhost` works whichever one a client picks.
+
+If it says port 8787 is already in use, Cairn is probably running already, perhaps started by an agent or another terminal. Open the health URL above to check, or find the process with `lsof -nP -iTCP:8787 -sTCP:LISTEN`. To use another port, set `port` in `cairn.config.json`.
+
 ## 5. Connect Claude Code
 
 ```
-claude mcp add --transport http cairn http://localhost:8787/mcp
+claude mcp add --transport http --scope user cairn http://localhost:8787/mcp
 ```
 
-No header is needed on localhost. If you turned local trust off, add
-`--header "Authorization: Bearer $CAIRN_TOKEN"`.
+1. `--scope user` makes Cairn available in every project, which is what memory needs. Without it, the server is added for the current folder only.
+2. No header is needed on localhost. If you turned local trust off, add `--header "Authorization: Bearer $CAIRN_TOKEN"`.
+3. Start a new Claude session. A session loads MCP servers when it starts, so one that was already open will not see Cairn.
+4. `claude mcp list` shows whether the server is reachable. It needs `pnpm dev` running; without it, Claude carries on without Cairn.
 
 Then ask Claude to search for something you know is in your notes. The tools
 available are the nine in PRD section 8, plus `create_collection`,
 `get_history` and `get_revision`.
+
+You do not have to ask Claude to use Cairn every time. Cairn sends short server instructions when a session connects: search before answering, save lasting findings without being asked, prefer updating an existing page, and give every write a change note (ADR-011). To point Claude at specific topics, add a line to your own CLAUDE.md, for example "the peptide wiki lives in Cairn".
+
+The first time Claude calls each tool, Claude Code asks for permission. To allow them all, add `mcp__cairn__*` to the allow list in your Claude Code settings.
 
 Every write is kept as a revision with who made it and why (ADR-008), so an
 agent edit can always be undone.

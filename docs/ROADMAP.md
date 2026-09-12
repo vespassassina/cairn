@@ -11,6 +11,7 @@ Status key: done, in progress, next, later, blocked.
 | Adapter interfaces (document store, search index) | done | ADR-005 |
 | SQLite adapter | done | `node:sqlite`, FTS5 |
 | Conformance suites | done | document store, search index, pushdown equivalence |
+| Documentation logs | done | Directions, decisions, changelog, lessons. `docs/README.md` maps them |
 | Spike S2: MCP transport shape | done | Web-standard transport, one server per request. ADR-006 |
 | Spike S1: Hono on Azure Functions | next | Blocks Phase 1 deploy, not local use |
 | Eval query set, 30 real queries | in progress | 2 of 30 written, none with expected pages |
@@ -25,6 +26,8 @@ Status key: done, in progress, next, later, blocked.
 | Revisions: history, actor, change notes | done | ADR-008. MCP `get_history`, `get_revision`, `change_note` |
 | Review console | done | ADR-009. 24 contract tests, checked visually |
 | No sign-in on localhost | done | ADR-010. `cairn.config.json` |
+| MCP server instructions | done | ADR-011. Read first, write back, change notes |
+| Daily use from Claude Code | in progress | Server added with `--scope user`. Watch agent writes in the console (ADR-011 consequence 4) |
 | Search precision: OR matching over-matches | later | Tune against the eval set once expected pages exist |
 | Cosmos adapter | later | Needs Q1, Q7, Q8 answered |
 | OAuth server | later | ADR-007, time-boxed to 3 days (R1) |

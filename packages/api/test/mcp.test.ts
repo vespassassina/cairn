@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import type { Hono } from "hono";
 import { createApp } from "../src/app.js";
 import { createContext, type AppContext } from "../src/context.js";
+import { INSTRUCTIONS_BUDGET, SERVER_INSTRUCTIONS } from "../src/mcp/instructions.js";
 import { replaceSection } from "../src/mcp/tools.js";
 
 /**
@@ -85,6 +86,26 @@ describe("transport and auth", () => {
     });
     expect(body.result.serverInfo.name).toBe("cairn");
     expect(body.result.protocolVersion).toBeTruthy();
+  });
+
+  it("tells the client when to use Cairn, within a small budget", async () => {
+    const { body } = await rpc("initialize", {
+      protocolVersion: "2025-06-18",
+      capabilities: {},
+      clientInfo: { name: "claude-code", version: "2.0.0" },
+    });
+    const instructions = body.result.instructions as string;
+    expect(instructions).toBe(SERVER_INSTRUCTIONS);
+    expect(instructions.length).toBeLessThanOrEqual(INSTRUCTIONS_BUDGET);
+    // Every tool the instructions name must exist, or the client is sent
+    // looking for something that is not there.
+    const { body: listed } = await rpc("tools/list");
+    const names = new Set((listed.result.tools as Array<{ name: string }>).map((t) => t.name));
+    const mentioned = instructions.match(/\b[a-z]+_[a-z_]+\b/g) ?? [];
+    const tools = mentioned.filter((word) => word !== "version_conflict" && word !== "change_note");
+    expect(tools.length).toBeGreaterThan(0);
+    for (const name of tools) expect(names.has(name), name).toBe(true);
+    expect(names.has("search")).toBe(true);
   });
 
   it("serves every tool from PRD section 8, plus history", async () => {

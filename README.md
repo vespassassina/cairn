@@ -6,7 +6,7 @@ Status: design. See `docs/PRD.md`.
 
 ## Start here
 
-1. Read `docs/PRD.md`, then `docs/decisions/`
+1. Read `docs/README.md` for a map of the docs, then `docs/PRD.md` and `docs/decisions/`
 2. Open this folder in Claude Code; it picks up `CLAUDE.md`
 3. Fill `eval/queries.yaml` with 30 real queries before any search work
 
@@ -23,10 +23,10 @@ pnpm dev
 Open http://localhost:8787 for the review console, and point Claude Code at it:
 
 ```
-claude mcp add --transport http cairn http://localhost:8787/mcp
+claude mcp add --transport http --scope user cairn http://localhost:8787/mcp
 ```
 
-No token on localhost (ADR-010). Settings are in `cairn.config.json`.
+No token on localhost (ADR-010). Settings are in `cairn.config.json`. Start a new Claude session after adding it: sessions load MCP servers when they start. Cairn tells Claude when to use it (ADR-011).
 
 ## What exists
 
@@ -35,7 +35,8 @@ No token on localhost (ADR-010). Settings are in `cairn.config.json`.
 2. `packages/adapter-sqlite`. The reference adapter, on Node's built-in
    `node:sqlite`. FTS5 gives keyword search with no native dependency.
 3. `packages/api`. Hono app, the MCP server over stateless streamable HTTP,
-   the review console, no sign-in on localhost (ADR-010), and the import,
+   the review console, no sign-in on localhost (ADR-010), server
+   instructions that tell Claude when to use Cairn (ADR-011), and the import,
    rebuild and eval commands.
 
 Not yet: OAuth, the Cosmos and DynamoDB adapters, the web editor, embeddings,

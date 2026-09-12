@@ -3,6 +3,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import type { Actor } from "@cairn/core";
 import type { AppContext } from "./context.js";
+import { SERVER_INSTRUCTIONS } from "./mcp/instructions.js";
 import { registerTools } from "./mcp/tools.js";
 import { NO_LOCAL_TRUST, trustedForMcp, type LocalTrust } from "./trust.js";
 import { registerConsole } from "./web/console.js";
@@ -37,7 +38,7 @@ async function handleMcpRequest(
   request: Request,
   context: AppContext,
 ): Promise<Response> {
-  const server = new McpServer(SERVER_INFO);
+  const server = new McpServer(SERVER_INFO, { instructions: SERVER_INSTRUCTIONS });
   registerTools(server, context, agentActor(request));
 
   // No sessionIdGenerator means stateless: no session to track, and no

@@ -166,6 +166,8 @@ Cairn contains one small OAuth 2.1 authorization server that delegates login to 
 
 Write tools (`create_page`, `update_page`, `upsert_row`) accept an optional `change_note` so an agent can say why it made a change. It is shown in the review console's recent changes.
 
+Server instructions: at initialize, Cairn also tells the client when to use it: search before answering, save durable knowledge without being asked, prefer updating an existing page, and give every write a change note (ADR-011). Tools alone are available but never required, so without this Claude uses Cairn only when asked.
+
 Result size: every tool truncates at a configurable token budget and says so, with a cursor for the next page.
 
 ## 9. Requirements
@@ -306,5 +308,7 @@ Record decisions in `docs/decisions/` as short ADRs. Already decided in design d
 7. ADR-007: Auth is one small OAuth server in front of any OIDC provider.
 8. ADR-008: Every write is a revision, and agents write directly.
 9. ADR-009: A server-rendered review console, styled with artifactkit.
+10. ADR-010: No sign-in for trusted local requests.
+11. ADR-011: Cairn tells clients when to use it, through MCP server instructions.
 
-The full index, with status, is in `docs/decisions/README.md`. What changed and why, in order, is in `docs/CHANGELOG.md`. Live status is in `docs/ROADMAP.md`.
+The full index, with status, is in `docs/decisions/README.md`. What changed and why, in order, is in `docs/CHANGELOG.md`. The owner's instructions are in `docs/DIRECTIONS.md`, and failures and lessons in `docs/LESSONS.md`. Live status is in `docs/ROADMAP.md`.

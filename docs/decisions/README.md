@@ -18,6 +18,7 @@ A decision that changes is not edited away. Add a new ADR that supersedes it, an
 | [008](ADR-008.md) | Every write is a revision, and agents write directly | accepted | 2026-09-12 |
 | [009](ADR-009.md) | A server-rendered review console, styled with artifactkit | accepted, rule 5 amended by 010 | 2026-09-12 |
 | [010](ADR-010.md) | No sign-in for trusted local requests | accepted | 2026-09-12 |
+| [011](ADR-011.md) | Cairn tells clients when to use it | accepted | 2026-09-12 |
 
 ## Writing one
 

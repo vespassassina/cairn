@@ -14,13 +14,25 @@ Do not write editor code until Phase 1 passes its gate (see PRD section 14). The
 
 ## Documentation discipline
 
-Track every change, decision and design direction. Never lose the what or the why.
+Track every change, decision and design direction. Never lose the what or the why. Cairn is open source, so write for a reader who was not in the conversation. `docs/README.md` maps the docs.
+
+The four logs, each updated in the same commit as the work:
+
+1. `docs/DIRECTIONS.md`: every instruction or design direction the owner gives, in their words where they carry the intent, with where it landed.
+2. `docs/decisions/`: the ADRs.
+3. `docs/CHANGELOG.md`: what changed and why.
+4. `docs/LESSONS.md`: every failure (bugs, broken tooling, wrong assumptions, the agent's own mistakes) with its cause, fix and lesson.
+
+Rules:
 
 1. Every meaningful change gets an entry in `docs/CHANGELOG.md` in the same commit: what changed, and why. A change of direction gets an entry even when no code changed.
 2. A decision that constrains future work gets an ADR in `docs/decisions/`, added to the index in `docs/decisions/README.md`. A decision that changes is superseded by a new ADR, never edited away.
 3. Keep the living docs aligned in the same commit as the code: `docs/PRD.md` (what and for whom), `docs/ROADMAP.md` (status), `docs/ARCHITECTURE.md` (the current shape), `docs/LOCAL.md` (how to run it), and this file.
 4. When a doc and the code disagree, that is a bug. Fix whichever is wrong, and say which in the changelog.
 5. Record findings as well as decisions: a spike result, a surprising library behaviour, a probe of search quality. They are the evidence decisions rest on.
+6. When the owner gives a new instruction, log it in `docs/DIRECTIONS.md` before or with the work it starts.
+7. When something fails and gets fixed, add a `docs/LESSONS.md` entry before committing. Read that file before repeating a kind of task it covers.
+8. The MCP server instructions (`packages/api/src/mcp/instructions.ts`) change agent behaviour. Changing them needs a changelog entry saying why (ADR-011).
 
 ## Stack
 
@@ -74,6 +86,7 @@ docs/
 3. New MCP tools have a contract test with a realistic payload
 4. PRD or an ADR updated if behaviour changed
 5. `docs/CHANGELOG.md` has an entry saying what changed and why, and `docs/ROADMAP.md` reflects the new status
+6. New owner directions are in `docs/DIRECTIONS.md`, and failures met along the way are in `docs/LESSONS.md`
 
 ## Writing style for docs
 
