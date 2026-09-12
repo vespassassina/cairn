@@ -38,9 +38,11 @@ Agent without a shell    Agent with a shell      Browser (owner)
 1. `packages/core`. Domain types, the two ports, the services, and the conformance suites. No dependencies. Nothing here knows which cloud it runs on.
 2. `packages/adapter-sqlite`. The reference implementation of both ports on `node:sqlite`. CI always runs it.
 3. `packages/api`. The Hono app, the MCP tools, and server instructions with a live summary of the workspace (ADR-011, ADR-012), the review console, and the command-line tools. The only package that knows about HTTP. On Node it listens on both loopback addresses, 127.0.0.1 and ::1.
-4. `packages/cli`. The `cairn` command. A thin HTTP client for the REST API with no dependencies, so it works the same against a local or deployed server (ADR-013).
+4. `packages/cli`. The `cairn` command. A thin HTTP client for the REST API with no dependencies, so it works the same against a local or deployed server (ADR-013). It ships as an npm package, and as standalone executables for five platforms built by `scripts/build-cli.mjs` (ADR-014).
 5. `skills/cairn`. The skill file that tells a coding agent when and how to use the CLI.
 6. `examples/`. Dataset-specific scripts, such as the peptide wiki seed. Not part of the product.
+7. `scripts/`. Build and check tools: the artifactkit sync, the CLI build and its smoke test.
+8. `.github/workflows/ci.yml`. Tests on Linux, macOS and Windows, a CLI build and smoke test on each, and release executables on a version tag.
 
 ## Three doors, one core
 

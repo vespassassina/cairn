@@ -6,6 +6,40 @@ Entries link to the ADR when there is one. A change of direction that has no ADR
 
 ## 2026-09-12
 
+### Decision: free for non-commercial use, under PolyForm Noncommercial 1.0.0 (ADR-015), and the repository is public
+
+Cairn is published at https://github.com/vespassassina/cairn. `LICENSE` holds the PolyForm Noncommercial 1.0.0 text with a `Required Notice` line, and every package declares `PolyForm-Noncommercial-1.0.0` with a link to the repository.
+
+Why: the owner wants anyone to be able to use, change and share Cairn, but not for profit. PolyForm Noncommercial is the standard licence written for exactly that, for software. It makes Cairn source-available rather than open source, so the README, PRD and CLAUDE.md no longer call it open source, and PRD risk R6 covers how that reads on Hacker News.
+
+AGPL-3.0 was chosen first, then replaced before anything was pushed, because AGPL allows commercial use. The AGPL text was never published: a licence grant cannot be withdrawn, so the unpushed commit that held it was changed rather than followed by a new one. PRD Q4 is answered.
+
+Before the first push, commit authorship moved from a personal address to the GitHub no-reply address, so no private inbox is in the public history. The README's status line, which still said "design", now says what runs today: that doc was wrong.
+
+### Decision: the CLI ships as an npm package and as standalone executables (ADR-014)
+
+`pnpm build:cli` builds `cairn` for `linux-x64`, `linux-arm64`, `darwin-x64`, `darwin-arm64` and `windows-x64`, into `dist/cli/` with a `SHA256SUMS` file. Each executable carries its own runtime, so it needs nothing installed. Node users can still install it with npm.
+
+Why: the owner asked for the CLI to build for Windows, macOS and Linux, with clear docs. Bun compiles for every platform from one machine, where Node's single executable applications need each platform's own Node binary. Bun is a build tool only; the server and tests stay on Node, and its version is pinned.
+
+Checked: all five build from one Mac and are the right executable format. Both macOS builds pass `pnpm smoke:cli`, which runs the executable against a real server: create, read, append, search, changes and a version conflict. The Intel build ran under Rosetta. The build also works without Bun installed, fetching the pinned version. Linux and Windows executables have not been run yet; CI runs them on each OS once the repository is on GitHub.
+
+### Added: CI for Linux, macOS and Windows
+
+`.github/workflows/ci.yml` runs the tests on Linux x64 and arm64, macOS and Windows, then builds the CLI on each runner and smoke-tests it. A version tag builds all five executables and attaches them to a GitHub release. `.gitattributes` checks text out with LF on every OS, so tests that compare text behave the same on Windows.
+
+### Added: `docs/CLI.md`, installing the CLI on each OS
+
+Which file to download for which machine, how to check it against `SHA256SUMS`, where to put it and how to add it to the PATH on macOS, Linux and Windows, how to get past the unsigned-executable warnings, environment variables in each shell, installing the skill, and uninstalling. It ends with a table of what has been tested where.
+
+### Changed: the CLI turns Windows line endings into plain newlines, and prints its version
+
+Text piped in or read with `--file` on Windows arrives with a carriage return on every line; the CLI now stores plain newlines. `cairn -V` and `cairn version` print the version (`--version` was already the page version for edits).
+
+### Fixed: a raw NUL byte in `pages.ts` made git treat it as binary
+
+`PageService` compared tag lists by joining them with a NUL character, written into the source as a raw byte. The code worked, but git treated the file as binary, so diffs and grep skipped it. It now compares the lists as JSON. A scan of every file in the repository finds no other control bytes. See `docs/LESSONS.md`.
+
 ### Decision: one core, three surfaces (ADR-013)
 
 Agents now get in three ways: MCP, a REST API at `/api/v1`, and a `cairn` command with a skill file. All three sit on the same core, the same auth check and the same error codes. ADR-001 is refined, not replaced: the agent is still the primary client, and MCP is now one of its doors.

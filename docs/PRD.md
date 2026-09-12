@@ -10,7 +10,7 @@ Last updated: 11 September 2026
 
 **A wiki and tables your agents can write to, with every change reviewable.**
 
-An open-source, self-hosted document and collection store where agents are the primary client. They get in through MCP, a REST API or a command-line tool (ADR-013). The web editor comes second.
+A source-available, self-hosted document and collection store where agents are the primary client, free for any non-commercial use (ADR-015). They get in through MCP, a REST API or a command-line tool (ADR-013). The web editor comes second.
 
 It runs on the free tier of Azure (Cosmos DB) or AWS (DynamoDB) and scales by configuration, not rewrite.
 
@@ -279,6 +279,9 @@ Mitigation: SQLite adapter ships in P0 and runs the same conformance suite in CI
 **R4. Free tier rules change.** AWS moved new accounts to a credit model in July 2025.
 Mitigation: document the cost of each resource at small scale, not just "free".
 
+**R6. "Source-available" reads as a bait and switch on Hacker News.** Cairn forbids commercial use without a licence (ADR-015), so it is not open source by the OSI definition, and HN readers call out projects that claim otherwise.
+Mitigation: never call it open source. Say "source-available, free for non-commercial use" in the README and the post, and say why in one sentence.
+
 **R5. I build the editor first because it's fun.**
 Mitigation: phase gate below. No editor code until the MCP-only phase passes its usage check. The review console (ADR-009) is the one exception, allowed because reviewing agent writes is part of the MCP-only phase, and held to scope limits that ADR lists: no rich editor, no board views, no client-side application.
 
@@ -291,7 +294,7 @@ Mitigation: phase gate below. No editor code until the MCP-only phase passes its
 | Q3 | ~~OAuth approach for MCP~~ Answered by ADR-007: own small OAuth 2.1 server delegating to any OIDC provider. | Engineering | No |
 | Q7 | Does Cosmos free tier support full-text and vector indexes on shared throughput? Does Flex Consumption have a free monthly allowance? How does the AWS credit-based free plan of July 2025 affect the always-free services on a new account? Partly answered 2026-09-12 from Microsoft docs: vector indexing is not supported on shared-throughput accounts, so vectors on the free tier need a dedicated container. Flex Consumption grants 250,000 executions and 100,000 GB-s a month per pay-as-you-go subscription. The AWS question and full-text on shared throughput are still open. | Engineering | Yes, before Phase 1 |
 | Q8 | Does the Cosmos emulator support full-text search? If not, search conformance on Cosmos needs a nightly run against a real account. | Engineering | Yes, before P0.2 |
-| Q4 | Licence: AGPL (protects against SaaS wrapping) or MIT (adoption)? Leaning AGPL. | Owner | No |
+| Q4 | ~~Licence: AGPL or MIT?~~ Answered by ADR-015: PolyForm Noncommercial 1.0.0. Free for non-commercial use; commercial use needs a separate licence. | Owner | No |
 | Q5 | Final name. Check GitHub, npm and domain availability. | Owner | No |
 | Q6 | Chunk size and overlap for BlockNote content. Settle with the eval set. | Engineering | No |
 
@@ -324,5 +327,7 @@ Record decisions in `docs/decisions/` as short ADRs. Already decided in design d
 11. ADR-011: Cairn tells clients when to use it, through MCP server instructions.
 12. ADR-012: The server instructions carry a live summary of the workspace.
 13. ADR-013: One core, three surfaces: MCP, REST and a CLI.
+14. ADR-014: The CLI ships as an npm package and as standalone executables for Windows, macOS and Linux.
+15. ADR-015: Cairn is source-available under PolyForm Noncommercial 1.0.0.
 
 The full index, with status, is in `docs/decisions/README.md`. What changed and why, in order, is in `docs/CHANGELOG.md`. The owner's instructions are in `docs/DIRECTIONS.md`, and failures and lessons in `docs/LESSONS.md`. Live status is in `docs/ROADMAP.md`.

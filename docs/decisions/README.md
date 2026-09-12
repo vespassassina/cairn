@@ -21,6 +21,8 @@ A decision that changes is not edited away. Add a new ADR that supersedes it, an
 | [011](ADR-011.md) | Cairn tells clients when to use it | accepted, extended by 012 | 2026-09-12 |
 | [012](ADR-012.md) | The server instructions carry a live summary of the workspace | accepted | 2026-09-12 |
 | [013](ADR-013.md) | One core, three surfaces: MCP, REST and a CLI | accepted | 2026-09-12 |
+| [014](ADR-014.md) | The CLI ships as an npm package and as standalone executables | accepted | 2026-09-12 |
+| [015](ADR-015.md) | Source-available under PolyForm Noncommercial 1.0.0 | accepted | 2026-09-12 |
 
 ## Writing one
 

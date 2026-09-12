@@ -91,16 +91,11 @@ agent edit can always be undone.
 
 Agents with a shell, such as Claude Code, can use the `cairn` command instead of MCP. It costs about 115 tokens per session instead of about 2,700, because nothing loads until the agent runs it (ADR-013; `pnpm context-cost` measures it).
 
-Build it and put it on your PATH:
+It runs on Windows, macOS and Linux, as a standalone executable or through npm. `docs/CLI.md` has the install steps for each OS, how to check a download, and how to install the skill that tells Claude Code when to use it. The short version on macOS or Linux, with Node:
 
 ```
 pnpm build
 npm install -g ./packages/cli
-```
-
-Install the skill, which tells Claude Code when and how to use it:
-
-```
 mkdir -p ~/.claude/skills && cp -r skills/cairn ~/.claude/skills/
 ```
 
@@ -131,6 +126,8 @@ pnpm eval      run eval/queries.yaml and report recall@5
 pnpm test      unit, conformance, MCP, REST, CLI and console contract tests
 pnpm cairn     run the CLI from the repo, for example: pnpm cairn search firmware
 pnpm context-cost   what MCP and the CLI cost an agent's context, per session
+pnpm build:cli      standalone CLI executables for every OS, into dist/cli (docs/CLI.md)
+pnpm smoke:cli      run a built executable against a real server
 pnpm sync:artifactkit   re-embed artifactkit after changing it, then commit
 ```
 

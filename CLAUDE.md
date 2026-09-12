@@ -4,7 +4,7 @@ Project context for Claude Code. Read this first, then `docs/PRD.md`.
 
 ## What this is
 
-Cairn (working name): an open-source, self-hosted document and collection store where Claude is the primary client through MCP. Web editor comes second. Runs on Azure or AWS free tier, or as a single container.
+Cairn (working name): a source-available, self-hosted document and collection store where Claude is the primary client through MCP. Web editor comes second. Runs on Azure or AWS free tier, or as a single container.
 
 ## Current phase
 
@@ -14,7 +14,7 @@ Do not write editor code until Phase 1 passes its gate (see PRD section 14). The
 
 ## Documentation discipline
 
-Track every change, decision and design direction. Never lose the what or the why. Cairn is open source, so write for a reader who was not in the conversation. `docs/README.md` maps the docs.
+Track every change, decision and design direction. Never lose the what or the why. Cairn is public and source-available (ADR-015), so write for a reader who was not in the conversation. `docs/README.md` maps the docs.
 
 The four logs, each updated in the same commit as the work:
 
@@ -59,6 +59,9 @@ deploy/
   aws/           (P1)
 skills/
   cairn/         the skill file that tells a coding agent how to use the CLI
+scripts/         artifactkit sync, CLI build (build-cli.mjs) and smoke test
+.github/
+  workflows/     CI on Linux, macOS and Windows; CLI release on a tag
 eval/
   queries.yaml
 docs/
@@ -83,6 +86,8 @@ docs/
 13. Route handlers use web standard `Request` and `Response`. Platform-specific code lives only in `api/src/entry/*` (ADR-006).
 14. MCP, REST and the CLI translate; they never decide (ADR-013). Logic two surfaces need, such as edit modes and error mapping, lives in `api/src/operations.ts`. A capability added to one surface is added to the others, or the ADR says why not.
 15. The CLI talks HTTP only. It never opens the database.
+16. The CLI runs on Node from npm and on Bun as a compiled executable (ADR-014). Its code uses only `fetch`, `node:util` `parseArgs`, `node:fs/promises` and `process`. Anything else needs checking on both, and `pnpm smoke:cli` must pass.
+17. Never put a raw control character in a source file. Write separators and escapes so the file stays plain text (see `docs/LESSONS.md`).
 
 ## Verification before calling a task done
 

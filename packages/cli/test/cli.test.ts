@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { createApp, createContext, type AppContext } from "@cairn/api";
 import { eventually } from "@cairn/core/testing";
-import { run, type Io } from "../src/main.js";
+import { readFileSync } from "node:fs";
+import { run, VERSION, type Io } from "../src/main.js";
 
 /**
  * The CLI against the real app, through an injected fetch (ADR-013 rule 5).
@@ -153,6 +154,23 @@ describe("cairn", () => {
     expect(stderr).toContain("validation_failed");
     expect(stderr).toContain("title:");
     expect(stderr).toContain("grams:");
+  });
+
+  it("prints its version, which matches the package", async () => {
+    const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { version: string };
+    expect(VERSION).toBe(pkg.version);
+    expect(await cairn("-V")).toBe(0);
+    expect(stdout).toBe(`cairn ${VERSION}\n`);
+    expect(await cairn("version")).toBe(0);
+  });
+
+  it("turns Windows line endings into plain newlines", async () => {
+    stdin = "## Firmware\r\n\r\nWritten in Notepad.\r\n";
+    expect(await cairn("create", "--title", "From Windows")).toBe(0);
+    const id = /^ok (\S+)/.exec(stdout)![1]!;
+    const page = await context.pages.get(context.workspaceId, id);
+    expect(page.body).toBe("## Firmware\n\nWritten in Notepad.\n");
+    expect(page.body).not.toContain("\r");
   });
 
   it("prints the raw response with --json", async () => {

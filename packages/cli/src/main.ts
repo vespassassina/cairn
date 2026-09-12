@@ -50,6 +50,7 @@ Collections
 
 Options
   --json          print the raw API response
+  -V, cairn version   print the CLI version
   --limit N, --cursor C
   CAIRN_URL       server, default http://localhost:8787
   CAIRN_TOKEN     bearer token, when the server is not local
@@ -58,6 +59,7 @@ Options
 const OPTIONS = {
   json: { type: "boolean" },
   help: { type: "boolean", short: "h" },
+  "cli-version": { type: "boolean", short: "V" },
   limit: { type: "string" },
   cursor: { type: "string" },
   title: { type: "string" },
@@ -105,11 +107,19 @@ function query(params: Record<string, string | undefined>): string {
   return entries.length === 0 ? "" : `?${new URLSearchParams(entries).toString()}`;
 }
 
+/**
+ * Windows line endings become plain newlines, so a page written from
+ * PowerShell or Notepad does not carry a stray carriage return on every line.
+ */
+function normalise(text: string): string {
+  return text.replace(/\r\n?/g, "\n");
+}
+
 async function content(flags: Flags, io: Io, required: boolean): Promise<string | undefined> {
-  if (flags.text !== undefined) return flags.text;
-  if (flags.file !== undefined) return readFile(flags.file, "utf8");
+  if (flags.text !== undefined) return normalise(flags.text);
+  if (flags.file !== undefined) return normalise(await readFile(flags.file, "utf8"));
   const piped = await io.stdin();
-  if (piped !== null) return piped;
+  if (piped !== null) return normalise(piped);
   if (required) throw new UsageError("missing content: pass --text, --file, or pipe it in");
   return undefined;
 }
@@ -160,6 +170,10 @@ export async function run(argv: string[], io: Io): Promise<number> {
   }
 
   const [command, ...args] = positionals;
+  if (flags["cli-version"] || command === "version") {
+    io.stdout(`cairn ${VERSION}\n`);
+    return 0;
+  }
   if (!command || flags.help || command === "help") {
     io.stdout(HELP);
     return command || flags.help ? 0 : 2;

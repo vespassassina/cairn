@@ -1,5 +1,10 @@
 {
   "name": "cairn",
+  "license": "PolyForm-Noncommercial-1.0.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vespassassina/cairn.git"
+  },
   "private": true,
   "type": "module",
   "packageManager": "pnpm@9.15.4",
@@ -15,6 +20,8 @@
     "rebuild": "pnpm --filter @cairn/api rebuild",
     "eval": "pnpm --filter @cairn/api eval",
     "cairn": "tsx packages/cli/src/bin.ts",
+    "build:cli": "node scripts/build-cli.mjs",
+    "smoke:cli": "node scripts/smoke-cli.mjs",
     "context-cost": "pnpm --filter @cairn/api context-cost",
     "sync:artifactkit": "node scripts/sync-artifactkit.mjs"
   },

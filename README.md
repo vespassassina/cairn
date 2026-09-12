@@ -2,7 +2,7 @@
 
 **A wiki and tables your agents can write to, with every change reviewable.**
 
-Open source and self-hosted. Agents write pages and table rows directly, with no approval step, and every write is a revision you can review in a small console and undo. Runs as one SQLite file on your machine, and is being built to run on the Azure or AWS free tier.
+Source-available and self-hosted: free for any non-commercial use. Agents write pages and table rows directly, with no approval step, and every write is a revision you can review in a small console and undo. Runs as one SQLite file on your machine, and is being built to run on the Azure or AWS free tier.
 
 Three doors for agents, over one core:
 
@@ -14,7 +14,9 @@ Three doors for agents, over one core:
 
 Characters measured with `pnpm context-cost` on a 33-page wiki, tokens estimated at four characters each.
 
-Status: design. See `docs/PRD.md`.
+Status: early and working locally. MCP, REST, the CLI and the review console run on your machine today; the cloud deployments and OAuth are not built yet. See `docs/ROADMAP.md`.
+
+Source: https://github.com/vespassassina/cairn
 
 ## Start here
 
@@ -40,13 +42,15 @@ claude mcp add --transport http --scope user cairn http://localhost:8787/mcp
 
 No token on localhost (ADR-010). Settings are in `cairn.config.json`. Start a new Claude session after adding it: sessions load MCP servers when they start. Cairn tells Claude when to use it (ADR-011).
 
-Or, for Claude Code, use the CLI and skill instead (`docs/LOCAL.md` section 5b):
+Or, for Claude Code, use the CLI and skill instead. It runs on Windows, macOS and Linux, as a single downloadable file or through npm; `docs/CLI.md` has the steps for each. From this repository, with Node:
 
 ```
 pnpm build && npm install -g ./packages/cli
 cp -r skills/cairn ~/.claude/skills/
 cairn overview
 ```
+
+`pnpm build:cli` builds standalone executables for all five platforms into `dist/cli/`.
 
 ## What exists
 
@@ -66,4 +70,10 @@ attachments and export.
 
 ## Licence
 
-To be decided (PRD Q4). Leaning AGPL-3.0.
+PolyForm Noncommercial 1.0.0 (ADR-015). In plain words:
+
+1. You may use, change and share Cairn, and build on it, for any non-commercial purpose: personal use, hobby projects, research, study, and use by charities, schools, public research bodies and government.
+2. Commercial use, including by a company for its own work, needs a separate licence. Ask through https://github.com/vespassassina.
+3. Keep the licence and its `Required Notice` line with any copy you share.
+
+This makes Cairn source-available, not open source in the OSI sense, which does not allow restricting commercial use. `LICENSE` has the full terms.

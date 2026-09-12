@@ -1,0 +1,7 @@
+# Check files out with LF on every OS, so tests that compare text behave the
+# same on Windows. Executables and images are binary.
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.ico binary
+*.exe binary

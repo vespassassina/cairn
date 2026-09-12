@@ -27,6 +27,13 @@ Each entry answers four questions:
 3. **Fix.** The test checks that times never increase and which changes are present, not which one is first. It then passed 15 runs in a row. ADR-013 now says same-millisecond changes have no defined order.
 4. **Lesson.** Timestamps tie in tests that write quickly. Never assert an order between records written back to back unless the store defines one; run a new ordering test several times before trusting it.
 
+### A raw NUL byte hid a source file from git and grep
+
+1. **What happened.** Checking line endings for Windows, `git ls-files --eol` listed `packages/core/src/services/pages.ts` as binary. Earlier, a plain `grep` on the same file had returned nothing, which went unexplained at the time.
+2. **Cause.** The file compared tag lists with `join` on a NUL character, and the NUL was in the source as a raw byte. It came from the same tool behaviour as the entry below: an escape the agent wrote was saved as the character itself. Git and grep treat any file with a NUL as binary.
+3. **Fix.** The comparison uses `JSON.stringify` instead. A scan of every file in the repository found no other control bytes, and `.gitattributes` now declares text files.
+4. **Lesson.** An unexplained empty grep is a clue, not noise. After an agent writes source with escapes, scan for control bytes; CLAUDE.md hard rule 17 now forbids them.
+
 ### Unicode escapes written by the agent's file tool became raw characters
 
 1. **What happened.** The new summary module failed to compile with "Unterminated regular expression literal", and every test file that imported it failed too.

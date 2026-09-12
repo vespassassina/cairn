@@ -1,6 +1,12 @@
 {
   "name": "@cairn/cli",
   "version": "0.1.0",
+  "license": "PolyForm-Noncommercial-1.0.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vespassassina/cairn.git",
+    "directory": "packages/cli"
+  },
   "private": true,
   "type": "module",
   "description": "Command-line client for Cairn: a wiki and tables your agents can write to, with every change reviewable.",

@@ -13,6 +13,29 @@ Rules:
 
 ## 2026-09-12
 
+### Free for anyone, but not for profit
+
+> "done authenticating. change the license, i want anyone to be able to use, change and do whatever BUT not for profit"
+
+Landed in: ADR-015 (PolyForm Noncommercial 1.0.0), `LICENSE`, the licence fields, "source-available" in place of "open source", PRD risk R6, and the first push. The AGPL choice above was never published.
+
+### The public repository
+
+> "i created the public repo at: https://github.com/vespassassina/cairn"
+
+Asked before the first push, the owner chose:
+
+1. Commits carry the GitHub no-reply address, not a personal email.
+2. The licence is AGPL-3.0. Replaced before the push by the next entry.
+
+Landed in: the rewritten commit authorship.
+
+### Commit, then make the CLI build for Windows, macOS and Linux
+
+> "commit this, then question: make sure we can build the cli for win/mac/linux and docs explain it clearly"
+
+Landed in: commit `bcf303d`, ADR-014, `pnpm build:cli`, `pnpm smoke:cli`, the CI workflow, and `docs/CLI.md`.
+
 ### Write it down, then start
 
 > "write then start working"

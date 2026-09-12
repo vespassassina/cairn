@@ -45,7 +45,8 @@ Added after the project review of 2026-09-12. Done in this order, before the clo
 | REST API at `/api/v1` | done | ADR-013. Same core, auth and errors as MCP. ETag and If-Match. 20 contract tests |
 | Changes feed | done | ADR-013. `GET /api/v1/changes?since=` |
 | `cairn` CLI and skill file | done | ADR-013. About 115 tokens per session against about 2,700 for MCP. 9 tests, checked live |
-| Publish the CLI to npm | later | Needs the name and licence decided |
+| CLI for Windows, macOS and Linux | done | ADR-014. Five standalone executables and npm. macOS builds smoke-tested here; Linux and Windows run by CI once on GitHub |
+| Publish the CLI to npm | later | Needs the name decided |
 | Provenance: `sources` on every write | next | Where a fact came from, shown in the console |
 | Freshness: `verified_at` on pages | later | When a fact was last confirmed, separate from last edited |
 | Sync design on the revision log | later | An ADR only. Local and cloud as one workspace |
@@ -61,10 +62,16 @@ Before publishing on GitHub and posting to Hacker News. From the review of 2026-
 | Export (P0.7) | next | "Your data leaves easily" is a principle, and the first question HN will ask |
 | One cloud target deployed, with a month of real cost | later | Needs S1. The cost table must hold measured numbers |
 | OAuth, so claude.ai can connect | later | ADR-007, time-boxed to 3 days |
-| Name and licence decided | next | PRD Q4, Q5. Check GitHub and npm for the name |
+| Licence decided | done | ADR-015, PolyForm Noncommercial 1.0.0 |
+| Contributor terms decided | next | Before accepting outside pull requests, so commercial licences can cover contributed code (ADR-015 consequence 4) |
+| How to ask for a commercial licence | next | A contact route in the README better than "ask through GitHub" |
+| Name decided | next | PRD Q5. The repository is `vespassassina/cairn`; check npm before publishing the CLI |
+| Repository public | done | https://github.com/vespassassina/cairn |
 | Online and offline model decided | later | The sync design above |
 | Search over-matching fixed | later | Visible in the first demo |
 | README leads with the tagline and a console screenshot | next | |
+| CI green on Linux, macOS and Windows | next | `.github/workflows/ci.yml` is written. First run happens when the repository is pushed |
+| Sign the macOS and Windows executables | later | ADR-014 rule 7. Costs an Apple developer account and a Windows certificate |
 
 ## Phase 2: editor
 
