@@ -13,6 +13,13 @@ Each entry answers four questions:
 
 ## 2026-09-12
 
+### The Windows smoke test passed, then failed deleting its own temporary folder
+
+1. **What happened.** On the first CI run, the Windows job passed the whole test suite and every smoke test check, then failed with `EPERM, Permission denied` on the temporary data folder.
+2. **Cause.** The script called `server.kill()` and deleted the folder straight away. `kill()` only sends a signal; the server had not exited yet and still held its SQLite database open, and Windows refuses to delete an open file. macOS and Linux allow it, so it passed there.
+3. **Fix.** The script now waits for the server's `exit` event, deletes with retries, and only warns if cleanup still fails, since cleanup is not what the test checks.
+4. **Lesson.** On Windows, wait for a process to exit before deleting files it used. Keep cleanup failures from masking the result of the thing actually under test.
+
 ### A mounted Hono app's not-found handler never ran
 
 1. **What happened.** An unknown REST path such as `/api/v1/nothing-here` returned the console's HTML 404 instead of the API's JSON error.

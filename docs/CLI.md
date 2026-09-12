@@ -228,6 +228,8 @@ Give an agent the skill or the MCP server, not both, or it pays for both.
 |---|---|
 | `cairn-darwin-arm64` | Built and smoke-tested on an Apple silicon Mac |
 | `cairn-darwin-x64` | Built and smoke-tested on the same Mac under Rosetta |
-| `cairn-linux-x64`, `cairn-linux-arm64`, `cairn-windows-x64.exe` | Built, and checked to be the right executable format. Run by CI on each OS once the repository is on GitHub |
+| `cairn-linux-x64` | Built and smoke-tested by CI on Ubuntu x64 |
+| `cairn-linux-arm64` | Built and smoke-tested by CI on Ubuntu Arm |
+| `cairn-windows-x64.exe` | Built and smoke-tested by CI on Windows. Every check passed on the first run; the script's own cleanup failed and was fixed (`docs/LESSONS.md`) |
 
-This table is updated when CI first passes on every OS.
+CI builds each executable on its own OS and runs the smoke test on every push: https://github.com/vespassassina/cairn/actions

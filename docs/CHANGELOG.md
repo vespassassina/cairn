@@ -6,6 +6,10 @@ Entries link to the ADR when there is one. A change of direction that has no ADR
 
 ## 2026-09-12
 
+### Finding: the first CI run, on every OS
+
+The test suite passed on Linux x64, Linux Arm, macOS and Windows on the first run, with no Windows-specific failures. Every CLI executable passed its smoke test on its own OS. The one failure was the smoke script deleting its temporary folder before the server had exited, which Windows does not allow; the script now waits and retries. `docs/CLI.md` now says what has been tested where.
+
 ### Decision: free for non-commercial use, under PolyForm Noncommercial 1.0.0 (ADR-015), and the repository is public
 
 Cairn is published at https://github.com/vespassassina/cairn. `LICENSE` holds the PolyForm Noncommercial 1.0.0 text with a `Required Notice` line, and every package declares `PolyForm-Noncommercial-1.0.0` with a link to the repository.

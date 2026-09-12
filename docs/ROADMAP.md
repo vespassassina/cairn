@@ -45,7 +45,7 @@ Added after the project review of 2026-09-12. Done in this order, before the clo
 | REST API at `/api/v1` | done | ADR-013. Same core, auth and errors as MCP. ETag and If-Match. 20 contract tests |
 | Changes feed | done | ADR-013. `GET /api/v1/changes?since=` |
 | `cairn` CLI and skill file | done | ADR-013. About 115 tokens per session against about 2,700 for MCP. 9 tests, checked live |
-| CLI for Windows, macOS and Linux | done | ADR-014. Five standalone executables and npm. macOS builds smoke-tested here; Linux and Windows run by CI once on GitHub |
+| CLI for Windows, macOS and Linux | done | ADR-014. Five standalone executables and npm. Each smoke-tested on its own OS in CI |
 | Publish the CLI to npm | later | Needs the name decided |
 | Provenance: `sources` on every write | next | Where a fact came from, shown in the console |
 | Freshness: `verified_at` on pages | later | When a fact was last confirmed, separate from last edited |
@@ -70,7 +70,7 @@ Before publishing on GitHub and posting to Hacker News. From the review of 2026-
 | Online and offline model decided | later | The sync design above |
 | Search over-matching fixed | later | Visible in the first demo |
 | README leads with the tagline and a console screenshot | next | |
-| CI green on Linux, macOS and Windows | next | `.github/workflows/ci.yml` is written. First run happens when the repository is pushed |
+| CI green on Linux, macOS and Windows | in progress | First run: tests pass on all four, smoke test fixed for Windows cleanup |
 | Sign the macOS and Windows executables | later | ADR-014 rule 7. Costs an Apple developer account and a Windows certificate |
 
 ## Phase 2: editor

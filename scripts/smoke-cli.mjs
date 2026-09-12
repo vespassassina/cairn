@@ -115,8 +115,29 @@ async function main() {
 
     process.stdout.write("smoke test passed\n");
   } finally {
-    server.kill();
-    rmSync(dataDir, { recursive: true, force: true });
+    await stop(server);
+    removeDataDir();
+  }
+}
+
+/**
+ * Stop the server and wait until it has exited. kill() only sends the signal,
+ * and on Windows a file the server still holds open, such as its SQLite
+ * database, cannot be deleted.
+ */
+async function stop(server) {
+  if (server.exitCode !== null) return;
+  const exited = new Promise((resolve) => server.once("exit", resolve));
+  server.kill();
+  await Promise.race([exited, new Promise((resolve) => setTimeout(resolve, 10_000))]);
+}
+
+/** Cleanup is not what is under test, so a failure here only warns. */
+function removeDataDir() {
+  try {
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  } catch (error) {
+    process.stderr.write(`warning: could not remove ${dataDir}: ${error instanceof Error ? error.message : String(error)}\n`);
   }
 }
 
