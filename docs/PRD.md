@@ -161,6 +161,10 @@ Cairn contains one small OAuth 2.1 authorization server that delegates login to 
 | `query_collection` | Filter and sort rows. Simple filter grammar, not SQL. |
 | `upsert_row` | Create or update a row. Returns field-level validation errors. |
 | `create_collection` | Create a collection with a typed schema. Added during the PoC: this list assumed collections were created in the web editor, which is Phase 2, so without it collections cannot be used at all. |
+| `get_history` | Revisions of a page or row, newest first, with actor, time and change note (ADR-008). |
+| `get_revision` | One revision's content, and its diff against the version it replaced. |
+
+Write tools (`create_page`, `update_page`, `upsert_row`) accept an optional `change_note` so an agent can say why it made a change. It is shown in the review console's recent changes.
 
 Result size: every tool truncates at a configurable token budget and says so, with a cursor for the next page.
 
@@ -189,6 +193,15 @@ Given a deployed instance, when the owner adds the connector URL in Claude, then
 **P0.6 Storage and search adapter interfaces with Cosmos and SQLite implementations.**
 Given the conformance test suite, when run against both adapters, then all tests pass with no adapter-specific branches in business logic.
 Given an adapter that declares collection-query pushdown, when the suite runs the query set with pushdown on and off, then the results are identical.
+
+**P0.10 Every write is a revision (ADR-008).**
+Given a page updated three times, when the owner opens its history, then they see four revisions with actor, time and change note, and can restore any of them.
+Given a restore, then it creates a new revision, so the restore itself can be undone.
+Given an agent write, then it applies at once with no approval step, and appears in recent changes.
+
+**P0.11 Review console (ADR-009).**
+Given agent writes since yesterday, when the owner opens the console, then recent changes lists them with the change notes, filterable to agents only.
+Given a page, then it renders in read mode with resolved links and backlinks, and Edit opens a Markdown textarea that saves with a version check.
 
 **P0.9 Rebuild of derived data.**
 Given a workspace whose edges and chunks have been deleted, when the owner runs rebuild, then backlinks and search results match what they were before, with no change to any page.
@@ -253,7 +266,7 @@ Mitigation: SQLite adapter ships in P0 and runs the same conformance suite in CI
 Mitigation: document the cost of each resource at small scale, not just "free".
 
 **R5. I build the editor first because it's fun.**
-Mitigation: phase gate below. No frontend code until the MCP-only phase passes its usage check.
+Mitigation: phase gate below. No editor code until the MCP-only phase passes its usage check. The review console (ADR-009) is the one exception, allowed because reviewing agent writes is part of the MCP-only phase, and held to scope limits that ADR lists: no rich editor, no board views, no client-side application.
 
 ## 13. Open questions
 
@@ -291,3 +304,7 @@ Record decisions in `docs/decisions/` as short ADRs. Already decided in design d
 5. ADR-005: Adapter boundary. Search is its own adapter, derived data is rebuildable, no cross-document transactions, consistency stated per operation, collection filtering in core with optional pushdown.
 6. ADR-006: Hono plus stateless MCP transport, written to the lowest common denominator of the platforms.
 7. ADR-007: Auth is one small OAuth server in front of any OIDC provider.
+8. ADR-008: Every write is a revision, and agents write directly.
+9. ADR-009: A server-rendered review console, styled with artifactkit.
+
+The full index, with status, is in `docs/decisions/README.md`. What changed and why, in order, is in `docs/CHANGELOG.md`. Live status is in `docs/ROADMAP.md`.

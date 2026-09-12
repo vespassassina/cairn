@@ -8,9 +8,19 @@ Cairn (working name): an open-source, self-hosted document and collection store 
 
 ## Current phase
 
-Phase 0: foundations. Adapter interfaces, SQLite adapter, conformance tests, eval query set.
+Phase 0 is done apart from spike S1 and the eval set. Phase 1 (MCP only, used daily) is under way locally. Live status is in `docs/ROADMAP.md`.
 
-Do not write frontend code until Phase 1 passes its gate (see PRD section 14).
+Do not write editor code until Phase 1 passes its gate (see PRD section 14). The one exception is the review console (ADR-009), a server-rendered screen for reviewing, navigating, editing and restoring. Keep it inside the scope limits that ADR sets: no rich editor, no collection views beyond a table, no client-side application.
+
+## Documentation discipline
+
+Track every change, decision and design direction. Never lose the what or the why.
+
+1. Every meaningful change gets an entry in `docs/CHANGELOG.md` in the same commit: what changed, and why. A change of direction gets an entry even when no code changed.
+2. A decision that constrains future work gets an ADR in `docs/decisions/`, added to the index in `docs/decisions/README.md`. A decision that changes is superseded by a new ADR, never edited away.
+3. Keep the living docs aligned in the same commit as the code: `docs/PRD.md` (what and for whom), `docs/ROADMAP.md` (status), `docs/ARCHITECTURE.md` (the current shape), `docs/LOCAL.md` (how to run it), and this file.
+4. When a doc and the code disagree, that is a bug. Fix whichever is wrong, and say which in the changelog.
+5. Record findings as well as decisions: a spike result, a surprising library behaviour, a probe of search quality. They are the evidence decisions rest on.
 
 ## Stack
 
@@ -63,6 +73,7 @@ docs/
 2. Conformance suite passes for every adapter touched
 3. New MCP tools have a contract test with a realistic payload
 4. PRD or an ADR updated if behaviour changed
+5. `docs/CHANGELOG.md` has an entry saying what changed and why, and `docs/ROADMAP.md` reflects the new status
 
 ## Writing style for docs
 
