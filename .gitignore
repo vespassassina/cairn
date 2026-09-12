@@ -10,3 +10,4 @@ dist/
 # Local launch configs hold dev tokens and machine-specific paths
 .claude/launch.json
 deploy/azure/.cairn-deploy.env
+deploy/docker/data/

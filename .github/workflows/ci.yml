@@ -78,20 +78,44 @@ jobs:
           tags: cairn:test
       - name: smoke test the image
         run: |
+          {
+            echo CAIRN_PUBLIC_URL=https://cairn.example.com
+            echo CAIRN_AUTH_PROVIDER=github
+            echo "CAIRN_AUTH_SECRET=$(openssl rand -hex 32)"
+            echo CAIRN_OAUTH_CLIENT_ID=ci
+            echo CAIRN_OAUTH_CLIENT_SECRET=ci
+            echo CAIRN_ALLOWED_USERS=github:ci
+          } > "$RUNNER_TEMP/ci.env"
           docker run --rm --entrypoint litestream cairn:test version
-          docker run -d --name cairn -p 8787:8787 \
-            -e CAIRN_PUBLIC_URL=https://cairn.example.com \
-            -e CAIRN_AUTH_PROVIDER=github \
-            -e CAIRN_AUTH_SECRET="$(openssl rand -hex 32)" \
-            -e CAIRN_OAUTH_CLIENT_ID=ci \
-            -e CAIRN_OAUTH_CLIENT_SECRET=ci \
-            -e CAIRN_ALLOWED_USERS=github:ci \
-            cairn:test
+          docker run -d --name cairn -p 8787:8787 --env-file "$RUNNER_TEMP/ci.env" cairn:test
           for _ in $(seq 1 30); do curl -fsS localhost:8787/health && break; sleep 1; done
           curl -fsS localhost:8787/health
           test "$(curl -s -o /dev/null -w '%{http_code}' -X POST localhost:8787/mcp)" = 401
           curl -fsS localhost:8787/.well-known/oauth-authorization-server
           docker logs cairn
+      - name: smoke test with a mounted folder (ADR-020)
+        run: |
+          data="$RUNNER_TEMP/cairn-data"
+          mkdir -p "$data" && sudo chown 1000:1000 "$data"
+          docker run -d --name cairn-mounted -p 8788:8787 --env-file "$RUNNER_TEMP/ci.env" -v "$data:/data" cairn:test
+          for _ in $(seq 1 30); do curl -fsS localhost:8788/health && break; sleep 1; done
+          curl -fsS localhost:8788/health
+          docker logs cairn-mounted 2>&1 | tee "$RUNNER_TEMP/mounted.log"
+          grep -q "on a mounted volume" "$RUNNER_TEMP/mounted.log"
+          test -s "$data/cairn.sqlite"
+          docker rm -f cairn-mounted
+          # A folder the container cannot write to must stop it with a clear message.
+          sudo chown root:root "$data" && sudo chmod 755 "$data"
+          if docker run --rm --env-file "$RUNNER_TEMP/ci.env" -v "$data:/data" cairn:test > "$RUNNER_TEMP/denied.log" 2>&1; then
+            echo "expected the container to refuse a read-only folder"; exit 1
+          fi
+          cat "$RUNNER_TEMP/denied.log"
+          grep -q "is not writable" "$RUNNER_TEMP/denied.log"
+      - name: check the compose file
+        working-directory: deploy/docker
+        run: |
+          cp env.example .env
+          CAIRN_IMAGE=cairn:test docker compose config --quiet
       - name: image tags
         id: meta
         uses: docker/metadata-action@v5

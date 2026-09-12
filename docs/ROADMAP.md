@@ -13,7 +13,7 @@ Status key: done, in progress, next, later, blocked.
 | Conformance suites | done | document store, search index, pushdown equivalence |
 | Documentation logs | done | Directions, decisions, changelog, lessons. `docs/README.md` maps them |
 | Spike S2: MCP transport shape | done | Web-standard transport, one server per request. ADR-006 |
-| Spike S1: Hono on Azure Functions | next | Blocks Phase 1 deploy, not local use |
+| Spike S1: Hono on Azure Functions | dropped | ADR-020: Functions is no longer a target |
 | Eval query set, 30 real queries | in progress | 16 of 30: 14 written by the agent from the wiki, recall@5 1.00 on them. 14 left for the owner, from real searches |
 
 ## Phase 1: MCP only, used daily
@@ -30,7 +30,8 @@ Status key: done, in progress, next, later, blocked.
 | Live workspace summary in the instructions | done | ADR-012. Collections, top-level pages, tags, within the budget |
 | Daily use from Claude Code | in progress | Server added with `--scope user`. Watch agent writes in the console (ADR-011 consequence 4) |
 | Search precision: OR matching over-matches | later | Tune against the eval set once expected pages exist |
-| Cosmos adapter | later | Needs Q1, Q7, Q8 answered |
+| Cosmos adapter | later, on a trigger | ADR-020: only if more than one instance, a slow cold restore, or the write-loss window matters |
+| Own-server deploy (Proxmox, NAS, Docker) | done | ADR-020. `deploy/docker/`, database on a mounted local volume. CI starts it with one; not yet run on Proxmox |
 | OAuth server | done | ADR-017. GitHub or any OpenID Connect provider, consent page, CLI login. 23 end-to-end tests. Proven with claude.ai after a deploy |
 | Azure deploy | in progress | ADR-018. Container Apps and Litestream, Bicep and script, image in CI. First real deployment still to run |
 | Agent-first install guide | done | ADR-019. `docs/AGENT-INSTALL.md`, `AGENTS.md` |
@@ -62,7 +63,7 @@ Before publishing on GitHub and posting to Hacker News. From the review of 2026-
 | Eval set: 30 real queries with expected pages, and a recall@5 number | next | Blocks any claim about search |
 | Two weeks of daily use, against the PRD kill criterion | in progress | |
 | Export (P0.7) | done | ADR-016. Markdown and JSON, whole or by root, lossless round trip |
-| One cloud target deployed, with a month of real cost | next | ADR-018 makes it possible without S1. Deploy, then watch the bill |
+| One cloud target deployed, with a month of real cost | next | ADR-018. Deploy, measure the cold start and the write-loss window (ADR-020), then watch the bill |
 | First release tag, so the image and CLI builds are published | next | `v0.1.0`. Then make the ghcr package public |
 | OAuth, so claude.ai can connect | done | ADR-017. Needs one real connection to call it proven |
 | Licence decided | done | ADR-015, PolyForm Noncommercial 1.0.0 |
@@ -86,4 +87,4 @@ Bring-your-own embeddings, AWS adapters, Desktop extension, import from Notion a
 
 ## Open questions that block work
 
-See PRD section 13. Currently blocking: Q1 (Cosmos full-text languages), Q7 (free tier facts), Q8 (emulator full-text support).
+See PRD section 13. Currently blocking: Q7 (free tier facts, now for Azure Container Apps and a future AWS container target). Q1 and Q8 wait for the optional Cosmos adapter (ADR-020).

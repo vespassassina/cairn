@@ -6,6 +6,25 @@ Entries link to the ADR when there is one. A change of direction that has no ADR
 
 ## 2026-09-12
 
+### Decision: one container everywhere, and your own server as a target (ADR-020)
+
+Cairn runs as one container on every target, with nothing beside it. Azure Functions and AWS Lambda are dropped as targets and spike S1 is closed without running. Cosmos DB and DynamoDB become optional storage adapters for the same container, built only if someone needs more than one instance, the cold restore gets too slow, or the write-loss window matters. SQLite with FTS5 stays the store everywhere, kept either on a mounted local volume or by a Litestream replica, or both.
+
+Why: the owner asked whether Functions and Cosmos would serve Azure better. Functions adds little over Container Apps for Cairn and costs portability; Cosmos adds durability and scale-out that one person does not need yet, and costs search quality (no Dutch, multi-language in preview) and test coverage. The owner chose containers, "as compact as possible, not a fleet", and asked for local mounted storage to run on Proxmox.
+
+Added:
+
+1. `deploy/docker/compose.yaml` and `env.example`: one service, the database in a local folder, the port on 127.0.0.1 unless `CAIRN_BIND` says otherwise, secrets in a git-ignored `.env`.
+2. `docs/DEPLOY-DOCKER.md`: own server, HTTPS through a proxy or tunnel, Proxmox VM and LXC notes including the unprivileged uid mapping, backups.
+3. `docker/start.sh` now says whether the database is on a mounted volume, and stops with the `chown` to run when `/data` is not writable, instead of failing later inside SQLite.
+4. CI starts the image with a mounted folder, checks the database file appears there, checks a read-only folder is refused with that message, and validates the compose file.
+5. `docs/AGENT-INSTALL.md` offers the own-server path, keeping `deploy/docker/.env` out of the agent's reach like the Azure settings file.
+6. The server's OAuth configuration errors point to both deploy guides.
+
+Also fixed: `docs/LOCAL.md` still listed OAuth and export as not built.
+
+Not yet checked: a run on Proxmox. CI covers the image and the compose file.
+
 ### Decision: installation is written for agents first (ADR-019)
 
 `docs/AGENT-INSTALL.md` is a script for a coding agent: ask where Cairn should run, check prerequisites, run and check each step, hand over. Credentials stay with the person: they sign in to Azure and create the OAuth app themselves, and paste the client secret into the deploy script's private settings file, which the agent is told never to read. `AGENTS.md` and the top of CLAUDE.md point agents at it, and the README leads with "clone it and ask your agent".

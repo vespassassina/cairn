@@ -151,10 +151,10 @@ any search change (CLAUDE.md hard rule 7).
 
 ## Going online
 
-To reach Cairn from anywhere, including Claude on the web, deploy it to Azure with sign-in: `docs/DEPLOY-AZURE.md`. Or ask your agent, which follows `docs/AGENT-INSTALL.md`.
+To reach Cairn from other machines, run it with sign-in on your own server (`docs/DEPLOY-DOCKER.md`) or on Azure (`docs/DEPLOY-AZURE.md`). Or ask your agent, which follows `docs/AGENT-INSTALL.md`.
 
 ## What is not here yet
 
-OAuth, Cosmos, AWS, the web editor, embeddings, attachments and export. None of
+AWS, the web editor, embeddings, attachments, and exporting history. None of
 them is needed to answer the question this PoC exists for: do you actually
 reach for this from Claude four days a week (PRD section 10).

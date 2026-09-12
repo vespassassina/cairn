@@ -8,11 +8,11 @@ Follow `docs/AGENT-INSTALL.md` instead of the rest of this file. Ask the person 
 
 ## What this is
 
-Cairn (working name): a source-available, self-hosted document and collection store where Claude is the primary client through MCP. Web editor comes second. Runs on Azure or AWS free tier, or as a single container.
+Cairn (working name): a source-available, self-hosted document and collection store where Claude is the primary client through MCP. Web editor comes second. Runs as one small container: on the person's own server, or within a cloud's free grants (ADR-020).
 
 ## Current phase
 
-Phase 0 is done apart from spike S1 and the eval set. Phase 1 (MCP only, used daily) is under way locally. Live status is in `docs/ROADMAP.md`.
+Phase 0 is done apart from the eval set (spike S1 was dropped by ADR-020). Phase 1 (MCP only, used daily) is under way locally. Live status is in `docs/ROADMAP.md`.
 
 Do not write editor code until Phase 1 passes its gate (see PRD section 14). The one exception is the review console (ADR-009), a server-rendered screen for reviewing, navigating, editing and restoring. Keep it inside the scope limits that ADR sets: no rich editor, no collection views beyond a table, no client-side application.
 
@@ -41,7 +41,7 @@ Rules:
 ## Stack
 
 1. TypeScript, Node 22, pnpm workspaces
-2. Hono for the API and MCP server (must run on Azure Functions, AWS Lambda and plain Node)
+2. Hono for the API and MCP server, on Node, shipped as one container (ADR-020). Functions and Lambda are not targets.
 3. Official MCP TypeScript SDK, streamable HTTP transport
 4. Vitest for tests
 5. Later: React plus BlockNote for the editor
@@ -52,13 +52,14 @@ Rules:
 packages/
   core/          domain logic, adapter interfaces, no cloud SDKs
   adapter-sqlite/
-  adapter-cosmos/
-  adapter-dynamo/   (P1)
+  adapter-cosmos/   (optional, only on an ADR-020 trigger)
+  adapter-dynamo/   (optional, same)
   api/           Hono app: MCP, REST at /api/v1, review console
   cli/           the `cairn` command, a thin HTTP client (ADR-013)
   indexer/       link extraction, chunking, optional embeddings
   web/           (Phase 2)
 deploy/
+  docker/        compose file for your own server, database on a mounted volume (ADR-020)
   azure/         Bicep template and deploy.sh (ADR-018)
   aws/           (P1)
 docker/          the container's start script (Litestream, ADR-018)
@@ -112,7 +113,7 @@ Plain, direct, short paragraphs. No em dashes. Sentence case headings. Numbered 
 
 ## Open questions that block work
 
-See PRD section 13. Q1 (Cosmos full-text languages) blocks keyword search. Q8 (emulator support for full-text) decides how search is tested in CI. Q7 (free tier facts) must be verified before Phase 1. Q2 and Q3 are answered by ADR-005 and ADR-007.
+See PRD section 13. Q7 (free tier facts) must be verified with a real deployment. Q1 and Q8 matter only if the optional Cosmos adapter is built (ADR-020). Q2 and Q3 are answered by ADR-005 and ADR-007.
 
 ## Decisions
 

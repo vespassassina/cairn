@@ -13,6 +13,20 @@ Rules:
 
 ## 2026-09-12
 
+### One container, as small as possible, and Proxmox with local storage
+
+Asked first whether Functions and Cosmos would be better on Azure: "for azure wouldn't be better to use functions? shouldn't we use cosmos? i get that aca is better for multiplatform. i could have the same container in aws, local etc. but aren't we throwing away good capabilities?" After the comparison, three directions:
+
+> "ok, let's go with containers"
+
+> "keep it as compact as possible, not a fleet of containers"
+
+> "i am going to run on proxmox later, add local mounted storage"
+
+Landed in: ADR-020 (one container everywhere, Functions and Lambda dropped, Cosmos and DynamoDB optional behind triggers, SQLite on a mounted volume or a Litestream replica), `deploy/docker/`, `docs/DEPLOY-DOCKER.md`, the own-server path in `docs/AGENT-INSTALL.md`, a start script that knows about mounted volumes, and a CI check that starts the image with one.
+
+"aca" lightly cleaned from "acs".
+
 ### Reprocess the wiki, build export and OAuth, deploy to Azure, and let agents install it
 
 > "reprocess the wiki we added, add the data in the updated wiki. build the export. data should be owned by users and be reprocessable. export can work globally or by root. add oauth. add a few extra queries. build instructions to deploy on azure, build the cli in various systems. instructions to clone and deploy must be easy to follow. add instructions for agents to clone and deploy, most users will do it this way. agents should ask where to deploy and follow up with keys or auth."

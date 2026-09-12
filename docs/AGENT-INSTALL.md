@@ -1,12 +1,12 @@
 # Installing Cairn: instructions for an agent
 
-You are a coding agent, and the person you work with wants Cairn installed or deployed. Follow this page from the top. It is written for you; the person-facing guides it links to (`docs/LOCAL.md`, `docs/CLI.md`, `docs/DEPLOY-AZURE.md`) have more detail on each step. Why it works this way: ADR-019.
+You are a coding agent, and the person you work with wants Cairn installed or deployed. Follow this page from the top. It is written for you; the person-facing guides it links to (`docs/LOCAL.md`, `docs/CLI.md`, `docs/DEPLOY-DOCKER.md`, `docs/DEPLOY-AZURE.md`) have more detail on each step. Why it works this way: ADR-019.
 
 ## Rules
 
-1. **Ask before you act.** Cairn can run on this computer or on Azure. Never choose for the person.
+1. **Ask before you act.** Cairn can run on this computer, on the person's own server, or on Azure. Never choose for the person.
 2. **Credentials stay with the person.** Never ask for a password, client secret or token in the chat, never print one, and never write one into a file git tracks. Signing in to Azure and creating the OAuth app are the person's steps; you tell them exactly what to click and type.
-3. **Never read `deploy/azure/.cairn-deploy.env`.** It holds secrets. The deploy script reads it; you do not. Do not `cat`, open, grep or print it.
+3. **Never read `deploy/azure/.cairn-deploy.env` or `deploy/docker/.env`.** They hold secrets. The deploy script and Docker read them; you do not. Do not `cat`, open, grep or print them.
 4. **Check every step** with the command given, and stop on a failure. Read the matching section of the person's guide and `docs/LESSONS.md` before trying anything else. Do not improvise cloud resources.
 5. **Change nothing else.** Do not edit Cairn's code, commit, push, or delete Azure resources unless the person asks.
 6. **Say what costs money** before running anything that creates cloud resources, and get a yes.
@@ -17,8 +17,9 @@ Ask these together, in one message:
 
 1. **Where should Cairn run?**
    1. **On this computer.** Free, private, set up in five minutes. Only agents on this machine can use it, and only while it runs.
-   2. **On Azure.** Reachable from anywhere, including Claude on the web and phone. Needs an Azure subscription; costs nothing to a few cents a month within the free grants. About fifteen minutes, with two steps the person does in a browser.
-   3. **AWS** is not available yet. Say so, and offer one of the two above.
+   2. **On their own server,** such as a Proxmox VM or container, or a NAS, with Docker. The database stays on that machine's disk. Needs an HTTPS address in front of it: a reverse proxy, Cloudflare Tunnel or Tailscale. About twenty minutes.
+   3. **On Azure.** Reachable from anywhere, including Claude on the web and phone. Needs an Azure subscription; costs nothing to a few cents a month within the free grants. About fifteen minutes, with two steps the person does in a browser.
+   4. **AWS** is not available yet. Say so, and offer one of the others.
 2. **Which Claude do you use?** Claude Code, Claude Desktop, Claude on the web, or several.
 3. **Anything to bring in?** A folder of Markdown notes, or a folder from `cairn export`.
 
@@ -33,10 +34,10 @@ git --version
 
 1. Node must be 22 or later: https://nodejs.org
 2. Then enable pnpm, which Cairn uses: `corepack enable` (on some systems it needs an administrator shell).
-3. For Azure, also: `az --version`. If it is missing, give them https://learn.microsoft.com/cli/azure/install-azure-cli.
+3. For their own server: `docker compose version`, run on that server; if it is missing, give them https://docs.docker.com/engine/install/. The server itself needs neither Node nor pnpm: it runs the published image. For Azure: `az --version`; if it is missing, give them https://learn.microsoft.com/cli/azure/install-azure-cli.
 4. On Windows, run every command in Git Bash.
 
-From the repository's root folder:
+On the computer you are running on, from the repository's root folder:
 
 ```
 pnpm install
@@ -59,7 +60,20 @@ Human guide: `docs/LOCAL.md`.
    3. **Claude Desktop or on the web** cannot reach a server on this computer. Suggest Azure if they need those.
 5. **Prove it end to end,** with their permission: `cairn create --title "Cairn is connected" --note "Install check" --text "Written during setup."`. Ask them to open http://localhost:8787 and find it under recent changes.
 
-## 3b. On Azure
+## 3b. On their own server
+
+Human guide: `docs/DEPLOY-DOCKER.md`. The steps run on the server. If you are not running on it, give the person each command to run there, and ask them to paste back the output (never the contents of `.env`).
+
+1. **Ask how the HTTPS address will be provided:** a reverse proxy they already run, Cloudflare Tunnel, or Tailscale. Explain that Claude on the web and Desktop need an address reachable from the internet; Claude Code and the CLI on their own devices do not. Setting up the proxy or tunnel is theirs; point them to the guide's "The HTTPS address".
+2. **Ask where the database should live.** Default: `deploy/docker/data`. On Proxmox, a folder on the VM's disk, or a host folder mounted into the container (guide, "On Proxmox"). Never an NFS or SMB share.
+3. **Prepare the folder:** in `deploy/docker`, `mkdir data && sudo chown 1000:1000 data`, then `cp env.example .env && chmod 600 .env`. For an unprivileged Proxmox LXC with a host folder, the owner on the host is `101000:101000`.
+4. **The person creates the OAuth app,** as in 3c step 5, with their HTTPS address as the homepage and that address plus `/oauth/callback` as the callback URL.
+5. **The person fills in `.env`** in their own editor: `CAIRN_PUBLIC_URL`, the client id and secret, `CAIRN_ALLOWED_USERS=github:<login>`, and `CAIRN_AUTH_SECRET` from `openssl rand -hex 32`. You do not open the file. If the proxy is on another machine, they also add `CAIRN_BIND=0.0.0.0`.
+6. **Start it:** `docker compose up -d`, then `docker compose logs`. The log must say `on a mounted volume`. If it says a setting is missing or a folder is not writable, the message names the fix.
+7. **Check it,** on the server: `curl -s http://127.0.0.1:8787/health` must print `"status":"ok"`, and `curl -s -o /dev/null -w '%{http_code}\n' -X POST http://127.0.0.1:8787/mcp` must print `401`. Then the same health check through their HTTPS address.
+8. **Connect, move content and prove it** as in 3c steps 8 to 11.
+
+## 3c. On Azure
 
 Human guide: `docs/DEPLOY-AZURE.md`. Say first: this creates a resource group, a storage account and a container app in their subscription; within the free grants it costs nothing to a few cents a month; they can remove it all with one command.
 
@@ -104,7 +118,7 @@ Finish with a short summary for the person:
 
 1. Where Cairn runs, and its console and MCP addresses.
 2. How they connected, and how to connect another device.
-3. **On this computer:** how to start it (`pnpm dev` in the repository folder). **On Azure:** that it starts by itself, where the settings file is (`deploy/azure/.cairn-deploy.env`, to keep private and back up), what it costs, how to update (`docs/DEPLOY-AZURE.md`, "Day to day") and how to remove it (`az group delete --name <resource group>`, after an export).
+3. **On this computer:** how to start it (`pnpm dev` in the repository folder). **On Azure:** that it starts by itself, where the settings file is (`deploy/azure/.cairn-deploy.env`, to keep private and back up), what it costs, how to update (`docs/DEPLOY-AZURE.md`, "Day to day") and how to remove it (`az group delete --name <resource group>`, after an export). **On their own server:** that it restarts by itself, where the database folder and `deploy/docker/.env` are (both to back up, the file to keep private), and how to update (`docker compose pull && docker compose up -d`).
 4. What you did not do, or what failed.
 
 If anything in this guide was wrong or unclear, say so, so the owner can fix it.

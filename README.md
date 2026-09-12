@@ -26,7 +26,7 @@ Most people will. Clone the repository, open it in Claude Code (or Codex, Cursor
 
 > Install Cairn for me.
 
-The agent follows `docs/AGENT-INSTALL.md`. It asks whether Cairn should run on your computer or on Azure. It tells you exactly what to click where a person has to act, such as signing in to Azure or creating a GitHub OAuth app, and it keeps your secrets out of the chat.
+The agent follows `docs/AGENT-INSTALL.md`. It asks whether Cairn should run on your computer, on your own server, or on Azure. It tells you exactly what to click where a person has to act, such as signing in to Azure or creating a GitHub OAuth app, and it keeps your secrets out of the chat.
 
 ```
 git clone https://github.com/vespassassina/cairn.git
@@ -49,6 +49,17 @@ claude mcp add --transport http --scope user cairn http://localhost:8787/mcp
 The third line is optional: it brings in a folder of Markdown. Open http://localhost:8787 for the review console. No sign-in on your own machine (ADR-010). Start a new Claude session after adding the server.
 
 For Claude Code, the `cairn` command with its skill costs less context than MCP. It runs on Windows, macOS and Linux; `docs/CLI.md` has the steps.
+
+### On your own server
+
+Proxmox, a NAS, any machine with Docker: one container, with the database in a folder on that machine's disk. You need an HTTPS address in front of it, from a reverse proxy or a tunnel. `docs/DEPLOY-DOCKER.md` has the steps; the short version:
+
+```
+cd deploy/docker
+mkdir data && sudo chown 1000:1000 data
+cp env.example .env
+docker compose up -d
+```
 
 ### On Azure
 
@@ -80,7 +91,7 @@ deploy/azure/deploy.sh
 5. `Dockerfile`, `docker/` and `deploy/azure/`. The server image and the Azure
    deployment (ADR-018).
 
-Not yet: the Cosmos and DynamoDB adapters, AWS, the web editor, embeddings,
+Not yet: AWS, the web editor, embeddings,
 attachments, and exporting history.
 
 ## Licence

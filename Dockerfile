@@ -1,7 +1,8 @@
 # syntax=docker/dockerfile:1
 #
-# The Cairn server image (ADR-018): the bundled server, Node's built-in
-# SQLite, and Litestream streaming the database to Azure Blob Storage.
+# The Cairn server image (ADR-018, ADR-020): the bundled server, Node's
+# built-in SQLite, and Litestream. The database is in /data: a mounted local
+# volume on your own server, or restored from and streamed to a replica.
 # Built for linux/amd64 and linux/arm64 by CI and published to ghcr.io.
 
 FROM node:24-slim AS build

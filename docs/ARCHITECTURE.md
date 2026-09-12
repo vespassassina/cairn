@@ -15,7 +15,7 @@ Agent without a shell    Agent with a shell      Browser (owner)
   |    /mcp        MCP tools            \  one auth check,     |
   |    /api/v1     REST, changes feed   /  operations.ts      |
   |    /           review console (ADR-009)                    |
-  |    entry/node.ts   (lambda, azure later)                   |
+  |    entry/node.ts   (one container everywhere, ADR-020)     |
   +-----------------------------------------------------------+
         |
         v
@@ -30,7 +30,7 @@ Agent without a shell    Agent with a shell      Browser (owner)
   DocumentStore port        SearchIndex port
         |                        |
   adapter-sqlite            adapter-sqlite (FTS5)
-  (cosmos, dynamo later)    (cosmos full-text, S3 index later)
+  (cosmos, dynamo: optional, on an ADR-020 trigger)
 ```
 
 ## Packages
@@ -66,7 +66,8 @@ Local: nothing (ADR-010). Anywhere else, OAuth (ADR-017):
 
 1. **Local:** `pnpm dev`, tsx running the TypeScript directly.
 2. **Container:** `pnpm build:server` bundles the server with esbuild into one file. The image holds that file, Node and Litestream, and is published by CI to `ghcr.io/vespassassina/cairn`.
-3. **Azure (ADR-018):** Container Apps, one replica at most, zero when idle. The database is on the container's disk; Litestream restores it from Blob Storage on start and streams every change back, through the app's managed identity. `deploy/azure/main.bicep` and `deploy.sh` create it all.
+3. **Own server (ADR-020):** `deploy/docker/compose.yaml` runs the image with the database on a mounted local volume at `/data`. A Litestream replica is optional.
+4. **Azure (ADR-018):** Container Apps, one replica at most, zero when idle. The database is on the container's disk; Litestream restores it from Blob Storage on start and streams every change back, through the app's managed identity. `deploy/azure/main.bicep` and `deploy.sh` create it all.
 
 ## Data
 

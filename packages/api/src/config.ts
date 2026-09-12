@@ -148,7 +148,7 @@ function loadOAuth(env: NodeJS.ProcessEnv, file: ConfigFile, hostIsLoopback: boo
   if (allowedUsers.length === 0) missing.push("CAIRN_ALLOWED_USERS");
   if (provider === "oidc" && !(env["CAIRN_OIDC_ISSUER"] ?? fromFile.issuer)) missing.push("CAIRN_OIDC_ISSUER");
   if (missing.length > 0) {
-    throw new ConfigError(`OAuth is partly configured. Also set: ${missing.join(", ")}. See docs/DEPLOY-AZURE.md.`);
+    throw new ConfigError(`OAuth is partly configured. Also set: ${missing.join(", ")}. See docs/DEPLOY-DOCKER.md or docs/DEPLOY-AZURE.md.`);
   }
   if (provider !== "github" && provider !== "oidc") {
     throw new ConfigError(`CAIRN_AUTH_PROVIDER must be github or oidc, got ${provider}`);
@@ -214,7 +214,7 @@ export function loadConfig(
     // Without OAuth, binding to a public interface would put an unprotected
     // write API on the network, so refuse to start instead.
     throw new ConfigError(
-      `refusing to listen on ${host} without OAuth. Configure it (docs/DEPLOY-AZURE.md), or use 127.0.0.1.`,
+      `refusing to listen on ${host} without OAuth. Configure it (docs/DEPLOY-DOCKER.md or docs/DEPLOY-AZURE.md), or use 127.0.0.1.`,
     );
   }
   const minToken = loopback ? 16 : MIN_SECRET;

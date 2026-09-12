@@ -12,7 +12,7 @@ Last updated: 11 September 2026
 
 A source-available, self-hosted document and collection store where agents are the primary client, free for any non-commercial use (ADR-015). They get in through MCP, a REST API or a command-line tool (ADR-013). The web editor comes second.
 
-It runs on the free tier of Azure (Cosmos DB) or AWS (DynamoDB) and scales by configuration, not rewrite.
+It runs as one small container: on your own server, or within the free grants of a cloud (Azure today, AWS later). SQLite holds the data; Cosmos DB or DynamoDB can take over by configuration if one instance is ever not enough (ADR-020).
 
 Search is keyword-first (BM25) plus an explicit link graph, with Claude doing the multi-hop reasoning. Embeddings are opt-in: bring your own OpenAI-compatible endpoint.
 
@@ -41,7 +41,7 @@ What no one combines: typed tables next to the wiki, a revision for every write 
 1. Claude can find, read, create and update pages and collection rows through MCP with no manual copy and paste.
 2. Sustained running cost of €0 to €2 per month for a single user with up to 5,000 pages on either Azure or AWS free tier.
 3. Keyword-only search (no embeddings) hits recall@5 of 0.8 or better on my 30-query eval set when driven by Claude.
-4. The same codebase deploys to Azure, AWS or a single self-hosted container, switching only configuration.
+4. The same container image runs on your own server, on Azure and on AWS, switching only configuration (ADR-020).
 5. A new user goes from clone to a working Claude connector in under 30 minutes by following the README.
 
 ## 3. Non-goals
@@ -96,17 +96,17 @@ What no one combines: typed tables next to the wiki, a revision for every write 
 
 ### Runtime
 
-1. **API and MCP server:** TypeScript with Hono. One codebase that runs on Azure Functions (Flex Consumption), AWS Lambda, or Node in a container.
+1. **API and MCP server:** TypeScript with Hono, on Node, in one container (ADR-020). Azure Functions and AWS Lambda were targets until ADR-020 dropped them.
 2. **Frontend:** React with BlockNote (ProseMirror based). Hosted on Azure Static Web Apps free plan or S3 plus CloudFront.
 3. **Indexer:** extracts links, mentions and tags and writes chunks. Runs inline on write in P0, because it is cheap and removes a moving part. Becomes queue-triggered in P1 for embeddings, which are slow and external. A full rebuild command regenerates all derived data from pages (ADR-005).
 
-The MCP server runs in stateless streamable HTTP mode, and platform differences live only in a thin entry point per platform. See ADR-006.
+The MCP server runs in stateless streamable HTTP mode, which suits a container that scales to zero. See ADR-006.
 
-**First cloud deployment (ADR-018):** until the Cosmos adapter and spike S1 are done, Azure runs the Node server as one container on Container Apps, consumption plan, scaled to zero, with SQLite kept in Blob Storage by Litestream. Functions with Cosmos remains the path to scaling out.
+**Deployment (ADR-018, ADR-020):** one container per deployment, nothing beside it. On your own server the SQLite file lives on a mounted local volume (`docs/DEPLOY-DOCKER.md`). On Azure the container runs on Container Apps, consumption plan, scaled to zero, with SQLite kept in Blob Storage by Litestream. Cosmos DB and DynamoDB are optional adapters for the same container, built when more than one instance is needed, the cold restore is too slow, or the write-loss window matters.
 
 ### Storage adapters
 
-Search is a separate adapter from the document store, so a deployment pairs them freely. See ADR-005 for the reasoning and the full rules.
+Search is a separate adapter from the document store, so a deployment pairs them freely. See ADR-005 for the reasoning and the full rules. Since ADR-020 the default everywhere is the self-hosted column, SQLite with FTS5; the Azure and AWS columns are the optional adapters, not the plan.
 
 | Concern | Azure | AWS | Self-hosted |
 |---|---|---|---|
@@ -209,7 +209,7 @@ Given a collection with a required date field, when `upsert_row` omits it, then 
 Given a deployed instance, when the owner adds the connector URL in Claude, then OAuth completes and all tools in section 8 are callable.
 Status 2026-09-12: the OAuth server is built and tested end to end with a stand-in provider (ADR-017). Proven when a deployed instance is connected from claude.ai.
 
-**P0.6 Storage and search adapter interfaces with Cosmos and SQLite implementations.**
+**P0.6 Storage and search adapter interfaces with Cosmos and SQLite implementations.** (Since ADR-020 the Cosmos implementation is optional and waits for a trigger; the interfaces and the SQLite implementation are done.)
 Given the conformance test suite, when run against both adapters, then all tests pass with no adapter-specific branches in business logic.
 Given an adapter that declares collection-query pushdown, when the suite runs the query set with pushdown on and off, then the results are identical.
 
@@ -231,13 +231,13 @@ Status 2026-09-12: done as a folder rather than a zip, written by `cairn export`
 
 **P0.8 Azure free-tier deployment.**
 Given a fresh subscription with Cosmos free tier unused, when the owner runs the deploy script, then the instance is live with no resource on a paid SKU except Blob Storage.
-Status 2026-09-12: the first Azure path uses Container Apps and Blob Storage instead of Functions and Cosmos (ADR-018), and meets the same test: nothing on a paid SKU but Blob Storage. Template and scripts are checked in CI; a first real deployment is still to be run.
+Status 2026-09-12: Azure uses Container Apps and Blob Storage instead of Functions and Cosmos (ADR-018, ADR-020), and meets the same test: nothing on a paid SKU but Blob Storage. Template and scripts are checked in CI; a first real deployment is still to be run.
 
 ### P1: fast follow
 
 1. **Web editor** with BlockNote, page tree, backlinks panel, collection table view.
 2. **Bring-your-own embeddings** with hybrid search and fallback as described in section 7.
-3. **DynamoDB and S3 adapters** plus AWS deploy script.
+3. **AWS:** the same container on an AWS container service, with a deploy script. DynamoDB and S3 adapters only on an ADR-020 trigger.
 4. **Attachments** up to 25 MB per file, stored via the blob adapter.
 5. **Local MCP server** packaged as a Claude Desktop extension (`.mcpb`), pointing at the remote API.
 6. **Eval runner** that executes `eval/queries.yaml` and reports recall@5 per search mode.
@@ -277,7 +277,7 @@ Run after every change to chunking, indexing, weights or embedding model. No sea
 **R1. OAuth for MCP stalls the project.** Most home-built connectors die here.
 Mitigation: time-box to 3 days. Fallback: API Management consumption tier with Entra ID, or a hosted identity provider free tier.
 
-**R2. Cosmos full-text doesn't support Dutch or Italian well.** Keyword search is the default path, so this hurts.
+**R2. Cosmos full-text doesn't support Dutch or Italian well.** Keyword search is the default path, so this hurts. Since ADR-020 this applies only if the optional Cosmos adapter is built.
 Mitigation: verify language support before P0.2. Fallback: store a stemmed or lowercased shadow field per language.
 
 **R3. Cosmos lock-in creeps past the adapter.** RU-specific query shapes leak into business logic.
@@ -307,9 +307,9 @@ Mitigation: phase gate below. No editor code until the MCP-only phase passes its
 
 ## 14. Phasing
 
-**Phase 0: foundations (1 week).** Adapter interfaces, SQLite adapter, conformance tests, eval query set written. Plus the two spikes from ADR-006: Hono on Azure Functions (S1) and the MCP transport shape (S2). Both are cheap and both can invalidate the runtime plan, so they happen before Phase 1 work starts.
+**Phase 0: foundations (1 week).** Adapter interfaces, SQLite adapter, conformance tests, eval query set written. Plus the two spikes from ADR-006: Hono on Azure Functions (S1) and the MCP transport shape (S2). S2 is done; S1 was closed without running when ADR-020 dropped Functions.
 
-**Phase 1: MCP only (2 to 3 weeks).** Cosmos adapter, pages, collections, edges, keyword search, MCP server, OAuth, Azure deploy. Use it from Claude daily.
+**Phase 1: MCP only (2 to 3 weeks).** Pages, collections, edges, keyword search, MCP server, OAuth, a container deploy on your own server and on Azure. Use it from Claude daily. (The Cosmos adapter was here until ADR-020 made it optional.)
 
 Gate: usage and recall targets from section 10 met for two weeks. If not, stop or rethink.
 

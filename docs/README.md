@@ -7,10 +7,11 @@ Where to find what. Cairn is built in the open, mostly by an AI agent working fr
 1. `../README.md`. What Cairn is, and the three commands to run it.
 2. `LOCAL.md`. Running it on your machine, connecting Claude Code, and the review console.
 3. `CLI.md`. Installing the `cairn` command on Windows, macOS or Linux, and teaching Claude Code to use it.
-4. `DEPLOY-AZURE.md`. Putting Cairn on Azure with sign-in, connecting Claude from anywhere, and running it day to day.
-5. `AGENT-INSTALL.md`. The same installs, written for a coding agent to follow with you at the checkpoints.
-6. `PRD.md`. What Cairn is for, who it is for, the MCP tools, the requirements, and the risks.
-7. `ARCHITECTURE.md`. How it is built today: packages, the two adapter ports, the kinds of data, and the write path.
+4. `DEPLOY-DOCKER.md`. Running Cairn on your own server, such as Proxmox or a NAS, with the database on a local disk.
+5. `DEPLOY-AZURE.md`. Putting Cairn on Azure with sign-in, connecting Claude from anywhere, and running it day to day.
+6. `AGENT-INSTALL.md`. The same installs, written for a coding agent to follow with you at the checkpoints.
+7. `PRD.md`. What Cairn is for, who it is for, the MCP tools, the requirements, and the risks.
+8. `ARCHITECTURE.md`. How it is built today: packages, the two adapter ports, the kinds of data, and the write path.
 
 ## The four logs
 
