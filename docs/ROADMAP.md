@@ -70,7 +70,7 @@ Before publishing on GitHub and posting to Hacker News. From the review of 2026-
 | Online and offline model decided | later | The sync design above |
 | Search over-matching fixed | later | Visible in the first demo |
 | README leads with the tagline and a console screenshot | next | |
-| CI green on Linux, macOS and Windows | in progress | First run: tests pass on all four, smoke test fixed for Windows cleanup |
+| CI green on Linux, macOS and Windows | done | Tests, CLI build and smoke test pass on Linux x64, Linux Arm, macOS and Windows (run 34703011030) |
 | Sign the macOS and Windows executables | later | ADR-014 rule 7. Costs an Apple developer account and a Windows certificate |
 
 ## Phase 2: editor
