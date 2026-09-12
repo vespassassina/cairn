@@ -24,6 +24,15 @@ importers:
         specifier: ^5.0.0
         version: 5.0.0(@types/node@22.20.2)(vite@8.3.0(@types/node@22.20.2)(esbuild@0.28.2)(tsx@4.23.13))
 
+  examples/peptide-wiki:
+    dependencies:
+      '@cairn/api':
+        specifier: workspace:*
+        version: link:../../packages/api
+      '@cairn/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+
   packages/adapter-sqlite:
     dependencies:
       '@cairn/core':

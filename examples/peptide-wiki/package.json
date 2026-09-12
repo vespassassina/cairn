@@ -1,0 +1,13 @@
+{
+  "name": "@cairn/example-peptide-wiki",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "seed": "tsx seed.ts"
+  },
+  "dependencies": {
+    "@cairn/api": "workspace:*",
+    "@cairn/core": "workspace:*"
+  }
+}
