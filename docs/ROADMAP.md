@@ -65,7 +65,7 @@ Before publishing on GitHub and posting to Hacker News. From the review of 2026-
 | Two weeks of daily use, against the PRD kill criterion | in progress | |
 | Export (P0.7) | done | ADR-016. Markdown and JSON, whole or by root, lossless round trip |
 | One cloud target deployed, with a month of real cost | next | ADR-018. Deploy, measure the cold start and the write-loss window (ADR-020), then watch the bill |
-| First release tag, so the image and CLI builds are published | next | `v0.1.0`. Then make the ghcr package public |
+| First release tag, so the image and CLI builds are published | next | `v0.1.0`, which also creates the `latest` image tag the deploy defaults use. The ghcr package is public since 2026-09-13: `edge` pulls anonymously, amd64 and arm64 |
 | OAuth, so claude.ai can connect | done | ADR-017. Needs one real connection to call it proven |
 | Licence decided | done | ADR-015, PolyForm Noncommercial 1.0.0 |
 | Contributor terms decided | next | Before accepting outside pull requests, so commercial licences can cover contributed code (ADR-015 consequence 4) |
