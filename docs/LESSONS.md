@@ -13,6 +13,20 @@ Each entry answers four questions:
 
 ## 2026-09-13
 
+### The released image could not reach its replica, and CI could not have noticed
+
+1. **What happened.** On the first Azure deployment, the container never became healthy. The logs showed only "restore attempt 1 failed" as Container Apps killed it. Storage metrics showed no request from the container at all.
+2. **Cause.** The final image is `node:24-slim`, which has no system CA certificates. Node brings its own, so the server worked everywhere. Litestream is a Go program and uses the system's, so every HTTPS request failed with "certificate signed by unknown authority". The Azure SDK inside Litestream retries such errors with backoff for minutes, longer than the three-minute startup probe, so the error was never printed. CI starts the image without a replica, so Litestream never made a request.
+3. **Fix.** The image copies `/etc/ssl/certs/ca-certificates.crt` from the Litestream build stage; CI checks the file exists. To see the error, a debug revision was given a ten-minute startup probe, after running a command inside the container was blocked by the agent's permissions.
+4. **Lesson.** A path CI never runs is untested, however simple it looks: the replica path had never been exercised until a real deployment. When a base image is "slim", check what else in the image needs from the system (certificates, time zones, locales), not only the main program. And when a startup probe kills a container before it logs anything, lengthen the probe before guessing.
+
+### A default region refused new subscriptions
+
+1. **What happened.** The first deploy pass failed: West Europe was "not accepting new customers". Rerunning in Sweden Central then failed as well, because the resource group from the refused run already existed in West Europe.
+2. **Cause.** Azure closes some regions to new subscriptions when capacity is short, and the default was chosen without checking that. `az group create` refuses to move an existing group to another region.
+3. **Fix.** The empty group was deleted and the deploy rerun in Sweden Central, the owner's choice. `deploy.sh` now defaults to `swedencentral` and reuses an existing group. `az deployment group validate` checks a region in seconds, and does catch the refusal.
+4. **Lesson.** Validate a region before the first deployment in a new subscription; a refusal costs minutes and leaves a group behind.
+
 ### The first release went out with no description, and its tag push was blocked
 
 1. **What happened.** `v0.1.0` built and published every file, but the GitHub release had an empty description. Earlier, the agent's push of the tag was blocked by its permissions.

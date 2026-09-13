@@ -90,6 +90,9 @@ jobs:
             echo "CAIRN_TOKEN=$SERVICE_TOKEN"
           } > "$RUNNER_TEMP/ci.env"
           docker run --rm --entrypoint litestream cairn:test version
+          # Litestream verifies TLS against the system CA bundle, which the
+          # Node base image lacks. Without it no replica can be reached.
+          docker run --rm --entrypoint sh cairn:test -c 'test -s /etc/ssl/certs/ca-certificates.crt'
           docker run -d --name cairn -p 8787:8787 --env-file "$RUNNER_TEMP/ci.env" cairn:test
           for _ in $(seq 1 30); do curl -fsS localhost:8787/health && break; sleep 1; done
           curl -fsS localhost:8787/health

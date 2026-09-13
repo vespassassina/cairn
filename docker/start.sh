@@ -31,7 +31,10 @@ fi
 
 # Access to storage can take a minute to arrive after a first deploy, while
 # Azure grants the app's identity its role. Retry rather than give up.
+# Litestream retries network errors itself for minutes before it reports
+# one, so say what is being tried before each attempt.
 attempt=1
+echo "restoring $DB from $CAIRN_REPLICA_URL, if it has a copy"
 until litestream restore -if-db-not-exists -if-replica-exists -o "$DB" "$CAIRN_REPLICA_URL"; do
   if [ "$attempt" -ge 12 ]; then
     echo "error: could not read the replica at $CAIRN_REPLICA_URL after $attempt attempts" >&2

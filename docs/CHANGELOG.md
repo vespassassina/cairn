@@ -6,6 +6,15 @@ Entries link to the ADR when there is one. A change of direction that has no ADR
 
 ## 2026-09-13
 
+### Fixed: the image could not reach its replica; Azure's default region is now Sweden Central
+
+The first real Azure deployment found two problems, neither visible to CI.
+
+1. **Litestream could not verify any TLS certificate.** The container started, and every restore failed with "x509: certificate signed by unknown authority". Litestream is a Go program and reads the system's CA certificates, which `node:24-slim` does not have; Node carries its own, so the server was never affected. CI never set a replica, so Litestream never made a request. The image now copies the CA bundle from its Litestream build stage, and CI checks the bundle is there. `0.1.0` has the bug: an Azure deployment needs `0.1.1` or later. Deployments on your own server without a replica were not affected.
+2. **West Europe refuses new subscriptions.** Azure rejected the storage account and the environment with "The selected region is currently not accepting new customers". `deploy.sh` now defaults to `swedencentral`, and reuses an existing resource group instead of trying to recreate it, since a group created by a refused run blocked the next run in another region. The Azure guide and `docs/AGENT-INSTALL.md` say how to check a region first.
+
+`docker/start.sh` also says which replica it is restoring from, because Litestream retries network errors for minutes before printing one, and Container Apps' startup probe restarted the container before the error appeared.
+
 ### Released: v0.1.0
 
 The first release, tagged on 10b1d69 after that commit passed CI on `main`. The tag's run built and published:

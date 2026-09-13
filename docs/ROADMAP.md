@@ -34,7 +34,7 @@ Status key: done, in progress, next, later, blocked.
 | Cosmos adapter | later, on a trigger | ADR-020: only if more than one instance, a slow cold restore, or the write-loss window matters |
 | Own-server deploy (Proxmox, NAS, Docker) | done | ADR-020. `deploy/docker/`, database on a mounted local volume. CI starts it with one; not yet run on Proxmox |
 | OAuth server | done | ADR-017. GitHub or any OpenID Connect provider, consent page, CLI login. 23 end-to-end tests. Proven with claude.ai after a deploy |
-| Azure deploy | in progress | ADR-018. Container Apps and Litestream, Bicep and script, image in CI. First real deployment still to run |
+| Azure deploy | in progress | ADR-018. Container Apps and Litestream, Bicep and script, image in CI. First real deployment running in Sweden Central since 2026-09-13; it found the image could not reach its replica (fixed for 0.1.1) |
 | Agent-first install guide | done | ADR-019. `docs/AGENT-INSTALL.md`, `AGENTS.md` |
 | Peptide wiki reseeded from the updated wiki | done | 96 pages, 79 peptides, 8 stacks, 2 collections |
 

@@ -80,7 +80,7 @@ Human guide: `docs/DEPLOY-DOCKER.md`. The steps run on the server. If you are no
 Human guide: `docs/DEPLOY-AZURE.md`. Say first: this creates a resource group, a storage account and a container app in their subscription; within the free grants it costs nothing to a few cents a month; they can remove it all with one command.
 
 1. **Sign in to Azure.** Ask the person to run `az login` themselves, in their own terminal. It opens a browser. Then check which subscription is active, and confirm it with them: `az account show --query "{name:name, id:id}" --output table`
-2. **Choose a name and region.** Defaults: name `cairn`, region `westeurope`, resource group `cairn`. The name becomes part of the address. Ask if they want different ones.
+2. **Choose a name and region.** Defaults: name `cairn`, region `swedencentral`, resource group `cairn`. The name and region become part of the address, and so of the OAuth callback URL, so they are awkward to change later. Ask if they want different ones. West Europe refused new subscriptions in September 2026; to check a region before deploying, run `az deployment group validate -g <any existing group> --template-file deploy/azure/main.bicep --parameters location=<region>`, which fails with "not accepting new customers" if it is closed to them.
 3. **Check the image is published.** Should print `200`:
 
    ```

@@ -36,14 +36,14 @@ From the repository folder:
 deploy/azure/deploy.sh
 ```
 
-It creates a resource group called `cairn` in West Europe, a storage account, and the Container Apps environment, and prints the address Cairn will have, such as:
+It creates a resource group called `cairn` in Sweden Central, a storage account, and the Container Apps environment, and prints the address Cairn will have, such as:
 
 ```
 First pass done. Cairn will live at:
-  https://cairn.happyhill-1a2b3c4d.westeurope.azurecontainerapps.io
+  https://cairn.happyhill-1a2b3c4d.swedencentral.azurecontainerapps.io
 
 Next: create an OAuth app with this callback URL:
-  https://cairn.happyhill-1a2b3c4d.westeurope.azurecontainerapps.io/oauth/callback
+  https://cairn.happyhill-1a2b3c4d.swedencentral.azurecontainerapps.io/oauth/callback
 ```
 
 To use another region, resource group or name, set them first, for example `CAIRN_LOCATION=northeurope CAIRN_NAME=notes deploy/azure/deploy.sh`.
@@ -76,7 +76,7 @@ Paste the secret into your own terminal; do not put it in a file you commit or a
 When it finishes it prints:
 
 ```
-Cairn is running at https://cairn.happyhill-1a2b3c4d.westeurope.azurecontainerapps.io
+Cairn is running at https://cairn.happyhill-1a2b3c4d.swedencentral.azurecontainerapps.io
   console      .../  (sign in with github)
   MCP          .../mcp
   Claude Code  claude mcp add --transport http --scope user cairn .../mcp
@@ -169,9 +169,11 @@ Entra ID does not say whether an email address is verified, so list people by su
 1. **"is not on this Cairn's list of allowed users".** The page names the exact entry, such as `github:yourlogin`. Add it to `CAIRN_ALLOWED_USERS` and run the script again.
 2. **GitHub says the redirect URI is not associated with the application.** The callback URL in the GitHub OAuth app must match the one the script printed, exactly.
 3. **The app does not start, and the logs say the image cannot be pulled.** The image must be public. On GitHub: your profile, Packages, cairn, Package settings, Change visibility, Public. It has been public since 2026-09-13, so check the name in `CAIRN_IMAGE` if you set one.
-4. **The logs show restore attempts failing right after the first deploy.** Azure takes a minute or two to give the app access to storage. The container retries for two minutes, and Container Apps restarts it after that.
-5. **The app restarts with "out of memory" in the logs.** The embedding model needs about 300 MB. Run the script again with `CAIRN_EMBEDDINGS=off` for keyword search only.
-6. **Anything else:** `az containerapp logs show -g cairn -n cairn --follow`, and the notes in `docs/LESSONS.md`.
+4. **The first pass fails with "The selected region is currently not accepting new customers".** Some regions are closed to new subscriptions; West Europe was in September 2026. Run the script again with another region, for example `CAIRN_LOCATION=northeurope deploy/azure/deploy.sh`. The resource group the failed run created is reused.
+5. **The logs show restore attempts failing right after the first deploy.** Azure takes a minute or two to give the app access to storage. The container retries for two minutes, and Container Apps restarts it after that.
+6. **The logs say "certificate signed by unknown authority".** The image is `0.1.0`, which lacks the certificates Litestream needs to reach storage. Use `0.1.1` or later: run the script again, with `CAIRN_IMAGE` unset or set to a newer version.
+7. **The app restarts with "out of memory" in the logs.** The embedding model needs about 300 MB. Run the script again with `CAIRN_EMBEDDINGS=off` for keyword search only.
+8. **Anything else:** `az containerapp logs show -g cairn -n cairn --follow`, and the notes in `docs/LESSONS.md`.
 
 ## What is not tested yet
 

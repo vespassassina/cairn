@@ -13,6 +13,12 @@ Rules:
 
 ## 2026-09-13
 
+### Deploy to Azure, in a new subscription, in Sweden Central
+
+A summary. Asked what was next, the owner said "deployment?", agreed to Azure first, created a new pay-as-you-go subscription in a new tenant for it, and said "go". When West Europe refused new customers, they chose Sweden Central from the regions that accepted the subscription.
+
+Landed in: the deployment itself, and the "Fixed: the image could not reach its replica" changelog entry, which also makes Sweden Central the script's default. The subscription and tenant ids stay out of this repository.
+
 ### Publish the first release
 
 > "then publish and build"

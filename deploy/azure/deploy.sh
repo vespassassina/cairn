@@ -11,7 +11,7 @@
 #
 # Settings, from the environment:
 #   CAIRN_RG                   resource group (default: cairn)
-#   CAIRN_LOCATION             Azure region (default: westeurope)
+#   CAIRN_LOCATION             Azure region (default: swedencentral)
 #   CAIRN_NAME                 app name, part of the address (default: cairn)
 #   CAIRN_IMAGE                image (default: ghcr.io/vespassassina/cairn:latest)
 #   CAIRN_AUTH_PROVIDER        github (default) or oidc
@@ -54,7 +54,7 @@ if [ -f "$secrets_file" ]; then
   done < "$secrets_file"
 fi
 : "${CAIRN_RG:=cairn}"
-: "${CAIRN_LOCATION:=westeurope}"
+: "${CAIRN_LOCATION:=swedencentral}"
 : "${CAIRN_NAME:=cairn}"
 : "${CAIRN_IMAGE:=ghcr.io/vespassassina/cairn:latest}"
 : "${CAIRN_AUTH_PROVIDER:=github}"
@@ -100,8 +100,16 @@ say "registering the Azure services Cairn uses (only slow the first time)"
 az provider register --namespace Microsoft.App --wait >/dev/null
 az provider register --namespace Microsoft.Storage --wait >/dev/null
 
-say "resource group $CAIRN_RG in $CAIRN_LOCATION"
-az group create --name "$CAIRN_RG" --location "$CAIRN_LOCATION" --output none
+# A group keeps the region it was created in, but may hold resources in any
+# region, and the template places them in CAIRN_LOCATION. So an existing
+# group is used as it is: after a region refused a first attempt, the next
+# run in another region still works.
+if [ "$(az group exists --name "$CAIRN_RG" | tr -d '\r')" = "true" ]; then
+  say "resource group $CAIRN_RG exists; resources go in $CAIRN_LOCATION"
+else
+  say "resource group $CAIRN_RG in $CAIRN_LOCATION"
+  az group create --name "$CAIRN_RG" --location "$CAIRN_LOCATION" --output none
+fi
 
 # Secrets go in a parameters file only this user can read, never on the
 # command line, where other processes could see them.

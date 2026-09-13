@@ -59,6 +59,11 @@ ENV NODE_ENV=production \
 WORKDIR /app
 COPY --from=build /src/dist/server/ ./
 COPY --from=litestream /usr/local/bin/litestream /usr/local/bin/litestream
+# Litestream is a Go program and verifies TLS against the system's CA
+# certificates, which node:24-slim does not have (Node carries its own). Without
+# them every replica request fails with "certificate signed by unknown
+# authority" (docs/LESSONS.md).
+COPY --from=litestream /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY docker/start.sh /app/start.sh
 RUN mkdir -p /data && chown node:node /data && chmod 0755 /app/start.sh
 USER node
