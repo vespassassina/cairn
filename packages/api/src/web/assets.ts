@@ -81,7 +81,6 @@ const CAIRN_CSS = `
 .cairn-login{ max-width:420px; margin:12vh auto 0 }
 `;
 
-/** One stylesheet, so a page costs one request, cached by content digest. */
 /**
  * The browser tab icon: a cairn, four stones stacked. An image rather than
  * CSS, so it carries its colours: artifactkit's accent, lightened when the
@@ -96,6 +95,48 @@ export const FAVICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0
 </svg>
 `;
 
+/** PNG icons for home screens and app launchers, which do not take SVG. */
+export const ICON_180_PNG = Uint8Array.from(atob("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"), (c) => c.charCodeAt(0));
+export const ICON_512_PNG = Uint8Array.from(atob("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"), (c) => c.charCodeAt(0));
+
+export const APP_NAME = "Cairn";
+export const APP_DESCRIPTION = "A wiki and tables your agents can write to, with every change reviewable.";
+
+/** Lets a browser add Cairn to a home screen or launcher under its own name. */
+export const MANIFEST = JSON.stringify({
+  name: APP_NAME,
+  short_name: APP_NAME,
+  description: APP_DESCRIPTION,
+  start_url: "/",
+  display: "browser",
+  background_color: "#F1ECE1",
+  theme_color: "#F1ECE1",
+  icons: [
+    { src: "/assets/favicon.svg", sizes: "any", type: "image/svg+xml" },
+    { src: "/assets/icon-180.png", sizes: "180x180", type: "image/png" },
+    { src: "/assets/icon-512.png", sizes: "512x512", type: "image/png" },
+  ],
+});
+
+/**
+ * The tags every Cairn page starts its head with, after charset and before
+ * its stylesheet. A string, so the OAuth pages, which are not JSX, share it.
+ */
+export const HEAD_TAGS = [
+  '<meta name="viewport" content="width=device-width, initial-scale=1">',
+  `<meta name="description" content="${APP_DESCRIPTION}">`,
+  `<meta name="application-name" content="${APP_NAME}">`,
+  `<meta name="apple-mobile-web-app-title" content="${APP_NAME}">`,
+  '<meta name="theme-color" content="#F1ECE1">',
+  '<link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">',
+  '<link rel="apple-touch-icon" href="/assets/icon-180.png">',
+  '<link rel="manifest" href="/assets/manifest.webmanifest">',
+].join("");
+
+/** A page's title: the app's name alone, or the page's name then the app's. */
+export const documentTitle = (title: string) => (title === APP_NAME ? APP_NAME : `${title} · ${APP_NAME}`);
+
+/** One stylesheet, so a page costs one request, cached by content digest. */
 export const CONSOLE_CSS = [THEME_CSS, COMPONENTS_CSS, PRINT_CSS, CAIRN_CSS].join("\n");
 
 /**

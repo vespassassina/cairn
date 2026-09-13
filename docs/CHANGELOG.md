@@ -6,6 +6,14 @@ Entries link to the ADR when there is one. A change of direction that has no ADR
 
 ## 2026-09-13
 
+### The console's pages have a proper head, and the app is named Cairn
+
+The owner asked for "proper html tags including title which should read Cairn". Every console, sign-in and OAuth page now starts with the same head: viewport, a description, `application-name` and `apple-mobile-web-app-title` set to Cairn, a theme colour, the SVG icon, a 180 pixel PNG for home screens (which do not take SVG), and a web manifest named Cairn with 180 and 512 pixel icons. The home page's title is "Cairn"; other pages read "Pages · Cairn" and so on. The sign-in page had no viewport tag, so it rendered at desktop width on a phone. An address the console does not know answered with bare text; it is now a "Not found" page. Two new tests.
+
+### Released: v0.1.2, and Azure runs it
+
+`cairn sync`, the cold start changes, the lock fix and the favicon, released on 4f80024 with notes written by hand before the run finished. Azure moved from a pinned `edge` build to `ghcr.io/vespassassina/cairn:0.1.2`, with the 30 minute idle time.
+
 ### Shorter and fewer cold starts on Azure
 
 The owner asked how to fix the 30-second cold start. Three changes:

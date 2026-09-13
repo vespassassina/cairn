@@ -1,7 +1,8 @@
 /** @jsxImportSource hono/jsx */
 import type { Child, FC } from "hono/jsx";
+import { raw } from "hono/html";
 import type { Actor, Diff } from "@cairn/core";
-import { ASSET_VERSION } from "./assets.js";
+import { ASSET_VERSION, documentTitle, HEAD_TAGS } from "./assets.js";
 
 /**
  * Shared pieces of the review console (ADR-009). artifactkit classes for
@@ -19,9 +20,8 @@ export const Layout: FC<{
   <html lang="en">
     <head>
       <meta charset="utf-8" />
-      <meta name="viewport" content="width=device-width, initial-scale=1" />
-      <title>{`${title} · Cairn`}</title>
-      <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml" />
+      {raw(HEAD_TAGS)}
+      <title>{documentTitle(title)}</title>
       <link rel="stylesheet" href={`/assets/console.css?v=${ASSET_VERSION}`} />
     </head>
     <body>

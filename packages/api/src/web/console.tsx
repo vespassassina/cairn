@@ -20,7 +20,7 @@ import {
   type Row,
 } from "@cairn/core";
 import { OWNER, type AppContext } from "../context.js";
-import { ASSET_VERSION, CONSOLE_CSS, CONSOLE_JS, FAVICON_SVG } from "./assets.js";
+import { ASSET_VERSION, CONSOLE_CSS, CONSOLE_JS, documentTitle, FAVICON_SVG, HEAD_TAGS, ICON_180_PNG, ICON_512_PNG, MANIFEST } from "./assets.js";
 import { ActorPill, Banner, DiffView, Layout, When } from "./layout.js";
 import { createMarkdownRenderer, pageHref, type LinkResolver } from "./markdown.js";
 import { isSameOrigin, SESSION_COOKIE, sessionValue, timingSafeEqual } from "./session.js";
@@ -494,6 +494,14 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
       "cache-control": "public, max-age=86400",
     }),
   );
+  for (const [path, png] of [["/assets/icon-180.png", ICON_180_PNG], ["/assets/icon-512.png", ICON_512_PNG]] as const) {
+    app.get(path, (c) =>
+      c.body(png, 200, { "content-type": "image/png", "cache-control": "public, max-age=86400" }),
+    );
+  }
+  app.get("/assets/manifest.webmanifest", (c) =>
+    c.body(MANIFEST, 200, { "content-type": "application/manifest+json", "cache-control": "public, max-age=86400" }),
+  );
   // Browsers ask for /favicon.ico whatever the page says.
   app.get("/favicon.ico", (c) => c.redirect("/assets/favicon.svg", 301));
 
@@ -529,8 +537,8 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
     <html lang="en">
       <head>
         <meta charset="utf-8" />
-        <title>Sign in · Cairn</title>
-        <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml" />
+        {raw(HEAD_TAGS)}
+        <title>{documentTitle("Sign in")}</title>
         <link rel="stylesheet" href={`/assets/console.css?v=${ASSET_VERSION}`} />
       </head>
       <body>
@@ -644,7 +652,7 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
 
     return render(
       c,
-      <Layout title="Recent changes" section="recent">
+      <Layout title="Cairn" section="recent">
         <header class="ak-pagehead">
           <div>
             <p class="ak-eyebrow">Review</p>
@@ -1547,5 +1555,8 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
       );
     }
   });
-}
 
+  // Any other address the console does not know gets a page, not bare text.
+  // The API, MCP and OAuth routes answer their own misses before this.
+  app.notFound((c) => notFound(c, "That address"));
+}

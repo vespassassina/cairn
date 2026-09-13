@@ -167,6 +167,37 @@ describe("sign-in and request safety", () => {
     expect(await login.text()).toContain('rel="icon" href="/assets/favicon.svg"');
     expect((await get("/pages")).html).toContain('rel="icon" href="/assets/favicon.svg"');
   });
+
+  it("gives every page a full head, named Cairn for home screens and bookmarks", async () => {
+    const pages = [await (await app.fetch(new Request(`${ORIGIN}/login`))).text(), (await get("/")).html, (await get("/pages")).html];
+    for (const html of pages) {
+      expect(html.startsWith("<!doctype html>")).toBe(true);
+      expect(html).toContain('<meta name="viewport"');
+      expect(html).toContain('<meta name="description"');
+      expect(html).toContain('<meta name="application-name" content="Cairn">');
+      expect(html).toContain('<meta name="apple-mobile-web-app-title" content="Cairn">');
+      expect(html).toContain('<link rel="apple-touch-icon" href="/assets/icon-180.png">');
+      expect(html).toContain('<link rel="manifest" href="/assets/manifest.webmanifest">');
+    }
+    expect(pages[0]).toContain("<title>Sign in · Cairn</title>");
+    expect(pages[1]).toContain("<title>Cairn</title>");
+    expect(pages[2]).toContain("<title>Pages · Cairn</title>");
+
+    const png = await app.fetch(new Request(`${ORIGIN}/assets/icon-180.png`));
+    expect(png.headers.get("content-type")).toBe("image/png");
+    expect(Array.from(new Uint8Array(await png.arrayBuffer()).slice(1, 4), (b) => String.fromCharCode(b)).join("")).toBe("PNG");
+    const manifest = await (await app.fetch(new Request(`${ORIGIN}/assets/manifest.webmanifest`))).json();
+    expect(manifest).toMatchObject({ name: "Cairn", short_name: "Cairn", start_url: "/" });
+  });
+
+  it("answers an unknown address with a page, not bare text", async () => {
+    const { status, html } = await get("/no-such-place");
+    expect(status).toBe(404);
+    expect(html).toContain("<title>Not found · Cairn</title>");
+    expect(html).toContain("That address does not exist");
+    const api = await app.fetch(new Request(`${ORIGIN}/api/v1/no-such-endpoint`, { headers: { authorization: `Bearer ${TOKEN}` } }));
+    expect(api.headers.get("content-type")).toContain("application/json");
+  });
 });
 
 describe("rendering untrusted page content", () => {

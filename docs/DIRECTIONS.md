@@ -13,6 +13,18 @@ Rules:
 
 ## 2026-09-13
 
+### Proper HTML head, collections under a root, and links between rows
+
+> "cairn webapp also needs proper html tags including title which should read Cairn."
+
+> "the current wiki has 2 collections but these are related to each other, they should be under peptides collection as sub collections. is it possible to add a new root/collection and move sub collections there by just adding a link? this should be a feature of cairn"
+
+> "what about crosslinking in the same collection? is it implemented? how does the scan and crosslink update works?"
+
+Landed in: the "proper head" changelog entry for the first. The second and third: not yet; the agent explained how links work today and asked the owner to choose between designs.
+
+Also: "update claude.md", done in the owner's own global instructions, which now say Cairn runs on Azure; not in this repository.
+
 ### Fix the cold start
 
 > "how can we fix the cold start issue ?"
