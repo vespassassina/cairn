@@ -6,6 +6,10 @@ Entries link to the ADR when there is one. A change of direction that has no ADR
 
 ## 2026-09-13
 
+### Released: v0.1.3, and Azure runs it
+
+Collections in the page tree, relation fields as links, the console's head and the sync report fix, released on 6c092b0 with notes. Azure moved from a pinned build to `ghcr.io/vespassassina/cairn:0.1.3`; a sync with the laptop found the two still identical, 186 records.
+
 ### The owner's wiki: Peptides and Stacks under one page, stacks linked to their peptides
 
 On Azure, after exporting a backup: a new page, Peptides (`pg_peptides`), with both collections moved under it, and Stacks' `components` changed from a list of names to a relation holding links to Peptides rows. All eight stacks were rewritten with the matching row ids, each as a revision with a change note; every name matched a row. BPC-157's row now shows the three stacks it is in. The start of the new version derived links for all 87 rows. The laptop copy took the changes with `cairn sync`.

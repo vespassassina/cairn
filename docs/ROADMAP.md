@@ -66,7 +66,7 @@ Before publishing on GitHub and posting to Hacker News. From the review of 2026-
 | Two weeks of daily use, against the PRD kill criterion | in progress | |
 | Export (P0.7) | done | ADR-016. Markdown and JSON, whole or by root, lossless round trip |
 | One cloud target deployed, with a month of real cost | in progress | ADR-018. Deployed 2026-09-13; the month of cost runs from then. Cold start measured, about 30 s. Still to measure: the write-loss window (ADR-020) |
-| First release tag, so the image and CLI builds are published | done | `v0.1.0` on 2026-09-13, then `v0.1.1` and `v0.1.2` the same day. Images `0.1.0`, `0.1` and `latest` pull anonymously, amd64 and arm64; five CLI executables and `SHA256SUMS` on the GitHub release |
+| First release tag, so the image and CLI builds are published | done | `v0.1.0` on 2026-09-13, then `v0.1.1`, `v0.1.2` and `v0.1.3` the same day. Images `0.1.0`, `0.1` and `latest` pull anonymously, amd64 and arm64; five CLI executables and `SHA256SUMS` on the GitHub release |
 | OAuth, so claude.ai can connect | done | ADR-017. Needs one real connection to call it proven |
 | Licence decided | done | ADR-015, PolyForm Noncommercial 1.0.0 |
 | Contributor terms decided | next | Before accepting outside pull requests, so commercial licences can cover contributed code (ADR-015 consequence 4) |
