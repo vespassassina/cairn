@@ -273,7 +273,11 @@ function describeSyncReport(report: SyncReport, urls: Record<Side, string>): str
     lines.push(`  to ${urls[side]}: ${[wrote, deleted].filter(Boolean).join("; ") || "nothing to change"}`);
   }
   for (const conflict of report.conflicts) {
-    lines.push(`  conflict: ${conflict.label} changed on both; kept the newer edit, from ${conflict.kept_from}. The other is in its history`);
+    // Pages and rows keep every version; collection schemas keep none (ADR-008 consequence 5).
+    const kept = conflict.key.startsWith("collection:")
+      ? "Collections keep no history, so the other schema was replaced"
+      : "The other is in its history";
+    lines.push(`  conflict: ${conflict.label} changed on both; kept the newer edit, from ${conflict.kept_from}. ${kept}`);
   }
   for (const warning of report.warnings) lines.push(`  warning: ${warning}`);
   for (const skipped of report.skipped) lines.push(`  skipped: ${skipped}`);

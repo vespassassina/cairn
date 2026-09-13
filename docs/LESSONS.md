@@ -13,6 +13,13 @@ Each entry answers four questions:
 
 ## 2026-09-13
 
+### Sync promised history that collections do not keep
+
+1. **What happened.** A sync after the ADR-024 change reported two collection conflicts with "The other is in its history". Collection schemas have no history.
+2. **Cause.** The report wording was written for pages and rows, which do keep every version, and collections were never checked against it. The conflicts themselves came from the sync hash of a collection gaining a field, which makes every saved hash stale once.
+3. **Fix.** The report says a collection's losing schema was replaced; a test covers it.
+4. **Lesson.** A promise in an output ("it is in history") is a claim about every kind of record it can print, so check each kind. And a change to what a hash covers invalidates every stored hash: say what that does on the first run after an upgrade.
+
 ### The instructions taught a link syntax the code did not read
 
 1. **What happened.** The MCP server instructions told agents to link pages with `[[Page title]]`. The extractor only reads `[[page-id]]`, which the `create_page` tool description and the console both say. Found while answering the owner's question about how cross-linking works.

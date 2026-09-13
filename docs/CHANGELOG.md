@@ -6,6 +6,12 @@ Entries link to the ADR when there is one. A change of direction that has no ADR
 
 ## 2026-09-13
 
+### The owner's wiki: Peptides and Stacks under one page, stacks linked to their peptides
+
+On Azure, after exporting a backup: a new page, Peptides (`pg_peptides`), with both collections moved under it, and Stacks' `components` changed from a list of names to a relation holding links to Peptides rows. All eight stacks were rewritten with the matching row ids, each as a revision with a change note; every name matched a row. BPC-157's row now shows the three stacks it is in. The start of the new version derived links for all 87 rows. The laptop copy took the changes with `cairn sync`.
+
+That sync reported both collections as conflicts. A collection's sync hash now includes its parent, so the hashes saved before differ from both sides once; the newer side, Azure, won, which was right. The report then said the loser was "in its history", which is not true of collections: their schemas keep no history (ADR-008). It now says the other schema was replaced, and `docs/CLI.md` says so too. Nothing was lost here, since the two sides differed only in their parent.
+
 ### Added: collections in the page tree, and relation fields as links (ADR-024)
 
 The owner asked for their two related collections to sit under one root, "by just adding a link", as a feature of Cairn, and whether rows could link to rows. They could not: collections were flat, and a relation field held one unchecked page id that no backlink ever saw.

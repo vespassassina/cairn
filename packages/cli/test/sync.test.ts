@@ -232,6 +232,19 @@ describe("cairn sync between two servers", () => {
     expect((await a.collections.get(a.workspaceId, "col_a_links")).parentId).toBeNull();
   });
 
+  it("says when a collection's schema loses a conflict, since schemas keep no history", async () => {
+    await seed(a);
+    await sync();
+    for (const [side, name] of [[a, "Peptides on A"], [b, "Peptides on B"]] as const) {
+      const collection = await side.collections.get(side.workspaceId, "col_peptides");
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      await side.collections.update(side.workspaceId, "col_peptides", { name, fields: collection.fields }, collection.version, BY);
+    }
+    await sync();
+    expect((await a.collections.get(a.workspaceId, "col_peptides")).name).toBe("Peptides on B");
+    expect(stdout).toContain("Collections keep no history, so the other schema was replaced");
+  });
+
   it("refuses the same server twice, and a bad interval", async () => {
     expect(await cairn("sync", A_URL, `${A_URL}/`)).toBe(2);
     expect(stderr).toContain("two different servers");
