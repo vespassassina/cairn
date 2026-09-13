@@ -119,6 +119,20 @@ export function runSearchIndexConformance(
       });
     });
 
+    it("ranks the page whose title is the query first (ADR-025)", async () => {
+      // Other pages' short sections mention the name more densely than the page itself.
+      await index.replaceChunksForPage(WS, "pg_kpv_page", [
+        chunk("pg_kpv_page", 0, "An anti-inflammatory tripeptide with a long history in gut research and topical use.", ["KPV"]),
+      ]);
+      for (const other of ["pg_mention_a", "pg_mention_b"]) {
+        await index.replaceChunksForPage(WS, other, [chunk(other, 0, "Related: KPV. KPV.", [other, "Related"])]);
+      }
+      await eventually(async () => {
+        const result = await index.search(WS, { query: "kpv" });
+        expect(result.hits[0]?.pageId).toBe("pg_kpv_page");
+      });
+    });
+
     it("does not let filler words decide a match", async () => {
       await eventually(async () => {
         const result = await index.search(WS, { query: "which firmware did I flash on the" });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { foldTerm, queryTerms, requiredMatches, tokenize } from "../src/index.js";
+import { foldTerm, queryTerms, requiredMatches, sameWords, tokenize } from "../src/index.js";
 
 describe("search terms (ADR-021)", () => {
   it("splits on the same boundaries as FTS5 unicode61", () => {
@@ -36,5 +36,13 @@ describe("search terms (ADR-021)", () => {
 
   it("requires every term of a short query and a majority of a longer one", () => {
     expect([1, 2, 3, 4, 5, 6, 7].map(requiredMatches)).toEqual([1, 2, 2, 3, 3, 4, 4]);
+  });
+
+  it("treats a query as a title's own words, ignoring case, accents and punctuation (ADR-025)", () => {
+    expect(sameWords("bpc 157", "BPC-157")).toBe(true);
+    expect(sameWords("Fat loss", "Fat loss")).toBe(true);
+    expect(sameWords("Crème", "creme")).toBe(true);
+    expect(sameWords("BPC-157 dosage", "BPC-157")).toBe(false);
+    expect(sameWords("", "BPC-157")).toBe(false);
   });
 });

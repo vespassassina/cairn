@@ -6,6 +6,15 @@ Entries link to the ADR when there is one. A change of direction that has no ADR
 
 ## 2026-09-13
 
+### Fixed: a page did not come first for its own title (ADR-025)
+
+Searching each page's title, the page itself came first 22 times out of 97: "BPC-157" returned three pages whose "Related" sections link to BPC-157 before the BPC-157 page. The title and headings were stored with each chunk but never indexed, so they only counted where the text repeated them, and BM25 favours short sections dense with the name.
+
+1. The heading path is now an indexed column, weighing 5 times the text in BM25. The index rebuilds itself on the next start.
+2. A search whose words are exactly a page's title puts that page first, in both modes. A shared rule, in core, with a conformance test.
+
+Measured on a copy of the wiki, 96 pages. Own page first: 96 of 96 in keyword and hybrid mode, from 22. The heading weight alone gives 92 in keyword mode. `pnpm eval` before and after, per mode: recall@5 0.83 and 0.83 keyword, 1.00 and 1.00 hybrid; questions with no answer 9 of 9 empty in all four runs. Fusing per page and weighting keywords in the fusion were tried and dropped: 67 to 76 of 96 at best, not worth changing every hybrid search.
+
 ### A page shows its collections inside it, and the Collections page groups them by root
 
 The owner found the new layout confusing: "it's like now it is a referencing recursive link. my idea was that a new page could be created and promoted to root of both." The root page was called Peptides, the same as the table inside it, and the same two tables were listed three times on it: as links in its text, under "Links to", and under "Collections here".

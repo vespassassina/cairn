@@ -13,6 +13,13 @@ Each entry answers four questions:
 
 ## 2026-09-13
 
+### Titles were stored with every chunk and searched by none
+
+1. **What happened.** A page came first for its own title in 22 of 97 searches. Nothing in the eval noticed, because its queries are phrased as questions, not names.
+2. **Cause.** The chunk's heading path, which starts with the page title, was an `UNINDEXED` FTS5 column: kept for display, invisible to matching and ranking. The chunker's comment said the title leads the path "so a title-only match still has somewhere to sit", but that was only true for the empty-page fallback, which puts the title in the text.
+3. **Fix.** An indexed `heading` column with a BM25 weight, and an exact-title rule (ADR-025).
+4. **Lesson.** Test search with the query an agent sends most: the exact name of a thing. An eval of questions measures recall for questions only.
+
 ### Sync promised history that collections do not keep
 
 1. **What happened.** A sync after the ADR-024 change reported two collection conflicts with "The other is in its history". Collection schemas have no history.

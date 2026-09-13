@@ -4,6 +4,7 @@ import { getLoadablePath } from "sqlite-vec";
 import {
   queryTerms,
   requiredMatches,
+  sameWords,
   type ChunkInput,
   type Embedder,
   type Id,
@@ -29,6 +30,10 @@ import {
  * other languages are left mostly as they are, and query and text are always
  * stemmed the same way, so it never stops a word matching itself.
  *
+ * A chunk's heading path, the page title and the headings above it, is
+ * indexed as its own column and weighs more than body text in BM25, so a page
+ * ranks above the short sections of other pages that merely link to it.
+ *
  * FTS5 finds candidates that contain any term, ranked by BM25. Then the rules
  * every backend shares (core `search/terms.ts`) drop pages that contain too
  * few of the query's terms, and pages with more of them rank first. Which
@@ -46,6 +51,14 @@ import {
 
 const TOKENIZER = "porter unicode61 remove_diacritics 2";
 
+/**
+ * How much a match in the heading path counts against one in the text, as a
+ * BM25 column weight. Chosen with `pnpm eval` and the title check recorded in
+ * docs/CHANGELOG.md.
+ */
+export const HEADING_WEIGHT = 5;
+
+// `heading` comes after `text`, so `text` keeps column 5 for snippet().
 const SCHEMA = `
 CREATE VIRTUAL TABLE IF NOT EXISTS chunks USING fts5(
   workspace_id UNINDEXED,
@@ -54,9 +67,13 @@ CREATE VIRTUAL TABLE IF NOT EXISTS chunks USING fts5(
   heading_path UNINDEXED,
   ordinal      UNINDEXED,
   text,
+  heading,
   tokenize = '${TOKENIZER}'
 );
 `;
+
+/** BM25 with a weight per column, in schema order; unindexed columns do not count. */
+const RANK = `bm25(chunks, 0, 0, 0, 0, 0, 1.0, ${HEADING_WEIGHT})`;
 
 /**
  * Created only when an embedder is configured (ADR-004). `vector_chunks` says
@@ -198,12 +215,13 @@ export class SqliteSearchIndex implements SearchIndex {
   }
 
   async init(): Promise<void> {
-    // An index built with another tokenizer cannot be converted in place.
-    // Chunks are derived data (ADR-005), so drop it and ask for a rebuild.
+    // An index built with another tokenizer, or without the heading column,
+    // cannot be converted in place. Chunks are derived data (ADR-005), so
+    // drop it and ask for a rebuild.
     const existing = this.db
       .prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'chunks'")
       .get() as { sql: string } | undefined;
-    if (existing && !existing.sql.includes(TOKENIZER)) {
+    if (existing && (!existing.sql.includes(TOKENIZER) || !/\bheading,/.test(existing.sql))) {
       this.db.exec("DROP TABLE chunks");
       this.needsRebuild = true;
     }
@@ -267,8 +285,8 @@ export class SqliteSearchIndex implements SearchIndex {
         .run(workspaceId, pageId);
       const insert = this.db.prepare(
         `INSERT INTO chunks
-         (workspace_id, chunk_id, page_id, heading_path, ordinal, text)
-         VALUES (?, ?, ?, ?, ?, ?)`,
+         (workspace_id, chunk_id, page_id, heading_path, ordinal, text, heading)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
       );
       for (const chunk of chunks) {
         insert.run(
@@ -278,6 +296,7 @@ export class SqliteSearchIndex implements SearchIndex {
           JSON.stringify(chunk.headingPath),
           chunk.ordinal,
           chunk.text,
+          chunk.headingPath.join("\n"),
         );
       }
       if (this.vectors === "ready") {
@@ -331,7 +350,7 @@ export class SqliteSearchIndex implements SearchIndex {
       }
     }
 
-    const records = diversify(ranked).slice(offset, offset + limit + 1);
+    const records = diversify(titleFirst(ranked, options.query)).slice(offset, offset + limit + 1);
     const truncated = records.length > limit;
     const window = truncated ? records.slice(0, limit) : records;
 
@@ -366,11 +385,11 @@ export class SqliteSearchIndex implements SearchIndex {
     const candidates = this.db
       .prepare(
         `SELECT chunk_id, page_id, heading_path,
-                -bm25(chunks) AS score,
+                -${RANK} AS score,
                 snippet(chunks, 5, char(91), char(93), char(8230), 16) AS snippet
          FROM chunks
          WHERE chunks MATCH ? AND workspace_id = ?
-         ORDER BY bm25(chunks), chunk_id
+         ORDER BY ${RANK}, chunk_id
          LIMIT ?`,
       )
       .all(terms.map(quote).join(" OR "), workspaceId, CANDIDATES) as unknown as HitRecord[];
@@ -662,6 +681,16 @@ function chunkRecord(row: ChunkRow | undefined): HitRecord | null {
  * Each page's best chunk first, then the rest, so one page that holds every
  * term cannot fill the whole result and hide the next best page.
  */
+/** The page whose title is exactly the query, first, its chunks in their order (core `sameWords`). */
+function titleFirst(ranked: HitRecord[], query: string): HitRecord[] {
+  const named = ranked.find((record) => {
+    const title = (JSON.parse(record.heading_path) as string[])[0];
+    return title !== undefined && sameWords(query, title);
+  });
+  if (!named) return ranked;
+  return [...ranked.filter((r) => r.page_id === named.page_id), ...ranked.filter((r) => r.page_id !== named.page_id)];
+}
+
 function diversify(ranked: HitRecord[]): HitRecord[] {
   const seen = new Set<string>();
   const firsts: HitRecord[] = [];

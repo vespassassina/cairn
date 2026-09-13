@@ -66,3 +66,14 @@ export function queryTerms(query: string): string[] {
 export function requiredMatches(termCount: number): number {
   return termCount <= 2 ? termCount : Math.floor(termCount / 2) + 1;
 }
+
+/**
+ * True when a query is a title's own words, ignoring case, accents and
+ * punctuation: "bpc 157" is "BPC-157". A search for exactly a page's title is
+ * a lookup by name, and that page ranks first in every backend, whatever
+ * BM25 or the vectors say about other pages that mention it.
+ */
+export function sameWords(query: string, title: string): boolean {
+  const words = tokenize(query);
+  return words.length > 0 && words.join(" ") === tokenize(title).join(" ");
+}

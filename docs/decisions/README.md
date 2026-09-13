@@ -32,6 +32,7 @@ A decision that changes is not edited away. Add a new ADR that supersedes it, an
 | [022](ADR-022.md) | Vector search in SQLite with sqlite-vec, and a small English model inside the container | accepted, supersedes 003 as the default | 2026-09-13 |
 | [023](ADR-023.md) | Two Cairns sync through the cairn command, by comparing each record with the last sync | accepted, amended by 024 | 2026-09-13 |
 | [024](ADR-024.md) | Collections sit in the page tree, and relation fields are links | accepted | 2026-09-13 |
+| [025](ADR-025.md) | Headings weigh more than text, and a search for a page's exact title finds that page first | accepted, amends 021 | 2026-09-13 |
 
 ## Writing one
 
