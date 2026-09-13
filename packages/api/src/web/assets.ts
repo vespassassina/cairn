@@ -88,6 +88,14 @@ const CAIRN_CSS = `
 .cairn-tables .ak-disclosure{ margin-top:var(--ak-s4) }
 .cairn-group{ margin-bottom:var(--ak-s6) }
 .cairn-group .ak-breadcrumb{ margin-bottom:var(--ak-s1) }
+
+/* Home: one card per collection (ADR-026). */
+.cairn-collections{ display:grid; gap:var(--ak-s4); grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); margin-bottom:var(--ak-s6) }
+.cairn-collection{ display:block; padding:var(--ak-s4); border:1px solid var(--ak-rule); border-radius:var(--ak-radius);
+  background:var(--ak-surface); color:var(--ak-ink); text-decoration:none }
+.cairn-collection:hover{ border-color:var(--ak-accent) }
+.cairn-collection h2{ color:var(--ak-accent); margin-bottom:var(--ak-s2) }
+.cairn-collection p{ margin:0 0 var(--ak-s2) }
 `;
 
 /**

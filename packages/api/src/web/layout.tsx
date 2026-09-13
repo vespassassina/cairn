@@ -9,7 +9,7 @@ import { ASSET_VERSION, documentTitle, HEAD_TAGS } from "./assets.js";
  * everything it has a component for, `cairn-*` only for what it does not.
  */
 
-export type Section = "recent" | "pages" | "collections" | "search" | "none";
+export type Section = "collections" | "recent" | "tables" | "search" | "none";
 
 export const Layout: FC<{
   title: string;
@@ -31,14 +31,14 @@ export const Layout: FC<{
             Cairn
           </a>
           <nav aria-label="Sections">
-            <a href="/" aria-current={section === "recent" ? "page" : undefined}>
+            <a href="/" aria-current={section === "collections" ? "page" : undefined}>
+              Collections
+            </a>
+            <a href="/changes" aria-current={section === "recent" ? "page" : undefined}>
               Recent changes
             </a>
-            <a href="/pages" aria-current={section === "pages" ? "page" : undefined}>
-              Pages
-            </a>
-            <a href="/c" aria-current={section === "collections" ? "page" : undefined}>
-              Collections
+            <a href="/t" aria-current={section === "tables" ? "page" : undefined}>
+              Tables
             </a>
           </nav>
           <form action="/search" method="get" role="search">

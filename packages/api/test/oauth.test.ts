@@ -324,16 +324,16 @@ describe("console sign-in through the provider", () => {
     const login = await (await call("/login")).text();
     expect(login).toContain("Sign in with Fake");
 
-    const start = await call("/oauth/login?next=%2Fpages");
+    const start = await call("/oauth/login?next=%2Ft");
     const callback = await call(start.headers.get("location")!);
     expect(callback.status).toBe(303);
-    expect(callback.headers.get("location")).toBe("/pages");
+    expect(callback.headers.get("location")).toBe("/t");
     const cookie = callback.headers.get("set-cookie")!;
     expect(cookie).toContain("HttpOnly");
     expect(cookie).toContain("Secure");
     const session = cookie.split(";")[0]!;
 
-    expect((await call("/pages", { headers: { cookie: session } })).status).toBe(200);
+    expect((await call("/t", { headers: { cookie: session } })).status).toBe(200);
 
     const page = await context.pages.create(context.workspaceId, { title: "P", body: "x" }, {
       actor: { kind: "agent", id: "a", label: "A" },

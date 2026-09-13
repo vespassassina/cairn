@@ -165,11 +165,11 @@ describe("sign-in and request safety", () => {
 
     const login = await app.fetch(new Request(`${ORIGIN}/login`));
     expect(await login.text()).toContain('rel="icon" href="/assets/favicon.svg"');
-    expect((await get("/pages")).html).toContain('rel="icon" href="/assets/favicon.svg"');
+    expect((await get("/t")).html).toContain('rel="icon" href="/assets/favicon.svg"');
   });
 
   it("gives every page a full head, named Cairn for home screens and bookmarks", async () => {
-    const pages = [await (await app.fetch(new Request(`${ORIGIN}/login`))).text(), (await get("/")).html, (await get("/pages")).html];
+    const pages = [await (await app.fetch(new Request(`${ORIGIN}/login`))).text(), (await get("/")).html, (await get("/t")).html];
     for (const html of pages) {
       expect(html.startsWith("<!doctype html>")).toBe(true);
       expect(html).toContain('<meta name="viewport"');
@@ -181,7 +181,7 @@ describe("sign-in and request safety", () => {
     }
     expect(pages[0]).toContain("<title>Sign in · Cairn</title>");
     expect(pages[1]).toContain("<title>Cairn</title>");
-    expect(pages[2]).toContain("<title>Pages · Cairn</title>");
+    expect(pages[2]).toContain("<title>Tables · Cairn</title>");
 
     const png = await app.fetch(new Request(`${ORIGIN}/assets/icon-180.png`));
     expect(png.headers.get("content-type")).toBe("image/png");
@@ -263,12 +263,12 @@ describe("reviewing and editing", () => {
       actor: OWNER,
     });
 
-    const all = await get("/");
+    const all = await get("/changes");
     expect(all.html).toContain("By agent");
     expect(all.html).toContain("By owner");
     expect(all.html).toContain("Summarised the adhesion failures");
 
-    const agents = await get("/?who=agent");
+    const agents = await get("/changes?who=agent");
     expect(agents.html).toContain("By agent");
     expect(agents.html).not.toContain("By owner");
   });
@@ -424,7 +424,7 @@ describe("collections", () => {
   });
 
   it("shows rows in a sortable table", async () => {
-    const { html } = await get("/c/col_peptides");
+    const { html } = await get("/t/col_peptides");
     expect(html).toContain("data-ak-table");
     expect(html).toContain('data-sort="n"');
     expect(html).toContain("Semaglutide");
@@ -432,7 +432,7 @@ describe("collections", () => {
 
   it("edits a row through a form built from the schema", async () => {
     const row = await context.store.getRow(context.workspaceId, "col_peptides", "row_sema");
-    const result = await post("/c/col_peptides/r/row_sema", {
+    const result = await post("/t/col_peptides/r/row_sema", {
       name: "Semaglutide",
       categories: ["fat-loss", "recovery"],
       side_effects: "5",
@@ -451,7 +451,7 @@ describe("collections", () => {
 
   it("names invalid fields and keeps the input", async () => {
     const row = await context.store.getRow(context.workspaceId, "col_peptides", "row_sema");
-    const result = await post("/c/col_peptides/r/row_sema", {
+    const result = await post("/t/col_peptides/r/row_sema", {
       name: "",
       side_effects: "lots",
       version: row!.version,
@@ -474,13 +474,13 @@ describe("collections", () => {
     );
     const current = await context.store.getRow(context.workspaceId, "col_peptides", "row_sema");
 
-    const page = await get("/c/col_peptides/r/row_sema");
+    const page = await get("/t/col_peptides/r/row_sema");
     expect(page.html).toContain("Summarised the adhesion failures");
 
-    const revision = await get(`/c/col_peptides/r/row_sema/v/${current!.version}`);
+    const revision = await get(`/t/col_peptides/r/row_sema/v/${current!.version}`);
     expect(revision.html).toContain("+ side_effects: 9");
 
-    const restore = await post(`/c/col_peptides/r/row_sema/restore/${first!.version}`, {
+    const restore = await post(`/t/col_peptides/r/row_sema/restore/${first!.version}`, {
       expected: current!.version,
     });
     expect(restore.status).toBe(303);
@@ -507,23 +507,23 @@ describe("collections in the tree and rows as links (ADR-024)", () => {
 
   it("shows a collection under its page in the tree and inside the page", async () => {
     const { html } = await get("/p/pg_home");
-    expect(html).toContain('href="/c/col_stacks"');
-    expect(html).toContain('aria-label="Collections in this page"');
+    expect(html).toContain('href="/t/col_stacks"');
+    expect(html).toContain('aria-label="Tables in this page"');
     expect(html).toContain("1 rows · title, components");
     expect(html).not.toContain("Collections here");
     // The wiki links to a row and a collection resolve to them, named.
-    expect(html).toContain('href="/c/col_stacks/r/row_wolverine"');
+    expect(html).toContain('href="/t/col_stacks/r/row_wolverine"');
     expect(html).toContain("Stacks: Wolverine");
   });
 
   it("names linked rows in the table, and shows what links to a row", async () => {
-    const table = await get("/c/col_stacks");
-    expect(table.html).toContain('href="/c/col_peptides/r/row_bpc"');
+    const table = await get("/t/col_stacks");
+    expect(table.html).toContain('href="/t/col_peptides/r/row_bpc"');
     expect(table.html).toContain(">BPC-157</a>");
 
-    const row = await get("/c/col_peptides/r/row_bpc");
+    const row = await get("/t/col_peptides/r/row_bpc");
     expect(row.html).toContain("Linked from");
-    expect(row.html).toContain('href="/c/col_stacks/r/row_wolverine"');
+    expect(row.html).toContain('href="/t/col_stacks/r/row_wolverine"');
     expect(row.html).toContain("(components)");
     expect(row.html).toContain('href="/p/pg_bpc"');
 
@@ -533,16 +533,16 @@ describe("collections in the tree and rows as links (ADR-024)", () => {
 
   it("moves a collection from its page, keeping its rows", async () => {
     const collection = await context.collections.get(context.workspaceId, "col_peptides");
-    const moved = await post("/c/col_peptides/move", { parent: "pg_home", version: collection.version, note: "Group the tables" });
+    const moved = await post("/t/col_peptides/move", { parent: "pg_home", version: collection.version, note: "Group the tables" });
     expect(moved.status).toBe(303);
     expect((await context.collections.get(context.workspaceId, "col_peptides")).parentId).toBe("pg_home");
-    expect((await get("/c/col_peptides?moved=1")).html).toContain("Moved under Peptides.");
+    expect((await get("/t/col_peptides?moved=1")).html).toContain("Moved under Peptides.");
     expect((await context.collections.queryRows(context.workspaceId, "col_peptides")).items).toHaveLength(1);
   });
 
   it("reads a list of row ids from a relation field in the form", async () => {
     const row = await context.collections.getRow(context.workspaceId, "col_stacks", "row_wolverine");
-    const saved = await post("/c/col_stacks/r/row_wolverine", { title: "Wolverine", components: "row_bpc, row_tb", version: row.version, note: "" });
+    const saved = await post("/t/col_stacks/r/row_wolverine", { title: "Wolverine", components: "row_bpc, row_tb", version: row.version, note: "" });
     expect(saved.status).toBe(303);
     expect((await context.collections.getRow(context.workspaceId, "col_stacks", "row_wolverine")).values["components"]).toEqual(["row_bpc", "row_tb"]);
   });
@@ -550,24 +550,66 @@ describe("collections in the tree and rows as links (ADR-024)", () => {
   it("puts a collection under a page from the page itself", async () => {
     const peptides = await context.collections.get(context.workspaceId, "col_peptides");
     const page = await get("/p/pg_home");
-    expect(page.html).toContain("Put a collection here");
+    expect(page.html).toContain("Put a table here");
     expect(page.html).toContain(`value="col_peptides@${peptides.version}"`);
-    const moved = await post("/p/pg_home/collections", { collection: `col_peptides@${peptides.version}`, note: "Both tables in one place" });
+    const moved = await post("/p/pg_home/tables", { collection: `col_peptides@${peptides.version}`, note: "Both tables in one place" });
     expect(moved.status).toBe(303);
     expect((await context.collections.get(context.workspaceId, "col_peptides")).parentId).toBe("pg_home");
 
-    const stale = await post("/p/pg_bpc/collections", { collection: `col_peptides@${peptides.version}` });
+    const stale = await post("/p/pg_bpc/tables", { collection: `col_peptides@${peptides.version}` });
     expect(stale.status).toBe(409);
   });
 
   it("groups the collections page under each root page", async () => {
-    const { html } = await get("/c");
+    const { html } = await get("/t");
     const underHome = html.indexOf('<a href="/p/pg_home">Peptides</a>');
-    const loose = html.indexOf("Not under a page");
+    const loose = html.indexOf("Not in any collection");
     expect(underHome).toBeGreaterThan(-1);
     expect(loose).toBeGreaterThan(underHome);
-    expect(html.indexOf('href="/c/col_stacks"')).toBeGreaterThan(underHome);
-    expect(html.indexOf('href="/c/col_stacks"')).toBeLessThan(loose);
-    expect(html.indexOf('href="/c/col_peptides"')).toBeGreaterThan(loose);
+    expect(html.indexOf('href="/t/col_stacks"')).toBeGreaterThan(underHome);
+    expect(html.indexOf('href="/t/col_stacks"')).toBeLessThan(loose);
+    expect(html.indexOf('href="/t/col_peptides"')).toBeGreaterThan(loose);
+  });
+});
+
+describe("collections are the home page (ADR-026)", () => {
+  beforeEach(async () => {
+    const ws = context.workspaceId;
+    await context.pages.create(ws, { title: "Peptides", body: "Research notes on peptides: what each does, and **how** they combine." }, { actor: OWNER }, "pg_root");
+    await context.pages.create(ws, { title: "Recovery", parentId: "pg_root", body: "Category." }, { actor: OWNER }, "pg_recovery");
+    await context.pages.create(ws, { title: "BPC-157", parentId: "pg_recovery", body: "Healing." }, { actor: OWNER }, "pg_bpc");
+    await context.pages.create(ws, { title: "Garden", body: "Another wiki." }, { actor: OWNER }, "pg_garden");
+    await context.collections.create(ws, { name: "Stacks", parentId: "pg_root", fields: [{ name: "title", type: "text" }] }, { actor: OWNER }, "col_stacks");
+    await context.collections.create(ws, { name: "Loose", fields: [{ name: "title", type: "text" }] }, { actor: OWNER }, "col_loose");
+  });
+
+  it("shows each collection with its summary and counts, and tables in none", async () => {
+    const { html } = await get("/");
+    expect(html).toContain("<title>Cairn</title>");
+    expect(html).toContain('href="/p/pg_root"');
+    expect(html).toContain("Research notes on peptides: what each does, and how they combine.");
+    expect(html).toContain("2 pages · 1 table");
+    expect(html).toContain('href="/p/pg_garden"');
+    expect(html).toContain("0 pages · 0 tables");
+    expect(html).toContain("Tables in no collection");
+    expect(html).toContain('href="/t/col_loose"');
+    expect(html).not.toContain('href="/p/pg_bpc"');
+  });
+
+  it("shows only the current collection's tree in the sidebar", async () => {
+    const { html } = await get("/p/pg_bpc");
+    expect(html).toContain('aria-label="The Peptides collection"');
+    expect(html).toContain('href="/t/col_stacks"');
+    const tree = html.slice(html.indexOf('class="cairn-tree"'), html.indexOf("</nav>", html.indexOf('class="cairn-tree"')));
+    expect(tree).not.toContain("pg_garden");
+  });
+
+  it("sends old addresses to their new places", async () => {
+    const pages = await app.fetch(new Request(`${ORIGIN}/pages`, { headers: { cookie } }));
+    expect(pages.status).toBe(301);
+    expect(pages.headers.get("location")).toBe("/");
+    const table = await app.fetch(new Request(`${ORIGIN}/c/col_stacks?moved=1`, { headers: { cookie } }));
+    expect(table.headers.get("location")).toBe("/t/col_stacks?moved=1");
+    expect((await get("/changes")).html).toContain("Recent changes");
   });
 });

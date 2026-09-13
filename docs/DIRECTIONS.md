@@ -13,6 +13,16 @@ Rules:
 
 ## 2026-09-13
 
+### Collections are wikis, and the home shows them
+
+> "the pages page, what does it mean? why not just have collections and start the browsing from there? for a human that's the first entry point. home should just show available collections. a collection is kind of a database, tree shaped not table shaped"
+
+> "i open cairn web app, i see what collections are available each is a wiki. i navigate there"
+
+> "so in the sidebar, the collection is inside the subcollection" (with a screenshot of the sidebar)
+
+Asked three questions, the owner chose: a collection is a top-level page and its tree, not a new kind of record; the peptide wiki becomes one collection, Peptides. For the tables, they asked "isn't a table a tree? what about trunks? or branches"; after the agent explained that a branch is any page with children, they chose "table", with a table shown as one node in the sidebar. Landed in: ADR-026 and the web app change; the API, MCP and CLI rename follows.
+
 ### The root page read as a loop
 
 > "the way the 2 collections are inside peptides is weird. it's like now it is a referencing recursive link. my idea was that a new page could be created and promoted to root of both."

@@ -6,6 +6,17 @@ Entries link to the ADR when there is one. A change of direction that has no ADR
 
 ## 2026-09-13
 
+### The web app opens on collections, and typed tables are called tables (ADR-026, step 1)
+
+The owner: "home should just show available collections. a collection is kind of a database, tree shaped not table shaped", and "i open cairn web app, i see what collections are available each is a wiki. i navigate there". A collection is now a top-level page and everything under it; what Cairn called collections, rows sharing one set of fields, are tables.
+
+1. **Home lists the collections,** one card each, with the front page's first paragraph and how many pages and tables it holds, then any table in no collection.
+2. **Inside a collection, the sidebar shows only its tree,** headed by its front page.
+3. **The menu is Collections, Recent changes and Tables.** Recent changes moved to `/changes`, tables to `/t`; "Pages" left the menu, and `/pages` and the old `/c` addresses redirect.
+4. **The web app says table** wherever it said collection for one: "Put a table here", "Tables in this page", the Tables list and every breadcrumb.
+
+Step 2, the same words in the API, MCP tools, CLI and export, follows in its own change. Six console tests changed and three added.
+
 ### Fixed: a page did not come first for its own title (ADR-025)
 
 Searching each page's title, the page itself came first 22 times out of 97: "BPC-157" returned three pages whose "Related" sections link to BPC-157 before the BPC-157 page. The title and headings were stored with each chunk but never indexed, so they only counted where the text repeated them, and BM25 favours short sections dense with the name.

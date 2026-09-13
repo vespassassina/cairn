@@ -48,7 +48,7 @@ beforeEach(async () => {
 
 describe("console on a trusted local host", () => {
   it("opens without sign-in on localhost", async () => {
-    const response = await app.fetch(new Request("http://localhost:8787/pages"));
+    const response = await app.fetch(new Request("http://localhost:8787/"));
     expect(response.status).toBe(200);
   });
 
@@ -168,7 +168,7 @@ describe("with local trust off", () => {
       token: "strict-token-0123456789",
       trust: { enabled: false, hosts: LOCAL.hosts },
     });
-    const console = await strict.fetch(new Request("http://localhost:8787/pages"));
+    const console = await strict.fetch(new Request("http://localhost:8787/"));
     expect(console.status).toBe(302);
     const tools = await strict.fetch(
       new Request("http://localhost:8787/mcp", { method: "POST", body: "{}" }),
