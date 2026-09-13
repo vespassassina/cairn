@@ -13,6 +13,12 @@ Rules:
 
 ## 2026-09-13
 
+### Start step 2 of the rename
+
+> "start next"
+
+The go-ahead for ADR-026 step 2, which the agent had proposed: tables are called tables in the API, the MCP tools, the CLI and the export too, with the old REST paths and CLI command still answering. Landed in: ADR-026 "Step 2, as built" and the matching changelog entry.
+
 ### Collections are wikis, and the home shows them
 
 > "the pages page, what does it mean? why not just have collections and start the browsing from there? for a human that's the first entry point. home should just show available collections. a collection is kind of a database, tree shaped not table shaped"
@@ -21,7 +27,7 @@ Rules:
 
 > "so in the sidebar, the collection is inside the subcollection" (with a screenshot of the sidebar)
 
-Asked three questions, the owner chose: a collection is a top-level page and its tree, not a new kind of record; the peptide wiki becomes one collection, Peptides. For the tables, they asked "isn't a table a tree? what about trunks? or branches"; after the agent explained that a branch is any page with children, they chose "table", with a table shown as one node in the sidebar. Landed in: ADR-026 and the web app change; the API, MCP and CLI rename follows.
+Asked three questions, the owner chose: a collection is a top-level page and its tree, not a new kind of record; the peptide wiki becomes one collection, Peptides. For the tables, they asked "isn't a table a tree? what about trunks? or branches"; after the agent explained that a branch is any page with children, they chose "table", with a table shown as one node in the sidebar. Landed in: ADR-026 and the web app change (step 1), then the API, MCP and CLI rename (step 2). The wiki restructure on Azure is in the changelog entry "The peptide wiki is one collection".
 
 ### The root page read as a loop
 

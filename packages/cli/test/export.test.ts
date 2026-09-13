@@ -1,4 +1,4 @@
-import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -54,7 +54,7 @@ async function seed(context: AppContext) {
   );
   await context.pages.create(ws, { title: "TB-500", parentId: healing.id, body: "Pairs with [[pg_bpc-157]].", tags: ["peptide"] }, BY, "pg_tb-500");
   await context.pages.create(ws, { title: "Longevity", body: "Another category.", tags: ["category"] }, BY, "pg_cat_longevity");
-  const peptides = await context.collections.create(
+  const peptides = await context.tables.create(
     ws,
     {
       name: "Peptides",
@@ -66,7 +66,7 @@ async function seed(context: AppContext) {
     BY,
     "col_peptides",
   );
-  await context.collections.upsertRow(ws, peptides.id, { values: { name: "BPC-157", categories: ["healing"] } }, BY, { id: "row_bpc" });
+  await context.tables.upsertRow(ws, peptides.id, { values: { name: "BPC-157", categories: ["healing"] } }, BY, { id: "row_bpc" });
 }
 
 beforeEach(async () => {
@@ -125,21 +125,21 @@ describe("export format", () => {
 });
 
 describe("cairn export and import", () => {
-  it("writes Markdown in a tree that mirrors the pages, and JSON per collection", async () => {
+  it("writes Markdown in a tree that mirrors the pages, and JSON per table", async () => {
     expect(await cairn(source, "export", folder)).toBe(0);
-    expect(stdout).toContain("exported 4 pages, 1 collections and 1 rows");
+    expect(stdout).toContain("exported 4 pages, 1 tables and 1 rows");
 
-    expect((await readdir(folder)).sort()).toEqual(["cairn-export.json", "collections", "pages"]);
+    expect((await readdir(folder)).sort()).toEqual(["cairn-export.json", "pages", "tables"]);
     expect((await readdir(join(folder, "pages"))).sort()).toEqual(["longevity.md", "recovery-healing", "recovery-healing.md"]);
     const bpc = await readFile(join(folder, "pages", "recovery-healing", "bpc-157.md"), "utf8");
     expect(bpc).toContain('id: "pg_bpc-157"');
     expect(bpc).toContain('parent: "pg_cat_healing"');
     expect(bpc).toContain("See [[pg_tb-500|TB-500]].");
 
-    const collection = JSON.parse(await readFile(join(folder, "collections", "peptides.json"), "utf8"));
-    expect(collection.rows).toEqual([{ id: "row_bpc", values: { name: "BPC-157", categories: ["healing"] } }]);
+    const table = JSON.parse(await readFile(join(folder, "tables", "peptides.json"), "utf8"));
+    expect(table.rows).toEqual([{ id: "row_bpc", values: { name: "BPC-157", categories: ["healing"] } }]);
     const manifest = JSON.parse(await readFile(join(folder, "cairn-export.json"), "utf8"));
-    expect(manifest).toMatchObject({ format: "cairn-export", version: 1, root: null, counts: { pages: 4, collections: 1, rows: 1 } });
+    expect(manifest).toMatchObject({ format: "cairn-export", version: 2, root: null, counts: { pages: 4, tables: 1, rows: 1 } });
   });
 
   it("refuses to write into a folder that is not empty", async () => {
@@ -166,7 +166,7 @@ describe("cairn export and import", () => {
       });
       expect(after.updatedBy.kind).toBe("agent");
     }
-    const row = await target.collections.getRow(target.workspaceId, "col_peptides", "row_bpc");
+    const row = await target.tables.getRow(target.workspaceId, "col_peptides", "row_bpc");
     expect(row.values).toEqual({ name: "BPC-157", categories: ["healing"] });
 
     // Links are derived, and rebuilt on import.
@@ -201,7 +201,7 @@ describe("cairn export and import", () => {
 
   it("exports one page and everything under it, and imports it as top level", async () => {
     expect(await cairn(source, "export", folder, "--root", "pg_cat_healing")).toBe(0);
-    expect(stdout).toContain("exported 3 pages, 0 collections");
+    expect(stdout).toContain("exported 3 pages, 0 tables");
     const manifest = JSON.parse(await readFile(join(folder, "cairn-export.json"), "utf8"));
     expect(manifest.root).toBe("pg_cat_healing");
 
@@ -210,8 +210,8 @@ describe("cairn export and import", () => {
     expect((await target.pages.get(target.workspaceId, "pg_tb-500")).parentId).toBe("pg_cat_healing");
     expect(await target.store.getPage(target.workspaceId, "pg_cat_longevity")).toBeNull();
 
-    expect(await cairn(source, "export", folder, "--root", "pg_cat_healing", "--collections", "--force")).toBe(0);
-    expect(stdout).toContain("1 collections");
+    expect(await cairn(source, "export", folder, "--root", "pg_cat_healing", "--tables", "--force")).toBe(0);
+    expect(stdout).toContain("1 tables");
     expect(await cairn(source, "export", join(folder, "none"), "--root", "pg_nope")).toBe(1);
     expect(stderr).toContain("not_found");
   });
@@ -225,28 +225,40 @@ describe("cairn export and import", () => {
     expect((await target.pages.get(target.workspaceId, "pg_cat_longevity")).parentId).toBeNull();
   });
 
+  it("reads an export from before tables were called tables (format 1, ADR-026)", async () => {
+    expect(await cairn(source, "export", folder)).toBe(0);
+    await rename(join(folder, "tables"), join(folder, "collections"));
+    const manifest = JSON.parse(await readFile(join(folder, "cairn-export.json"), "utf8"));
+    const { tables, ...counts } = manifest.counts;
+    await writeFile(join(folder, "cairn-export.json"), JSON.stringify({ ...manifest, version: 1, counts: { ...counts, collections: tables } }));
+
+    expect(await cairn(target, "import", folder)).toBe(0);
+    expect(stdout).toContain("tables       1 created");
+    expect((await target.tables.getRow(target.workspaceId, "col_peptides", "row_bpc")).values).toEqual({ name: "BPC-157", categories: ["healing"] });
+  });
+
   it("refuses a folder that is not an export", async () => {
     expect(await cairn(target, "import", folder)).toBe(2);
     expect(stderr).toContain("cairn-export.json");
   });
 
-  it("keeps a collection's place in the tree and its row links (ADR-024)", async () => {
+  it("keeps a table's place in the tree and its row links (ADR-024)", async () => {
     const ws = source.workspaceId;
-    await source.collections.create(
+    await source.tables.create(
       ws,
       { name: "Aa links", parentId: "pg_cat_healing", fields: [{ name: "title", type: "text", required: true }, { name: "to", type: "relation", target: "col_peptides", multiple: true }] },
       BY,
       "col_aa_links",
     );
-    await source.collections.upsertRow(ws, "col_aa_links", { values: { title: "Stack", to: ["row_bpc"] } }, BY, { id: "row_stack" });
+    await source.tables.upsertRow(ws, "col_aa_links", { values: { title: "Stack", to: ["row_bpc"] } }, BY, { id: "row_stack" });
 
     expect(await cairn(source, "export", folder)).toBe(0);
-    const exported = JSON.parse(await readFile(join(folder, "collections", "aa-links.json"), "utf8"));
+    const exported = JSON.parse(await readFile(join(folder, "tables", "aa-links.json"), "utf8"));
     expect(exported.parent_id).toBe("pg_cat_healing");
 
-    // aa-links.json sorts before peptides.json, the collection it points at.
+    // aa-links.json sorts before peptides.json, the table it points at.
     expect(await cairn(target, "import", folder)).toBe(0);
-    expect((await target.collections.get(target.workspaceId, "col_aa_links")).parentId).toBe("pg_cat_healing");
-    expect((await target.collections.rowBacklinks(target.workspaceId, "col_peptides", "row_bpc")).map((e) => e.sourceId)).toEqual(["col_aa_links/row_stack"]);
+    expect((await target.tables.get(target.workspaceId, "col_aa_links")).parentId).toBe("pg_cat_healing");
+    expect((await target.tables.rowBacklinks(target.workspaceId, "col_peptides", "row_bpc")).map((e) => e.sourceId)).toEqual(["col_aa_links/row_stack"]);
   });
 });

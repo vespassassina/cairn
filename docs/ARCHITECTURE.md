@@ -21,7 +21,7 @@ Agent without a shell    Agent with a shell      Browser (owner)
         v
   +-------------------------------------------+
   |  core: services, domain rules, no I/O deps |
-  |    PageService, CollectionService          |
+  |    PageService, TableService               |
   |    indexer: links, chunks (pure)           |
   |    query: filter grammar, validation       |
   +-------------------------------------------+
@@ -60,9 +60,9 @@ Local: nothing (ADR-010). Anywhere else, OAuth (ADR-017):
 
 ## Export and import
 
-`cairn export` reads pages through `GET /api/v1/export/pages`, parents first, and collections through the rows endpoints, and writes Markdown and JSON (ADR-016). `cairn import` reads that folder and writes through `PUT` at the same ids, comparing first so a repeat changes nothing. Derived data is rebuilt by the writes, as always.
+`cairn export` reads pages through `GET /api/v1/export/pages`, parents first, and tables through the rows endpoints, and writes Markdown and JSON (ADR-016). `cairn import` reads that folder and writes through `PUT` at the same ids, comparing first so a repeat changes nothing. Derived data is rebuilt by the writes, as always.
 
-`cairn sync <a> <b>` (ADR-023) is a client of two servers. It reads every page, collection and row from both, compares each record's content hash with the one both sides agreed on at the last sync, kept in a state file beside the CLI's credentials, and writes the side that changed to the other through the same `PUT` and `DELETE` endpoints, with `If-Match`. When both changed, the newer `updated_at` wins and the replaced version stays in that side's history. No server knows it is being synced.
+`cairn sync <a> <b>` (ADR-023) is a client of two servers. It reads every page, table and row from both, compares each record's content hash with the one both sides agreed on at the last sync, kept in a state file beside the CLI's credentials, and writes the side that changed to the other through the same `PUT` and `DELETE` endpoints, with `If-Match`. When both changed, the newer `updated_at` wins and the replaced version stays in that side's history. No server knows it is being synced.
 
 ## Deployment
 
@@ -81,7 +81,7 @@ Three kinds of record, and the difference between them is the most important thi
 
 ## The tree and the link graph
 
-Pages form a tree through `parent_id`, and collections sit in it too, under a page or at the top (ADR-024). The link graph is the edges table: one edge per link, mention, parent or tag in a page's text, and one per value of a row's relation fields. A node is a page id, a collection id, or a row as `collection-id/row-id`, so page text can link to all three (`[[id]]`), and a relation field links a row to pages or to the rows of any collection, its own included. Backlinks are read from the same table by target, so nothing is stored twice.
+Pages form a tree through `parent_id`, and tables sit in it too, under a page or at the top (ADR-024). A top-level page and everything under it is a collection, one wiki, which is how the console groups them (ADR-026); a collection is a view of the tree, not a stored record. The link graph is the edges table: one edge per link, mention, parent or tag in a page's text, and one per value of a row's relation fields. A node is a page id, a table id, or a row as `table-id/row-id`, so page text can link to all three (`[[id]]`), and a relation field links a row to pages or to the rows of any table, its own included. Backlinks are read from the same table by target, so nothing is stored twice.
 
 ## The write path
 

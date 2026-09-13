@@ -3,7 +3,7 @@ import { z } from "zod";
 import { NotFoundError, type Actor, type Page, type Paged, type Revision } from "@cairn/core";
 import type { AppContext } from "../context.js";
 import {
-  collectionJson,
+  tableJson,
   describeError,
   editPage,
   linkJson,
@@ -87,7 +87,7 @@ const schemas = {
     tags: z.array(z.string()).default([]),
     change_note: CHANGE_NOTE,
   }),
-  createCollection: z.object({
+  createTable: z.object({
     name: z.string().min(1),
     fields: z
       .array(
@@ -231,8 +231,8 @@ function revisionDetail(revision: Revision): Record<string, unknown> {
     const snapshot = revision.snapshot as { title: string };
     return { ...base, page_id: revision.recordId, title: snapshot.title };
   }
-  const rowId = revision.recordId.slice((revision.collectionId ?? "").length + 1);
-  return { ...base, collection_id: revision.collectionId, row_id: rowId };
+  const rowId = revision.recordId.slice((revision.tableId ?? "").length + 1);
+  return { ...base, table_id: revision.tableId, row_id: rowId };
 }
 
 /** The page as Markdown with a small header, the cheapest read for an agent. */
@@ -372,17 +372,17 @@ export function restRoutes(context: AppContext, callerFor: CallerFor): Hono {
     return c.body(null, 204);
   });
 
-  const collectionIds = async () => new Set((await context.collections.list(ws)).map((collection) => collection.id));
+  const tableIds = async () => new Set((await context.tables.list(ws)).map((table) => table.id));
 
   api.get("/pages/:id/backlinks", async (c) => {
     const edges = await context.pages.backlinks(ws, c.req.param("id"));
-    const ids = await collectionIds();
+    const ids = await tableIds();
     return c.json({ backlinks: edges.map((edge) => linkJson(edge, "source", ids)) });
   });
 
   api.get("/pages/:id/neighbours", async (c) => {
     const { outbound, inbound } = await context.pages.neighbours(ws, c.req.param("id"));
-    const ids = await collectionIds();
+    const ids = await tableIds();
     return c.json({
       outbound: outbound.map((e) => linkJson(e, "target", ids)),
       inbound: inbound.map((e) => linkJson(e, "source", ids)),
@@ -407,31 +407,33 @@ export function restRoutes(context: AppContext, callerFor: CallerFor): Hono {
     });
   });
 
-  // Collections and rows.
+  // Tables and rows, at /tables and also at /collections, the name before
+  // ADR-026, so a client from before the rename keeps working.
+  const tables = new Hono();
+  tables.onError((error, c) => fail(c, error));
 
-  api.get("/collections", async (c) => {
-    const collections = await context.collections.list(ws);
-    return c.json({
-      collections: collections.map(collectionJson),
-    });
+  tables.get("/", async (c) => {
+    const list = await context.tables.list(ws);
+    const key = c.req.path.replace(/\/$/, "").endsWith("/collections") ? "collections" : "tables";
+    return c.json({ [key]: list.map(tableJson) });
   });
 
-  api.post("/collections", async (c) => {
-    const input = await parseBody(c, schemas.createCollection);
-    const collection = await context.collections.create(
+  tables.post("/", async (c) => {
+    const input = await parseBody(c, schemas.createTable);
+    const table = await context.tables.create(
       ws,
       { name: input.name, fields: toFieldDefs(input.fields), parentId: input.parent_id ?? null },
       by(c, undefined),
     );
-    c.header("Location", `/api/v1/collections/${encodeURIComponent(collection.id)}`);
-    return c.json(collectionJson(collection), 201);
+    c.header("Location", `/api/v1/tables/${encodeURIComponent(table.id)}`);
+    return c.json(tableJson(table), 201);
   });
 
-  // Create a collection at a given id, or change its schema with If-Match.
-  api.put("/collections/:cid", async (c) => {
+  // Create a table at a given id, or change its schema with If-Match.
+  tables.put("/:cid", async (c) => {
     const version = ifMatch(c);
-    const input = await parseBody(c, schemas.createCollection);
-    const collection = await context.collections.update(
+    const input = await parseBody(c, schemas.createTable);
+    const table = await context.tables.update(
       ws,
       c.req.param("cid"),
       {
@@ -442,27 +444,27 @@ export function restRoutes(context: AppContext, callerFor: CallerFor): Hono {
       version,
       by(c, undefined),
     );
-    c.header("ETag", etag(collection.version));
-    return c.json(collectionJson(collection), version === null ? 201 : 200);
+    c.header("ETag", etag(table.version));
+    return c.json(tableJson(table), version === null ? 201 : 200);
   });
 
-  api.get("/collections/:cid", async (c) => {
-    const collection = await context.collections.get(ws, c.req.param("cid"));
-    c.header("ETag", etag(collection.version));
-    return c.json(collectionJson(collection));
+  tables.get("/:cid", async (c) => {
+    const table = await context.tables.get(ws, c.req.param("cid"));
+    c.header("ETag", etag(table.version));
+    return c.json(tableJson(table));
   });
 
-  api.get("/collections/:cid/rows", async (c) => {
-    const result = await context.collections.queryRows(ws, c.req.param("cid"), {
+  tables.get("/:cid/rows", async (c) => {
+    const result = await context.tables.queryRows(ws, c.req.param("cid"), {
       limit: limitParam(c, 50),
       cursor: c.req.query("cursor") ?? null,
     });
     return c.json({ rows: result.items.map(rowJson), cursor: result.cursor });
   });
 
-  api.post("/collections/:cid/query", async (c) => {
+  tables.post("/:cid/query", async (c) => {
     const input = await parseBody(c, schemas.query);
-    const result = await context.collections.queryRows(ws, c.req.param("cid"), {
+    const result = await context.tables.queryRows(ws, c.req.param("cid"), {
       where: input.where as never,
       sort: input.sort as never,
       limit: input.limit ?? 50,
@@ -471,9 +473,9 @@ export function restRoutes(context: AppContext, callerFor: CallerFor): Hono {
     return c.json({ rows: result.items.map(rowJson), cursor: result.cursor });
   });
 
-  api.post("/collections/:cid/rows", async (c) => {
+  tables.post("/:cid/rows", async (c) => {
     const input = await parseBody(c, schemas.row);
-    const row = await context.collections.upsertRow(
+    const row = await context.tables.upsertRow(
       ws,
       c.req.param("cid"),
       { values: input.values as never },
@@ -482,23 +484,23 @@ export function restRoutes(context: AppContext, callerFor: CallerFor): Hono {
     c.header("ETag", etag(row.version));
     c.header(
       "Location",
-      `/api/v1/collections/${encodeURIComponent(c.req.param("cid"))}/rows/${encodeURIComponent(row.id)}`,
+      `/api/v1/tables/${encodeURIComponent(c.req.param("cid"))}/rows/${encodeURIComponent(row.id)}`,
     );
     return c.json(rowJson(row), 201);
   });
 
-  api.get("/collections/:cid/rows/:rid", async (c) => {
-    const row = await context.collections.getRow(ws, c.req.param("cid"), c.req.param("rid"));
+  tables.get("/:cid/rows/:rid", async (c) => {
+    const row = await context.tables.getRow(ws, c.req.param("cid"), c.req.param("rid"));
     c.header("ETag", etag(row.version));
     return c.json(rowJson(row));
   });
 
   // With If-Match, an update. Without it, a create at this id, which is a
   // version conflict if the row already exists.
-  api.put("/collections/:cid/rows/:rid", async (c) => {
+  tables.put("/:cid/rows/:rid", async (c) => {
     const version = ifMatch(c);
     const input = await parseBody(c, schemas.row);
-    const row = await context.collections.upsertRow(
+    const row = await context.tables.upsertRow(
       ws,
       c.req.param("cid"),
       { values: input.values as never },
@@ -509,10 +511,10 @@ export function restRoutes(context: AppContext, callerFor: CallerFor): Hono {
     return c.json(rowJson(row), version === null ? 201 : 200);
   });
 
-  api.delete("/collections/:cid/rows/:rid", async (c) => {
+  tables.delete("/:cid/rows/:rid", async (c) => {
     const version = requireIfMatch(c);
     const input = await parseBody(c, schemas.deleteBody);
-    await context.collections.deleteRow(
+    await context.tables.deleteRow(
       ws,
       c.req.param("cid"),
       c.req.param("rid"),
@@ -522,21 +524,21 @@ export function restRoutes(context: AppContext, callerFor: CallerFor): Hono {
     return c.body(null, 204);
   });
 
-  // Move a page or a collection (ADR-024).
+  // Move a page or a table (ADR-024).
   api.post("/move", async (c) => {
     const input = await parseBody(c, schemas.move);
     return c.json(await moveRecord(context, input.id, input.parent_id, input.version, by(c, input.change_note)));
   });
 
   // Links (ADR-024): a row's relation values, and what links to it.
-  api.get("/collections/:cid/rows/:rid/links", async (c) => {
+  tables.get("/:cid/rows/:rid/links", async (c) => {
     const cid = c.req.param("cid");
     const rid = c.req.param("rid");
-    await context.collections.getRow(ws, cid, rid);
+    await context.tables.getRow(ws, cid, rid);
     const [outbound, inbound, ids] = await Promise.all([
-      context.collections.rowLinks(ws, cid, rid),
-      context.collections.rowBacklinks(ws, cid, rid),
-      collectionIds(),
+      context.tables.rowLinks(ws, cid, rid),
+      context.tables.rowBacklinks(ws, cid, rid),
+      tableIds(),
     ]);
     return c.json({
       outbound: outbound.map((e) => linkJson(e, "target", ids)),
@@ -544,22 +546,22 @@ export function restRoutes(context: AppContext, callerFor: CallerFor): Hono {
     });
   });
 
-  api.get("/collections/:cid/backlinks", async (c) => {
-    await context.collections.get(ws, c.req.param("cid"));
-    const edges = await context.collections.backlinks(ws, c.req.param("cid"));
-    const ids = await collectionIds();
+  tables.get("/:cid/backlinks", async (c) => {
+    await context.tables.get(ws, c.req.param("cid"));
+    const edges = await context.tables.backlinks(ws, c.req.param("cid"));
+    const ids = await tableIds();
     return c.json({ backlinks: edges.map((edge) => linkJson(edge, "source", ids)) });
   });
 
-  api.get("/collections/:cid/rows/:rid/history", async (c) => {
-    const revisions = await context.collections.rowHistory(ws, c.req.param("cid"), c.req.param("rid"), {
+  tables.get("/:cid/rows/:rid/history", async (c) => {
+    const revisions = await context.tables.rowHistory(ws, c.req.param("cid"), c.req.param("rid"), {
       limit: limitParam(c, 20),
     });
     return c.json({ revisions: revisions.map(revisionSummary) });
   });
 
-  api.get("/collections/:cid/rows/:rid/revisions/:version", async (c) => {
-    const view = await context.collections.rowRevision(
+  tables.get("/:cid/rows/:rid/revisions/:version", async (c) => {
+    const view = await context.tables.rowRevision(
       ws,
       c.req.param("cid"),
       c.req.param("rid"),
@@ -571,6 +573,9 @@ export function restRoutes(context: AppContext, callerFor: CallerFor): Hono {
       diff: renderDiff(view.diff),
     });
   });
+
+  api.route("/tables", tables);
+  api.route("/collections", tables);
 
   // Export (ADR-016): whole pages, parents before children, so an import can
   // write them in the order given. `root` limits it to one page and

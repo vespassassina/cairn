@@ -11,6 +11,6 @@ export * from "./indexer/chunk.js";
 export * from "./indexer/extract.js";
 export * from "./search/terms.js";
 export * from "./services/pages.js";
-export * from "./services/collections.js";
+export * from "./services/tables.js";
 export * from "./history/diff.js";
 export * from "./history/revisions.js";

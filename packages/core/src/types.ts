@@ -112,15 +112,15 @@ export interface FieldDef {
   /** For select and multi_select. */
   options?: string[];
   /**
-   * For relation: what it links to. `"pages"`, the default, or a collection
-   * id, which may be this collection's own (ADR-024).
+   * For relation: what it links to. `"pages"`, the default, or a table
+   * id, which may be this table's own (ADR-024).
    */
   target?: string;
   /** For relation: a list of links rather than one. */
   multiple?: boolean;
 }
 
-export interface Collection {
+export interface Table {
   id: Id;
   workspaceId: WorkspaceId;
   name: string;
@@ -133,7 +133,7 @@ export interface Collection {
   version: Version;
 }
 
-export interface CollectionInput {
+export interface TableInput {
   name: string;
   fields: FieldDef[];
   /** Omitted on an update: stays where it is. Null: moves to the top. */
@@ -145,7 +145,7 @@ export type FieldValue = string | number | boolean | string[] | null;
 export interface Row {
   id: Id;
   workspaceId: WorkspaceId;
-  collectionId: Id;
+  tableId: Id;
   values: Record<string, FieldValue>;
   createdAt: string;
   updatedAt: string;
@@ -175,7 +175,7 @@ export interface PageSnapshot {
 }
 
 export interface RowSnapshot {
-  collectionId: Id;
+  tableId: Id;
   values: Record<string, FieldValue>;
 }
 
@@ -183,13 +183,13 @@ export interface Revision {
   workspaceId: WorkspaceId;
   kind: RevisionKind;
   /**
-   * The page id for a page. For a row, `<collectionId>/<rowId>`, because row
-   * ids are only unique within their collection. Build it with
+   * The page id for a page. For a row, `<tableId>/<rowId>`, because row
+   * ids are only unique within their table. Build it with
    * `revisionRecordId`, never by hand.
    */
   recordId: Id;
-  /** The collection a row belongs to. Null for pages. */
-  collectionId: Id | null;
+  /** The table a row belongs to. Null for pages. */
+  tableId: Id | null;
   /** The version the record has after this write. */
   version: Version;
   /** The version this write replaced. Null for the first revision. */

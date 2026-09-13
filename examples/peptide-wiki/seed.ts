@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { closeContext, createContext, loadConfig, ownerVia, userPath, type AppContext } from "@cairn/api";
-import type { CollectionInput, PageInput, WriteContext } from "@cairn/core";
+import type { TableInput, PageInput, WriteContext } from "@cairn/core";
 
 /**
  * Seed a local Cairn from the peptide wiki's source data.
@@ -14,7 +14,7 @@ import type { CollectionInput, PageInput, WriteContext } from "@cairn/core";
  * 2. A Stacks page, with a page per stack beneath it.
  * 3. `related`, stack components and mixing notes become `[[page-id]]` links,
  *    so backlinks and neighbours have a real graph to walk.
- * 4. Peptides and Stacks collections, one row each, for query_collection.
+ * 4. Peptides and Stacks tables, one row each, for query_table.
  *
  * Idempotent. Ids are derived from the wiki's slugs, and existing records are
  * updated with their current version, so re-running it after the wiki changes
@@ -76,8 +76,8 @@ const peptidePageId = (slug: string): string => `pg_${slug}`;
 const categoryPageId = (slug: string): string => `pg_cat_${slug}`;
 const stackPageId = (slug: string): string => `pg_stack_${slug}`;
 const STACKS_PAGE_ID = "pg_stacks";
-const COLLECTION_ID = "col_peptides";
-const STACKS_COLLECTION_ID = "col_stacks";
+const TABLE_ID = "col_peptides";
+const STACKS_TABLE_ID = "col_stacks";
 
 /** Every seed write says where it came from, so history reads sensibly. */
 const BY: WriteContext = {
@@ -284,7 +284,7 @@ async function main(): Promise<void> {
       }
     }
 
-    const schema: CollectionInput = {
+    const schema: TableInput = {
       name: "Peptides",
       fields: [
         { name: "name", type: "text", required: true },
@@ -298,20 +298,20 @@ async function main(): Promise<void> {
         { name: "page", type: "relation" },
       ],
     };
-    const existingCollection = await context.store.getCollection(ws, COLLECTION_ID);
-    if (existingCollection) {
-      await context.collections.update(ws, COLLECTION_ID, schema, existingCollection.version, BY);
+    const existingTable = await context.store.getTable(ws, TABLE_ID);
+    if (existingTable) {
+      await context.tables.update(ws, TABLE_ID, schema, existingTable.version, BY);
     } else {
-      await context.collections.create(ws, schema, BY, COLLECTION_ID);
+      await context.tables.create(ws, schema, BY, TABLE_ID);
     }
 
     let rows = 0;
     for (const [slug, peptide] of Object.entries(peptides)) {
       const rowId = `row_${slug}`;
-      const existing = await context.store.getRow(ws, COLLECTION_ID, rowId);
-      await context.collections.upsertRow(
+      const existing = await context.store.getRow(ws, TABLE_ID, rowId);
+      await context.tables.upsertRow(
         ws,
-        COLLECTION_ID,
+        TABLE_ID,
         {
           values: {
             name: peptide.name,
@@ -334,7 +334,7 @@ async function main(): Promise<void> {
     let stackRows = 0;
     if (Object.keys(stacks).length > 0) {
       const evidence = [...new Set(Object.values(stacks).map((stack) => stack.evidence_level))].sort();
-      const stackSchema: CollectionInput = {
+      const stackSchema: TableInput = {
         name: "Stacks",
         fields: [
           { name: "title", type: "text", required: true },
@@ -344,18 +344,18 @@ async function main(): Promise<void> {
           { name: "page", type: "relation" },
         ],
       };
-      const existingStacks = await context.store.getCollection(ws, STACKS_COLLECTION_ID);
+      const existingStacks = await context.store.getTable(ws, STACKS_TABLE_ID);
       if (existingStacks) {
-        await context.collections.update(ws, STACKS_COLLECTION_ID, stackSchema, existingStacks.version, BY);
+        await context.tables.update(ws, STACKS_TABLE_ID, stackSchema, existingStacks.version, BY);
       } else {
-        await context.collections.create(ws, stackSchema, BY, STACKS_COLLECTION_ID);
+        await context.tables.create(ws, stackSchema, BY, STACKS_TABLE_ID);
       }
       for (const [slug, stack] of Object.entries(stacks)) {
         const rowId = `row_${slug}`;
-        const existing = await context.store.getRow(ws, STACKS_COLLECTION_ID, rowId);
-        await context.collections.upsertRow(
+        const existing = await context.store.getRow(ws, STACKS_TABLE_ID, rowId);
+        await context.tables.upsertRow(
           ws,
-          STACKS_COLLECTION_ID,
+          STACKS_TABLE_ID,
           {
             values: {
               title: stack.title,
@@ -377,7 +377,7 @@ async function main(): Promise<void> {
         `  pages   ${counts.created} created, ${counts.updated} updated ` +
         `(${Object.keys(categories).length} categories, ${Object.keys(peptides).length} peptides, ` +
         `${Object.keys(stacks).length} stacks)\n` +
-        `  rows    ${rows} in ${COLLECTION_ID}, ${stackRows} in ${STACKS_COLLECTION_ID}\n`,
+        `  rows    ${rows} in ${TABLE_ID}, ${stackRows} in ${STACKS_TABLE_ID}\n`,
     );
   } finally {
     await closeContext(context);

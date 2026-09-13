@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import type { DocumentStore } from "../ports/document-store.js";
 import type { RowQuery } from "../query/filter.js";
-import { CollectionService } from "../services/collections.js";
+import { TableService } from "../services/tables.js";
 import { randomUUID } from "node:crypto";
 import type { WorkspaceId, WriteMeta } from "../types.js";
 import { eventually } from "./eventually.js";
@@ -29,7 +29,7 @@ export interface PushdownHarness {
 }
 
 const WS: WorkspaceId = "ws_pushdown";
-const COLLECTION = "col_pushdown";
+const TABLE = "col_pushdown";
 
 const QUERIES: Array<{ name: string; query: RowQuery }> = [
   { name: "no filter", query: {} },
@@ -86,18 +86,18 @@ export function runPushdownConformance(
   name: string,
   harness: PushdownHarness,
 ): void {
-  describe(`Collection query pushdown equivalence: ${name}`, () => {
+  describe(`Table query pushdown equivalence: ${name}`, () => {
     let store: DocumentStore;
-    let service: CollectionService;
+    let service: TableService;
 
     beforeAll(async () => {
       store = await harness.create();
       await store.init();
-      service = new CollectionService(store);
+      service = new TableService(store);
 
-      await store.putCollection(
+      await store.putTable(
         WS,
-        COLLECTION,
+        TABLE,
         {
           name: "Parts",
           fields: [
@@ -111,20 +111,20 @@ export function runPushdownConformance(
         null, meta(),
       );
       for (const row of ROWS) {
-        await store.putRow(WS, COLLECTION, row.id, { values: row.values }, null, meta());
+        await store.putRow(WS, TABLE, row.id, { values: row.values }, null, meta());
       }
       await eventually(async () => {
-        const listed = await store.listRows(WS, COLLECTION, { limit: 100 });
+        const listed = await store.listRows(WS, TABLE, { limit: 100 });
         expect(listed.items).toHaveLength(ROWS.length);
       });
     });
 
     for (const { name: queryName, query } of QUERIES) {
       it(`agrees with core for: ${queryName}`, async () => {
-        const inMemory = await service.queryRows(WS, COLLECTION, query, {
+        const inMemory = await service.queryRows(WS, TABLE, query, {
           pushdown: false,
         });
-        const pushed = await service.queryRows(WS, COLLECTION, query, {
+        const pushed = await service.queryRows(WS, TABLE, query, {
           pushdown: true,
         });
         expect(pushed.items.map((r) => r.id)).toEqual(
@@ -146,7 +146,7 @@ export function runPushdownConformance(
         do {
           const batch = await service.queryRows(
             WS,
-            COLLECTION,
+            TABLE,
             { ...query, cursor },
             { pushdown },
           );

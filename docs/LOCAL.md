@@ -88,10 +88,10 @@ claude mcp add --transport http --scope user cairn http://localhost:8787/mcp
 4. `claude mcp list` shows whether the server is reachable. It needs `pnpm dev` running; without it, Claude carries on without Cairn.
 
 Then ask Claude to search for something you know is in your notes. The tools
-available are the nine in PRD section 8, plus `create_collection`,
+available are the nine in PRD section 8, plus `create_table`,
 `get_history` and `get_revision`.
 
-You do not have to ask Claude to use Cairn every time. Cairn sends short server instructions when a session connects: search before answering, save lasting findings without being asked, prefer updating an existing page, and give every write a change note (ADR-011). They end with a summary of what Cairn holds, such as its collections, top-level pages and common tags, so Claude knows which topics to look for there (ADR-012). The summary is built when a session connects, so restart the session to see new top-level pages in it. To point Claude at specific topics, add a line to your own CLAUDE.md, for example "the peptide wiki lives in Cairn".
+You do not have to ask Claude to use Cairn every time. Cairn sends short server instructions when a session connects: search before answering, save lasting findings without being asked, prefer updating an existing page, and give every write a change note (ADR-011). They end with a summary of what Cairn holds, such as its tables, its collections (the top-level pages) and common tags, so Claude knows which topics to look for there (ADR-012). The summary is built when a session connects, so restart the session to see new top-level pages in it. To point Claude at specific topics, add a line to your own CLAUDE.md, for example "the peptide wiki lives in Cairn".
 
 The first time Claude calls each tool, Claude Code asks for permission. To allow them all, add `mcp__cairn__*` to the allow list in your Claude Code settings.
 
@@ -140,7 +140,7 @@ cairn import ~/cairn-backup --dry-run
 cairn import ~/cairn-backup
 ```
 
-An export is Markdown files in folders that mirror your page tree, plus one JSON file per collection, readable without Cairn. Importing keeps ids, so links still work, and running it again changes nothing. Use it to back up, to move to another machine or to Azure, or to edit offline and bring the changes back.
+An export is Markdown files in folders that mirror your page tree, plus one JSON file per table, readable without Cairn. Importing keeps ids, so links still work, and running it again changes nothing. Use it to back up, to move to another machine or to Azure, or to edit offline and bring the changes back.
 
 To keep this Cairn and another one the same, use `cairn sync` instead (ADR-023, `docs/CLI.md`): `cairn sync http://localhost:8787 https://your-address --every 5m`.
 

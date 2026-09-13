@@ -8,7 +8,7 @@ import { INSTRUCTIONS_BUDGET, SERVER_INSTRUCTIONS } from "./instructions.js";
  *
  * Without it, Claude cannot tell which questions Cairn could answer until it
  * happens to search. With it, the session starts knowing the top-level
- * sections, the collections and the common tags.
+ * sections, the tables and the common tags.
  *
  * Titles and tags are written by people and agents, and this text lands in
  * the context of every session, so every value is untrusted: squashed to one
@@ -18,7 +18,7 @@ import { INSTRUCTIONS_BUDGET, SERVER_INSTRUCTIONS } from "./instructions.js";
 
 /** Pages read to build the summary. Fine at personal scale. */
 const MAX_PAGES = 5_000;
-/** Rows counted per collection before the count reads "N+". */
+/** Rows counted per table before the count reads "N+". */
 const MAX_ROWS_COUNTED = 2_000;
 const MAX_VALUE_CHARS = 60;
 const MAX_TAGS = 12;
@@ -58,11 +58,11 @@ async function allPages(context: AppContext): Promise<{ pages: Page[]; complete:
   return { pages, complete: cursor === null };
 }
 
-async function countRows(context: AppContext, collectionId: string): Promise<string> {
+async function countRows(context: AppContext, tableId: string): Promise<string> {
   let count = 0;
   let cursor: string | null = null;
   do {
-    const batch: Paged<Row> = await context.store.listRows(context.workspaceId, collectionId, {
+    const batch: Paged<Row> = await context.store.listRows(context.workspaceId, tableId, {
       limit: 500,
       cursor,
     });
@@ -107,15 +107,15 @@ function fitLines(lines: string[], budget: number, noun: string): string[] {
 
 /**
  * The summary text, at most `budget` characters. Sections are filled in order
- * of usefulness: collections, top-level pages, then tags.
+ * of usefulness: tables, collections (top-level pages), then tags.
  */
 export async function workspaceSummary(context: AppContext, budget: number): Promise<string> {
-  const [{ pages, complete }, collections] = await Promise.all([
+  const [{ pages, complete }, tables] = await Promise.all([
     allPages(context),
-    context.store.listCollections(context.workspaceId),
+    context.store.listTables(context.workspaceId),
   ]);
 
-  if (pages.length === 0 && collections.length === 0) {
+  if (pages.length === 0 && tables.length === 0) {
     return `${SUMMARY_HEADER}\nNothing yet. The workspace is empty, so everything worth keeping is new.`;
   }
 
@@ -129,22 +129,22 @@ export async function workspaceSummary(context: AppContext, budget: number): Pro
     return true;
   };
 
-  if (collections.length > 0) {
-    const counts = await Promise.all(collections.map((c) => countRows(context, c.id)));
+  if (tables.length > 0) {
+    const counts = await Promise.all(tables.map((c) => countRows(context, c.id)));
     const titles = new Map(pages.map((page) => [page.id, page.title]));
-    // Where a collection sits in the tree (ADR-024), by its page's title,
+    // Where a table sits in the tree (ADR-024), by its page's title,
     // which is stored text and quoted like the rest.
     const under = (parentId: string | null) => {
       const title = parentId ? titles.get(parentId) : undefined;
       return title === undefined ? "" : `, under ${quoteValue(title)}`;
     };
-    const lines = collections
-      .map((collection, index) => ({ collection, rows: counts[index]! }))
-      .sort((a, b) => a.collection.name.localeCompare(b.collection.name))
-      .map(({ collection, rows }) => `- ${quoteValue(collection.name)}: ${rows} rows${under(collection.parentId)}`);
-    const heading = `Collections (${collections.length}):`;
+    const lines = tables
+      .map((table, index) => ({ table, rows: counts[index]! }))
+      .sort((a, b) => a.table.name.localeCompare(b.table.name))
+      .map(({ table, rows }) => `- ${quoteValue(table.name)}: ${rows} rows${under(table.parentId)}`);
+    const heading = `Tables (${tables.length}):`;
     if (push(heading)) {
-      for (const line of fitLines(lines, Math.floor(room() / 2), "collections")) push(line);
+      for (const line of fitLines(lines, Math.floor(room() / 2), "tables")) push(line);
     }
   }
 
@@ -161,10 +161,10 @@ export async function workspaceSummary(context: AppContext, budget: number): Pro
       const under = counts.get(page.id) ?? 0;
       return `- ${quoteValue(page.title)}${under > 0 ? ` (${under} ${under === 1 ? "page" : "pages"} under it)` : ""}`;
     });
-    const heading = `Pages: ${total}. Top-level pages:`;
+    const heading = `Pages: ${total}. Collections (top-level pages):`;
     if (push(heading)) {
       const tagReserve = Math.min(200, Math.floor(room() / 3));
-      for (const line of fitLines(lines, room() - tagReserve, "top-level pages")) push(line);
+      for (const line of fitLines(lines, room() - tagReserve, "collections")) push(line);
     }
   }
 

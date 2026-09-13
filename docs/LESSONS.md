@@ -13,6 +13,13 @@ Each entry answers four questions:
 
 ## 2026-09-13
 
+### A bulk rename silently did nothing, twice
+
+1. **What happened.** Renaming "collection" to "table" across the code, the first two attempts changed nothing and reported no error worth noticing. A `sed` with `\b` word boundaries matched no line, and a `perl -pi ... $files` treated the whole list of 30 files as one file name ("File name too long").
+2. **Cause.** macOS ships BSD `sed`, which has no `\b`; it takes the pattern literally and matches nothing, without complaint. And the shell is zsh, which does not split an unquoted variable into words the way bash does, so `$files` was one argument.
+3. **Fix.** `perl` for every substitution, and file lists passed through `xargs`. Then `pnpm build` and `git diff --stat` to confirm the edit landed before trusting it.
+4. **Lesson.** On this machine, use `perl -pi` rather than `sed -i` for anything beyond a literal, pipe file lists through `xargs`, and check a bulk edit's diff count straight after running it: a rename that changed nothing looks the same as one that worked until something reads the files.
+
 ### Titles were stored with every chunk and searched by none
 
 1. **What happened.** A page came first for its own title in 22 of 97 searches. Nothing in the eval noticed, because its queries are phrased as questions, not names.

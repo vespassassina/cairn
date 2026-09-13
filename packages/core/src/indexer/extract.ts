@@ -1,6 +1,6 @@
 import { rowNodeId } from "../ids.js";
 import { relationTarget } from "../query/validate.js";
-import type { Collection, EdgeInput, Id, Page, Row } from "../types.js";
+import type { Table, EdgeInput, Id, Page, Row } from "../types.js";
 
 /**
  * Link, mention and tag extraction. Pure functions over Markdown.
@@ -11,7 +11,7 @@ import type { Collection, EdgeInput, Id, Page, Row } from "../types.js";
 
 /**
  * `[label](cairn:id)` and `[label](/pages/id)`. The id is a page, a
- * collection, or a row as `collection-id/row-id` (ADR-024).
+ * table, or a row as `table-id/row-id` (ADR-024).
  */
 const MARKDOWN_LINK = /\[([^\]\n]*)\]\((?:cairn:|\/pages\/)([A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)?)\)/g;
 /** `[[id]]` or `[[id|label]]`, with the same ids. */
@@ -78,13 +78,13 @@ export function extractReferences(page: Page): ExtractedReferences {
 /**
  * The links a row declares: one per value of each relation field, labelled
  * with the field's name. A relation to pages points at the page id; one to a
- * collection points at the row, as `collection-id/row-id` (ADR-024).
+ * table points at the row, as `table-id/row-id` (ADR-024).
  */
-export function extractRowReferences(collection: Collection, row: Row): EdgeInput[] {
-  const source = rowNodeId(collection.id, row.id);
+export function extractRowReferences(table: Table, row: Row): EdgeInput[] {
+  const source = rowNodeId(table.id, row.id);
   const edges: EdgeInput[] = [];
   const seen = new Set<string>();
-  for (const field of collection.fields) {
+  for (const field of table.fields) {
     if (field.type !== "relation") continue;
     const value = row.values[field.name];
     const ids = Array.isArray(value) ? value : typeof value === "string" && value !== "" ? [value] : [];

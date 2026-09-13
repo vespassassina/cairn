@@ -27,7 +27,7 @@ Status key: done, in progress, next, later, blocked.
 | Review console | done | ADR-009. 24 contract tests, checked visually |
 | No sign-in on localhost | done | ADR-010. `cairn.config.json` |
 | MCP server instructions | done | ADR-011. Read first, write back, change notes |
-| Live workspace summary in the instructions | done | ADR-012. Collections, top-level pages, tags, within the budget |
+| Live workspace summary in the instructions | done | ADR-012. Tables, collections (top-level pages), tags, within the budget |
 | Daily use from Claude Code | in progress | Server added with `--scope user`. Watch agent writes in the console (ADR-011 consequence 4) |
 | Semantic search: sqlite-vec and a model in the container | done | ADR-022. English only. Hybrid recall@5 1.00 against keyword 0.83, no-answer 9 of 9 in both |
 | Search precision: OR matching over-matches | done | ADR-021. Most of the words, stemmed, one chunk per page first. No-answer queries 0 of 6 to 6 of 6, recall@5 unchanged at 1.00 |
@@ -36,7 +36,7 @@ Status key: done, in progress, next, later, blocked.
 | OAuth server | done | ADR-017. GitHub or any OpenID Connect provider, consent page, CLI login. 23 end-to-end tests. Proven with claude.ai after a deploy |
 | Azure deploy | done | ADR-018. Running in Sweden Central since 2026-09-13, holding the owner's wiki. The first deployment found three bugs, all fixed. Cold start about 30 s, mostly the image pull |
 | Agent-first install guide | done | ADR-019. `docs/AGENT-INSTALL.md`, `AGENTS.md` |
-| Peptide wiki reseeded from the updated wiki | done | 96 pages, 79 peptides, 8 stacks, 2 collections |
+| Peptide wiki reseeded from the updated wiki | done | 96 pages, 79 peptides, 8 stacks, 2 tables |
 
 Gate: usage and recall targets from PRD section 10 met for two weeks. If not, stop or rethink.
 
@@ -53,7 +53,8 @@ Added after the project review of 2026-09-12. Done in this order, before the clo
 | Publish the CLI to npm | later | Needs the name decided |
 | Provenance: `sources` on every write | next | Where a fact came from, shown in the console |
 | Freshness: `verified_at` on pages | later | When a fact was last confirmed, separate from last edited |
-| Collections in the page tree, and relations as links | done | ADR-024. `move` for pages and collections; relation fields to pages or rows, lists allowed; backlinks from rows |
+| Collections in the page tree, and relations as links | done | ADR-024 (the collections it moved are tables since ADR-026). `move` for pages and tables; relation fields to pages or rows, lists allowed; backlinks from rows |
+| Collections are wikis, and tables are called tables | done | ADR-026. The web app opens on collections (top-level pages and their trees); REST, MCP, CLI and export say table, with the old REST paths and CLI names kept for now |
 | Sync between two Cairns | done | ADR-023. `cairn sync <a> <b> [--every 5m]`: content compared with the last sync, newest edit wins, the other kept in history. Checked between the owner's laptop and Azure |
 
 ## Launch checklist
@@ -81,7 +82,7 @@ Before publishing on GitHub and posting to Hacker News. From the review of 2026-
 
 ## Phase 2: editor
 
-BlockNote editor, collection table editing, export UI. Gated on Phase 1.
+BlockNote editor, table editing, export UI. Gated on Phase 1.
 
 ## Phase 3: options
 

@@ -1,5 +1,5 @@
 import type { FieldError } from "../errors.js";
-import type { Collection, FieldDef, FieldValue, RowInput } from "../types.js";
+import type { Table, FieldDef, FieldValue, RowInput } from "../types.js";
 
 /**
  * Row validation lives in core so that every adapter stores rows without
@@ -57,22 +57,22 @@ function checkValue(field: FieldDef, value: FieldValue): string | null {
   }
 }
 
-/** Page, collection and row ids: letters, digits, dashes and underscores. */
+/** Page, table and row ids: letters, digits, dashes and underscores. */
 const ID = /^[A-Za-z0-9_-]+$/;
 
-/** What a relation field links to: `"pages"`, or a collection id. */
+/** What a relation field links to: `"pages"`, or a table id. */
 export function relationTarget(field: FieldDef): string {
   return field.target ?? "pages";
 }
 
 /**
- * Problems with a collection's schema, all at once. A relation's target must
- * be pages, this collection, or a collection that exists (ADR-024).
+ * Problems with a table's schema, all at once. A relation's target must
+ * be pages, this table, or a table that exists (ADR-024).
  */
 export function validateSchema(
-  collectionId: string,
+  tableId: string,
   fields: FieldDef[],
-  collectionExists: (id: string) => boolean,
+  tableExists: (id: string) => boolean,
 ): FieldError[] {
   const errors: FieldError[] = [];
   const seen = new Set<string>();
@@ -86,8 +86,8 @@ export function validateSchema(
       continue;
     }
     const target = relationTarget(field);
-    if (target !== "pages" && target !== collectionId && !collectionExists(target)) {
-      errors.push({ field: field.name, message: `target ${target} is neither "pages" nor a collection that exists` });
+    if (target !== "pages" && target !== tableId && !tableExists(target)) {
+      errors.push({ field: field.name, message: `target ${target} is neither "pages" nor a table that exists` });
     }
   }
   return errors;
@@ -107,11 +107,11 @@ function isEmpty(value: FieldValue | undefined): boolean {
  * write in a single retry instead of discovering errors one at a time.
  */
 export function validateRow(
-  collection: Collection,
+  table: Table,
   input: RowInput,
 ): FieldError[] {
   const errors: FieldError[] = [];
-  const known = new Set(collection.fields.map((f) => f.name));
+  const known = new Set(table.fields.map((f) => f.name));
 
   for (const name of Object.keys(input.values)) {
     if (!known.has(name)) {
@@ -122,7 +122,7 @@ export function validateRow(
     }
   }
 
-  for (const field of collection.fields) {
+  for (const field of table.fields) {
     const value = input.values[field.name];
     if (isEmpty(value)) {
       if (field.required) {

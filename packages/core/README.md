@@ -8,7 +8,7 @@ imports nothing outside the Node standard library.
 1. `src/types.ts` and `src/errors.ts`. Domain types and the error taxonomy.
 2. `src/ports/`. The two adapter interfaces, `DocumentStore` and `SearchIndex`.
    The comments there are the contract: read them before writing an adapter.
-3. `src/query/`. The collection filter grammar and row validation, both of
+3. `src/query/`. The table filter grammar and row validation, both of
    which run here rather than in an adapter (ADR-005 rule 5).
 4. `src/indexer/`. Link extraction and chunking. Pure functions, deterministic,
    so a rebuild reproduces the same derived data.

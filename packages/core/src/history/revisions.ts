@@ -33,7 +33,7 @@ export async function writeWithRevision<T>(
     workspaceId: WorkspaceId;
     kind: RevisionKind;
     recordId: Id;
-    collectionId: Id | null;
+    tableId: Id | null;
     expectedVersion: ExpectedVersion;
     snapshot: PageSnapshot | RowSnapshot;
     deleted?: boolean;
@@ -50,7 +50,7 @@ export async function writeWithRevision<T>(
   await store.putRevision(target.workspaceId, {
     kind: target.kind,
     recordId: target.recordId,
-    collectionId: target.collectionId,
+    tableId: target.tableId,
     version: meta.version,
     parentVersion: target.expectedVersion,
     actor: meta.actor,

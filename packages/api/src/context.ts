@@ -1,4 +1,4 @@
-import { CollectionService, PageService } from "@cairn/core";
+import { TableService, PageService } from "@cairn/core";
 import type { Actor, AuthStore, DocumentStore, SearchIndex } from "@cairn/core";
 import { SqliteAuthStore, SqliteDocumentStore, SqliteSearchIndex } from "@cairn/adapter-sqlite";
 import { LocalEmbedder } from "@cairn/adapter-embeddings-local";
@@ -15,7 +15,7 @@ export interface AppContext {
   store: DocumentStore;
   search: SearchIndex;
   pages: PageService;
-  collections: CollectionService;
+  tables: TableService;
   /** OAuth clients, codes and refresh tokens, apart from content (ADR-017). */
   auth: AuthStore;
   workspaceId: string;
@@ -68,10 +68,10 @@ export async function createContext(
       `search index upgraded: rebuilt ${result.pages} pages in ${Date.now() - started}ms\n`,
     );
   }
-  const collections = new CollectionService(store);
-  if (await collections.needsRelink(config.workspaceId)) {
+  const tables = new TableService(store);
+  if (await tables.needsRelink(config.workspaceId)) {
     // Rows written before relations became links (ADR-024).
-    const result = await collections.rebuildWorkspace(config.workspaceId);
+    const result = await tables.rebuildWorkspace(config.workspaceId);
     process.stderr.write(`links derived for ${result.rows} rows\n`);
   }
 
@@ -79,7 +79,7 @@ export async function createContext(
     store,
     search,
     pages,
-    collections,
+    tables,
     auth,
     workspaceId: config.workspaceId,
   };

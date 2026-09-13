@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
-  CollectionService,
+  TableService,
   PageService,
   ValidationError,
   VersionConflictError,
@@ -21,11 +21,11 @@ const AGENT = {
   note: "Summarised the print log",
 };
 
-describe("PageService and CollectionService on sqlite", () => {
+describe("PageService and TableService on sqlite", () => {
   let store: SqliteDocumentStore;
   let search: SqliteSearchIndex;
   let pages: PageService;
-  let collections: CollectionService;
+  let tables: TableService;
 
   beforeEach(async () => {
     store = new SqliteDocumentStore();
@@ -33,7 +33,7 @@ describe("PageService and CollectionService on sqlite", () => {
     await store.init();
     await search.init();
     pages = new PageService(store, search);
-    collections = new CollectionService(store);
+    tables = new TableService(store);
   });
 
   it("indexes a page for search and backlinks when it is created", async () => {
@@ -147,7 +147,7 @@ describe("PageService and CollectionService on sqlite", () => {
   });
 
   it("validates a row before writing it, naming every bad field", async () => {
-    const collection = await collections.create(
+    const table = await tables.create(
       WS,
       {
         name: "Prints",
@@ -160,8 +160,8 @@ describe("PageService and CollectionService on sqlite", () => {
       "col_prints",
     );
 
-    const error = await collections
-      .upsertRow(WS, collection.id, { values: { title: "Bracket" } }, OWNER)
+    const error = await tables
+      .upsertRow(WS, table.id, { values: { title: "Bracket" } }, OWNER)
       .catch((e: unknown) => e);
 
     expect(error).toBeInstanceOf(ValidationError);
@@ -169,18 +169,18 @@ describe("PageService and CollectionService on sqlite", () => {
       { field: "printed", message: "required" },
     ]);
 
-    const row = await collections.upsertRow(
+    const row = await tables.upsertRow(
       WS,
-      collection.id,
+      table.id,
       { values: { title: "Bracket", printed: "2026-09-01" } },
       OWNER,
     );
-    expect(await collections.getRow(WS, collection.id, row.id)).toEqual(row);
+    expect(await tables.getRow(WS, table.id, row.id)).toEqual(row);
   });
 
   it("filters and sorts rows in core when the adapter has no pushdown", async () => {
     expect(store.capabilities.rowQueryPushdown).toBe(false);
-    const collection = await collections.create(
+    const table = await tables.create(
       WS,
       {
         name: "Parts",
@@ -197,10 +197,10 @@ describe("PageService and CollectionService on sqlite", () => {
       ["Spacer", 4],
       ["Enclosure", 210],
     ] as const) {
-      await collections.upsertRow(WS, collection.id, { values: { title, grams } }, OWNER);
+      await tables.upsertRow(WS, table.id, { values: { title, grams } }, OWNER);
     }
 
-    const heavy = await collections.queryRows(WS, collection.id, {
+    const heavy = await tables.queryRows(WS, table.id, {
       where: [{ field: "grams", op: "gt", value: 10 }],
       sort: [{ field: "grams", direction: "desc" }],
     });
@@ -320,7 +320,7 @@ describe("PageService and CollectionService on sqlite", () => {
       await store.putRevision(WS, {
         kind: "page",
         recordId: page.id,
-        collectionId: null,
+        tableId: null,
         version: "never-applied",
         parentVersion: page.version,
         actor: AGENT.actor,
@@ -348,7 +348,7 @@ describe("PageService and CollectionService on sqlite", () => {
     });
 
     it("versions rows, with a field-per-line diff and restore", async () => {
-      await collections.create(
+      await tables.create(
         WS,
         {
           name: "Parts",
@@ -360,14 +360,14 @@ describe("PageService and CollectionService on sqlite", () => {
         OWNER,
         "col_hist",
       );
-      const row = await collections.upsertRow(
+      const row = await tables.upsertRow(
         WS,
         "col_hist",
         { values: { title: "Bracket", grams: 12 } },
         OWNER,
         { id: "row_1" },
       );
-      const updated = await collections.upsertRow(
+      const updated = await tables.upsertRow(
         WS,
         "col_hist",
         { values: { title: "Bracket", grams: 14 } },
@@ -375,15 +375,15 @@ describe("PageService and CollectionService on sqlite", () => {
         { id: "row_1", expectedVersion: row.version },
       );
 
-      const history = await collections.rowHistory(WS, "col_hist", "row_1");
+      const history = await tables.rowHistory(WS, "col_hist", "row_1");
       expect(history.map((r) => r.actor.kind)).toEqual(["agent", "user"]);
 
-      const view = await collections.rowRevision(WS, "col_hist", "row_1", updated.version);
+      const view = await tables.rowRevision(WS, "col_hist", "row_1", updated.version);
       expect(view.diff?.lines.filter((l) => l.op === "add").map((l) => l.text)).toEqual([
         "grams: 14",
       ]);
 
-      const restored = await collections.restoreRow(
+      const restored = await tables.restoreRow(
         WS,
         "col_hist",
         "row_1",
@@ -394,22 +394,22 @@ describe("PageService and CollectionService on sqlite", () => {
       expect(restored.values["grams"]).toBe(12);
     });
 
-    it("keeps row history separate per collection when row ids repeat", async () => {
+    it("keeps row history separate per table when row ids repeat", async () => {
       for (const id of ["col_a", "col_b"]) {
-        await collections.create(
+        await tables.create(
           WS,
           { name: id, fields: [{ name: "title", type: "text" }] },
           OWNER,
           id,
         );
-        await collections.upsertRow(WS, id, { values: { title: id } }, OWNER, { id: "row_same" });
+        await tables.upsertRow(WS, id, { values: { title: id } }, OWNER, { id: "row_same" });
       }
-      expect(await collections.rowHistory(WS, "col_a", "row_same")).toHaveLength(1);
-      expect(await collections.rowHistory(WS, "col_b", "row_same")).toHaveLength(1);
+      expect(await tables.rowHistory(WS, "col_a", "row_same")).toHaveLength(1);
+      expect(await tables.rowHistory(WS, "col_b", "row_same")).toHaveLength(1);
     });
   });
 
-  describe("collections in the tree, and rows as links (ADR-024)", () => {
+  describe("tables in the tree, and rows as links (ADR-024)", () => {
     const peptides = {
       name: "Peptides",
       fields: [
@@ -421,29 +421,29 @@ describe("PageService and CollectionService on sqlite", () => {
 
     beforeEach(async () => {
       await pages.create(WS, { title: "BPC-157", body: "Healing." }, OWNER, "pg_bpc");
-      await collections.create(WS, peptides, OWNER, "col_peptides");
-      await collections.create(
+      await tables.create(WS, peptides, OWNER, "col_peptides");
+      await tables.create(
         WS,
         { name: "Stacks", fields: [{ name: "title", type: "text", required: true }, { name: "components", type: "relation", target: "col_peptides", multiple: true }] },
         OWNER,
         "col_stacks",
       );
-      await collections.upsertRow(WS, "col_peptides", { values: { name: "BPC-157", page: "pg_bpc", related: ["row_tb"] } }, OWNER, { id: "row_bpc" });
-      await collections.upsertRow(WS, "col_peptides", { values: { name: "TB-500", related: ["row_bpc"] } }, OWNER, { id: "row_tb" });
-      await collections.upsertRow(WS, "col_stacks", { values: { title: "Wolverine", components: ["row_bpc", "row_tb"] } }, OWNER, { id: "row_wolverine" });
+      await tables.upsertRow(WS, "col_peptides", { values: { name: "BPC-157", page: "pg_bpc", related: ["row_tb"] } }, OWNER, { id: "row_bpc" });
+      await tables.upsertRow(WS, "col_peptides", { values: { name: "TB-500", related: ["row_bpc"] } }, OWNER, { id: "row_tb" });
+      await tables.upsertRow(WS, "col_stacks", { values: { title: "Wolverine", components: ["row_bpc", "row_tb"] } }, OWNER, { id: "row_wolverine" });
     });
 
-    it("moves a collection under a page and back, without touching its rows", async () => {
+    it("moves a table under a page and back, without touching its rows", async () => {
       const home = await pages.create(WS, { title: "Peptides", body: "Everything about peptides." }, OWNER, "pg_peptides");
-      const collection = await collections.get(WS, "col_stacks");
-      const moved = await collections.move(WS, "col_stacks", home.id, collection.version, OWNER);
+      const table = await tables.get(WS, "col_stacks");
+      const moved = await tables.move(WS, "col_stacks", home.id, table.version, OWNER);
       expect(moved.parentId).toBe("pg_peptides");
-      expect((await collections.children(WS, "pg_peptides")).map((c) => c.id)).toEqual(["col_stacks"]);
-      expect((await collections.queryRows(WS, "col_stacks")).items).toHaveLength(1);
+      expect((await tables.children(WS, "pg_peptides")).map((c) => c.id)).toEqual(["col_stacks"]);
+      expect((await tables.queryRows(WS, "col_stacks")).items).toHaveLength(1);
       // An update that does not mention the parent leaves it where it is.
-      const kept = await collections.update(WS, "col_stacks", { name: "Stacks", fields: moved.fields }, moved.version, OWNER);
+      const kept = await tables.update(WS, "col_stacks", { name: "Stacks", fields: moved.fields }, moved.version, OWNER);
       expect(kept.parentId).toBe("pg_peptides");
-      const back = await collections.move(WS, "col_stacks", null, kept.version, OWNER);
+      const back = await tables.move(WS, "col_stacks", null, kept.version, OWNER);
       expect(back.parentId).toBeNull();
     });
 
@@ -451,48 +451,48 @@ describe("PageService and CollectionService on sqlite", () => {
       const toPage = await pages.backlinks(WS, "pg_bpc");
       expect(toPage).toContainEqual(expect.objectContaining({ sourceId: "col_peptides/row_bpc", type: "relation", label: "page" }));
 
-      const toRow = await collections.rowBacklinks(WS, "col_peptides", "row_bpc");
+      const toRow = await tables.rowBacklinks(WS, "col_peptides", "row_bpc");
       expect(toRow.map((e) => e.sourceId).sort()).toEqual(["col_peptides/row_tb", "col_stacks/row_wolverine"]);
-      expect((await collections.rowLinks(WS, "col_stacks", "row_wolverine")).map((e) => e.targetId).sort()).toEqual([
+      expect((await tables.rowLinks(WS, "col_stacks", "row_wolverine")).map((e) => e.targetId).sort()).toEqual([
         "col_peptides/row_bpc",
         "col_peptides/row_tb",
       ]);
     });
 
     it("updates a row's links when it changes, and drops them when it is deleted", async () => {
-      const row = await collections.getRow(WS, "col_stacks", "row_wolverine");
-      const edited = await collections.upsertRow(WS, "col_stacks", { values: { title: "Wolverine", components: ["row_tb"] } }, OWNER, { id: row.id, expectedVersion: row.version });
-      expect((await collections.rowBacklinks(WS, "col_peptides", "row_bpc")).map((e) => e.sourceId)).toEqual(["col_peptides/row_tb"]);
-      await collections.deleteRow(WS, "col_stacks", "row_wolverine", edited.version, OWNER);
-      expect(await collections.rowBacklinks(WS, "col_peptides", "row_tb")).toEqual([
+      const row = await tables.getRow(WS, "col_stacks", "row_wolverine");
+      const edited = await tables.upsertRow(WS, "col_stacks", { values: { title: "Wolverine", components: ["row_tb"] } }, OWNER, { id: row.id, expectedVersion: row.version });
+      expect((await tables.rowBacklinks(WS, "col_peptides", "row_bpc")).map((e) => e.sourceId)).toEqual(["col_peptides/row_tb"]);
+      await tables.deleteRow(WS, "col_stacks", "row_wolverine", edited.version, OWNER);
+      expect(await tables.rowBacklinks(WS, "col_peptides", "row_tb")).toEqual([
         expect.objectContaining({ sourceId: "col_peptides/row_bpc" }),
       ]);
     });
 
     it("re-derives every row's links when a relation field changes", async () => {
-      const stacks = await collections.get(WS, "col_stacks");
-      await collections.update(
+      const stacks = await tables.get(WS, "col_stacks");
+      await tables.update(
         WS,
         "col_stacks",
         { name: "Stacks", fields: [{ name: "title", type: "text", required: true }, { name: "components", type: "multi_select" }] },
         stacks.version,
         OWNER,
       );
-      expect(await collections.rowLinks(WS, "col_stacks", "row_wolverine")).toEqual([]);
+      expect(await tables.rowLinks(WS, "col_stacks", "row_wolverine")).toEqual([]);
     });
 
-    it("links a page to a row or a collection from its text", async () => {
+    it("links a page to a row or a table from its text", async () => {
       await pages.create(WS, { title: "Notes", body: "See [[col_stacks/row_wolverine|the stack]] in [[col_stacks]]." }, OWNER, "pg_notes");
-      expect((await collections.rowBacklinks(WS, "col_stacks", "row_wolverine")).map((e) => e.sourceId)).toEqual(["pg_notes"]);
-      expect((await collections.backlinks(WS, "col_stacks")).map((e) => e.sourceId)).toEqual(["pg_notes"]);
+      expect((await tables.rowBacklinks(WS, "col_stacks", "row_wolverine")).map((e) => e.sourceId)).toEqual(["pg_notes"]);
+      expect((await tables.backlinks(WS, "col_stacks")).map((e) => e.sourceId)).toEqual(["pg_notes"]);
     });
 
-    it("refuses a relation to a collection that does not exist, and a malformed value", async () => {
+    it("refuses a relation to a table that does not exist, and a malformed value", async () => {
       await expect(
-        collections.create(WS, { name: "Bad", fields: [{ name: "x", type: "relation", target: "col_missing" }] }, OWNER),
+        tables.create(WS, { name: "Bad", fields: [{ name: "x", type: "relation", target: "col_missing" }] }, OWNER),
       ).rejects.toThrow(ValidationError);
       await expect(
-        collections.upsertRow(WS, "col_stacks", { values: { title: "T", components: "row_bpc" } }, OWNER),
+        tables.upsertRow(WS, "col_stacks", { values: { title: "T", components: "row_bpc" } }, OWNER),
       ).rejects.toThrow(ValidationError);
     });
 
@@ -501,10 +501,10 @@ describe("PageService and CollectionService on sqlite", () => {
       await store.replaceEdgesForSource(WS, "col_peptides/row_bpc", []);
       await store.replaceEdgesForSource(WS, "col_peptides/row_tb", []);
       await store.replaceEdgesForSource(WS, "col_stacks/row_wolverine", []);
-      expect(await collections.needsRelink(WS)).toBe(true);
-      expect((await collections.rebuildWorkspace(WS)).rows).toBe(3);
-      expect(await collections.needsRelink(WS)).toBe(false);
-      expect(await collections.rowBacklinks(WS, "col_peptides", "row_bpc")).toHaveLength(2);
+      expect(await tables.needsRelink(WS)).toBe(true);
+      expect((await tables.rebuildWorkspace(WS)).rows).toBe(3);
+      expect(await tables.needsRelink(WS)).toBe(false);
+      expect(await tables.rowBacklinks(WS, "col_peptides", "row_bpc")).toHaveLength(2);
     });
   });
 });

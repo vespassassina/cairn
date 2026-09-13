@@ -257,18 +257,18 @@ describe("pages", () => {
   });
 });
 
-describe("collections in the tree and rows as links (ADR-024)", () => {
-  it("creates a collection under a page, moves it, and reports links from rows", async () => {
+describe("tables in the tree and rows as links (ADR-024)", () => {
+  it("creates a table under a page, moves it, and reports links from rows", async () => {
     const home = await call("/pages", { method: "POST", body: { title: "Peptides", body: "Hub.", change_note: "A home for the peptide tables" } });
     const homeId = String(home.json["id"]);
-    const peptides = await call("/collections", {
+    const peptides = await call("/tables", {
       method: "POST",
       body: { name: "Peptides", parent_id: homeId, fields: [{ name: "name", type: "text", required: true }, { name: "page", type: "relation" }, { name: "related", type: "relation", target: "col_self_placeholder" }] },
     });
     expect(peptides.status).toBe(422);
     expect(JSON.stringify(peptides.json)).toContain("related");
 
-    const created = await call("/collections", {
+    const created = await call("/tables", {
       method: "POST",
       body: { name: "Peptides", parent_id: homeId, fields: [{ name: "name", type: "text", required: true }, { name: "page", type: "relation" }] },
     });
@@ -276,15 +276,15 @@ describe("collections in the tree and rows as links (ADR-024)", () => {
     expect(created.json["parent_id"]).toBe(homeId);
     const cid = String(created.json["id"]);
 
-    const row = await call(`/collections/${cid}/rows/row_bpc`, { method: "PUT", body: { values: { name: "BPC-157", page: homeId }, change_note: "Linked to its page" } });
+    const row = await call(`/tables/${cid}/rows/row_bpc`, { method: "PUT", body: { values: { name: "BPC-157", page: homeId }, change_note: "Linked to its page" } });
     expect(row.status).toBe(201);
-    const links = await call(`/collections/${cid}/rows/row_bpc/links`);
+    const links = await call(`/tables/${cid}/rows/row_bpc/links`);
     expect(links.json["outbound"]).toEqual([{ page_id: homeId, type: "relation", label: "page" }]);
     const backlinks = await call(`/pages/${homeId}/backlinks`);
-    expect(backlinks.json["backlinks"]).toEqual([{ collection_id: cid, row_id: "row_bpc", type: "relation", label: "page" }]);
+    expect(backlinks.json["backlinks"]).toEqual([{ table_id: cid, row_id: "row_bpc", type: "relation", label: "page" }]);
 
-    // A PUT that leaves out parent_id keeps the collection where it is.
-    const kept = await call(`/collections/${cid}`, {
+    // A PUT that leaves out parent_id keeps the table where it is.
+    const kept = await call(`/tables/${cid}`, {
       method: "PUT",
       headers: { "if-match": `"${String(created.json["version"])}"` },
       body: { name: "Peptides", fields: [{ name: "name", type: "text", required: true }, { name: "page", type: "relation" }] },
@@ -293,7 +293,7 @@ describe("collections in the tree and rows as links (ADR-024)", () => {
 
     const moved = await call("/move", { method: "POST", body: { id: cid, parent_id: null, version: kept.json["version"], change_note: "Back to the top" } });
     expect(moved.status).toBe(200);
-    expect(moved.json).toMatchObject({ kind: "collection", parent_id: null });
+    expect(moved.json).toMatchObject({ kind: "table", parent_id: null });
   });
 
   it("will not move a page inside itself", async () => {
@@ -305,9 +305,9 @@ describe("collections in the tree and rows as links (ADR-024)", () => {
   });
 });
 
-describe("collections and rows", () => {
+describe("tables and rows", () => {
   async function createPrints() {
-    const created = await call("/collections", {
+    const created = await call("/tables", {
       method: "POST",
       body: {
         name: "Prints",
@@ -330,10 +330,10 @@ describe("collections and rows", () => {
       { title: "Canopy", material: "TPU", grams: 22, failed: true },
       { title: "Antenna tube", material: "TPU", grams: 3, failed: false },
     ]) {
-      expect((await call(`/collections/${cid}/rows`, { method: "POST", body: { values } })).status).toBe(201);
+      expect((await call(`/tables/${cid}/rows`, { method: "POST", body: { values } })).status).toBe(201);
     }
 
-    const tpu = await call(`/collections/${cid}/query`, {
+    const tpu = await call(`/tables/${cid}/query`, {
       method: "POST",
       body: {
         where: [{ field: "material", op: "eq", value: "TPU" }],
@@ -343,7 +343,7 @@ describe("collections and rows", () => {
     const rows = tpu.json["rows"] as Array<{ values: Record<string, unknown> }>;
     expect(rows.map((row) => row.values["title"])).toEqual(["Canopy", "Antenna tube"]);
 
-    const invalid = await call(`/collections/${cid}/rows`, {
+    const invalid = await call(`/tables/${cid}/rows`, {
       method: "POST",
       body: { values: { material: "Wood", grams: "heavy" } },
     });
@@ -354,38 +354,54 @@ describe("collections and rows", () => {
 
   it("PUT creates at an id, conflicts without If-Match, and updates with it", async () => {
     const cid = await createPrints();
-    const created = await call(`/collections/${cid}/rows/print_canopy`, {
+    const created = await call(`/tables/${cid}/rows/print_canopy`, {
       method: "PUT",
       body: { values: { title: "Canopy", grams: 22 } },
     });
     expect(created.status).toBe(201);
 
-    const again = await call(`/collections/${cid}/rows/print_canopy`, {
+    const again = await call(`/tables/${cid}/rows/print_canopy`, {
       method: "PUT",
       body: { values: { title: "Canopy v2" } },
     });
     expect(again.status).toBe(409);
 
-    const updated = await call(`/collections/${cid}/rows/print_canopy`, {
+    const updated = await call(`/tables/${cid}/rows/print_canopy`, {
       method: "PUT",
       headers: { "if-match": created.headers.get("etag")! },
       body: { values: { title: "Canopy v2", grams: 19 }, change_note: "Thinner walls" },
     });
     expect(updated.status).toBe(200);
 
-    const history = await call(`/collections/${cid}/rows/print_canopy/history`);
+    const history = await call(`/tables/${cid}/rows/print_canopy/history`);
     const revisions = history.json["revisions"] as Array<{ version: string }>;
     expect(revisions).toHaveLength(2);
     const revision = await call(
-      `/collections/${cid}/rows/print_canopy/revisions/${String(updated.json["version"])}`,
+      `/tables/${cid}/rows/print_canopy/revisions/${String(updated.json["version"])}`,
     );
     expect(revision.json["diff"]).toContain("+ grams: 19");
 
-    const deleted = await call(`/collections/${cid}/rows/print_canopy`, {
+    const deleted = await call(`/tables/${cid}/rows/print_canopy`, {
       method: "DELETE",
       headers: { "if-match": updated.headers.get("etag")! },
     });
     expect(deleted.status).toBe(204);
+  });
+});
+
+describe("the paths from before tables were called tables (ADR-026)", () => {
+  it("answers under /collections as under /tables", async () => {
+    const created = await call("/collections", { method: "POST", body: { name: "Old client", fields: [{ name: "title", type: "text" }] } });
+    expect(created.status).toBe(201);
+    const cid = String(created.json["id"]);
+    expect((await call(`/collections/${cid}/rows`, { method: "POST", body: { values: { title: "Still works" } } })).status).toBe(201);
+
+    const old = await call("/collections");
+    expect((old.json["collections"] as Array<{ id: string }>).map((t) => t.id)).toContain(cid);
+    const current = await call("/tables");
+    expect((current.json["tables"] as Array<{ id: string }>).map((t) => t.id)).toContain(cid);
+    const rows = await call(`/tables/${cid}/rows`);
+    expect(JSON.stringify(rows.json)).toContain("Still works");
   });
 });
 

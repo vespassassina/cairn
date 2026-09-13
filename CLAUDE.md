@@ -8,13 +8,13 @@ Follow `docs/AGENT-INSTALL.md` instead of the rest of this file. Ask the person 
 
 ## What this is
 
-Cairn (working name): a source-available, self-hosted document and collection store where Claude is the primary client through MCP. Web editor comes second. Runs as one small container: on the person's own server, or within a cloud's free grants (ADR-020).
+Cairn (working name): a source-available, self-hosted wiki and table store where Claude is the primary client through MCP. Web editor comes second. Runs as one small container: on the person's own server, or within a cloud's free grants (ADR-020).
 
 ## Current phase
 
 Phase 0 is done apart from the eval set (spike S1 was dropped by ADR-020). Phase 1 (MCP only, used daily) is under way locally. Live status is in `docs/ROADMAP.md`.
 
-Do not write editor code until Phase 1 passes its gate (see PRD section 14). The one exception is the review console (ADR-009), a server-rendered screen for reviewing, navigating, editing and restoring. Keep it inside the scope limits that ADR sets: no rich editor, no collection views beyond a table, no client-side application.
+Do not write editor code until Phase 1 passes its gate (see PRD section 14). The one exception is the review console (ADR-009), a server-rendered screen for reviewing, navigating, editing and restoring. Keep it inside the scope limits that ADR sets: no rich editor, no table views beyond a plain table, no client-side application.
 
 ## Documentation discipline
 
@@ -93,7 +93,7 @@ docs/
 9. Pages and rows are the source of truth. Edges and chunks are derived, written only through an idempotent `replaceForSource`, and must survive a full rebuild unchanged.
 10. No transactions across documents. Write the page, then its derived data, and make the gap recoverable.
 11. Derived reads (backlinks, neighbours, search) are eventually consistent. Tests poll to the 10 second bound, they never read once straight after a write.
-12. Collection filtering runs in core. Pushdown is an optional adapter capability that must produce identical results.
+12. Table filtering runs in core. Pushdown is an optional adapter capability that must produce identical results.
 13. Route handlers use web standard `Request` and `Response`. Platform-specific code lives only in `api/src/entry/*` (ADR-006).
 14. MCP, REST and the CLI translate; they never decide (ADR-013). Logic two surfaces need, such as edit modes and error mapping, lives in `api/src/operations.ts`. A capability added to one surface is added to the others, or the ADR says why not.
 15. The CLI talks HTTP only. It never opens the database.

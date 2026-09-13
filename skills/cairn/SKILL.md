@@ -18,8 +18,9 @@ once only if it would have mattered. If it says to sign in, ask the user to run
 
 ## Read before you answer
 
-1. `cairn overview` shows what Cairn holds: collections, top-level pages, common
-   tags. Run it once when a topic might be covered.
+1. `cairn overview` shows what Cairn holds: collections (a top-level page and
+   everything under it, one wiki each), tables and common tags. Run it
+   once when a topic might be covered.
 2. `cairn search <words>` matches keywords and, for English text, meaning. A
    keyword match needs most of your words on the page, so use a few distinctive
    ones. If nothing comes back, try other words or one unusual word before
@@ -54,18 +55,18 @@ than quoting it on the command line.
 ## Tables
 
 ```
-cairn collections
-cairn rows <collection-id> --where "grams gt 10" --sort grams:desc
-cairn upsert <collection-id> --set title=Canopy --set grams=22 --note "why"
+cairn tables
+cairn rows <table-id> --where "grams gt 10" --sort grams:desc
+cairn upsert <table-id> --set title=Canopy --set grams=22 --note "why"
 ```
 
 A failed write names every bad field at once, so fix them all and retry once.
 
-Relation fields link rows. In `cairn collections`, `components:relation->col_x[]`
+Relation fields link rows. In `cairn tables`, `components:relation->col_x[]`
 means a list of row ids from `col_x`: set it with `--set 'components=["row_a","row_b"]'`.
-`cairn links <collection-id>/<row-id>` shows a row's links and what links to it, and
-`[[collection-id/row-id]]` links a page to a row. `cairn move <id> --parent <page-id>
---version <v>` puts a page or collection under a page, or `--parent root` at the top.
+`cairn links <table-id>/<row-id>` shows a row's links and what links to it, and
+`[[table-id/row-id]]` links a page to a row. `cairn move <id> --parent <page-id>
+--version <v>` puts a page or table under a page, or `--parent root` at the top.
 
 ## What others changed
 

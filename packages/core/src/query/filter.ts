@@ -1,10 +1,10 @@
 import type { FieldValue, Row } from "../types.js";
 
 /**
- * The collection filter grammar. Deliberately small, and shaped by the weakest
+ * The table filter grammar. Deliberately small, and shaped by the weakest
  * backend: DynamoDB cannot filter or sort on arbitrary fields without a scan.
  *
- * Evaluation runs in core, in memory, over the rows of one collection (ADR-005
+ * Evaluation runs in core, in memory, over the rows of one table (ADR-005
  * rule 5). An adapter may push it down, and must then return identical results.
  */
 

@@ -10,7 +10,7 @@ Last updated: 11 September 2026
 
 **A wiki and tables your agents can write to, with every change reviewable.**
 
-A source-available, self-hosted document and collection store where agents are the primary client, free for any non-commercial use (ADR-015). They get in through MCP, a REST API or a command-line tool (ADR-013). The web editor comes second.
+A source-available, self-hosted wiki and table store where agents are the primary client, free for any non-commercial use (ADR-015). They get in through MCP, a REST API or a command-line tool (ADR-013). The web editor comes second.
 
 It runs as one small container: on your own server, or within the free grants of a cloud (Azure today, AWS later). SQLite holds the data; Cosmos DB or DynamoDB can take over by configuration if one instance is ever not enough (ADR-020).
 
@@ -31,14 +31,14 @@ The open-source alternatives (Docmost, Outline, AppFlowy, AFFiNE) need Postgres 
 Agent memory is a crowded field, and Hacker News is tired of it. The recurring comment is that most memory tools are "about the same as grep in a memory/ directory", and the typical commenter keeps a MEMORY.md and a SQLite file of their own. Where Cairn sits:
 
 1. **Memory layers** (Mem0 and OpenMemory, Letta, Zep and Graphiti, Cognee) extract facts from conversations into fragments or graphs, built for retrieval by software rather than reading by a person. Cairn stores documents a person reads and edits.
-2. **Basic Memory** is closest in spirit: Markdown on disk, wiki links, MCP, AGPL, about 3,900 GitHub stars. It has no typed collections, edit history only in its paid cloud, and a local install cannot be reached by claude.ai or another machine.
+2. **Basic Memory** is closest in spirit: Markdown on disk, wiki links, MCP, AGPL, about 3,900 GitHub stars. It has no typed tables, edit history only in its paid cloud, and a local install cannot be reached by claude.ai or another machine.
 3. **Remnus** is closest in data model: pages plus databases with JSON schemas, 14 MCP tools, SQLite, OAuth 2.1, AGPL. A one-person project, and proof the niche exists.
 
 What no one combines: typed tables next to the wiki, a revision for every write by every actor, a review screen that shows agent writes first, and one codebase that runs as a SQLite file or on a cloud free tier. That combination is the pitch. "Memory for agents" is not.
 
 ## 2. Goals
 
-1. Claude can find, read, create and update pages and collection rows through MCP with no manual copy and paste.
+1. Claude can find, read, create and update pages and table rows through MCP with no manual copy and paste.
 2. Sustained running cost of €0 to €2 per month for a single user with up to 5,000 pages on either Azure or AWS free tier.
 3. Keyword-only search (no embeddings) hits recall@5 of 0.8 or better on my 30-query eval set when driven by Claude.
 4. The same container image runs on your own server, on Azure and on AWS, switching only configuration (ADR-020).
@@ -68,7 +68,7 @@ What no one combines: typed tables next to the wiki, a revision for every write 
 1. As Claude, I want to search by keyword and get page titles, heading paths and snippets so that I can decide what to open without loading whole pages.
 2. As Claude, I want to know when search ran in keyword-only mode so that I try synonyms and related terms before concluding nothing exists.
 3. As Claude, I want to read a page and its backlinks so that I can follow related context the user never mentioned.
-4. As Claude, I want to append a row to a collection with validation errors I can act on so that I can fix a bad field without asking the user.
+4. As Claude, I want to append a row to a table with validation errors I can act on so that I can fix a bad field without asking the user.
 5. As Claude, I want to update a single block of a page so that I don't overwrite the user's edits elsewhere on it.
 
 ### Owner
@@ -123,14 +123,14 @@ Five rules govern the boundary (ADR-005).
 2. Pages and rows are the source of truth. Edges and chunks are derived and rebuildable, written with an idempotent replace scoped to one source.
 3. No transactions across documents. Write the page first, then its derived data.
 4. Consistency is stated per operation. Point reads are immediate, derived reads are eventual within 10 seconds.
-5. Collection filtering runs in core, in memory. Adapters may declare a pushdown capability that must produce identical results.
+5. Table filtering runs in core, in memory. Adapters may declare a pushdown capability that must produce identical results.
 
 ### Data model
 
 One logical store with three document families, partitioned by workspace.
 
 1. **Pages.** Title, parent, tags, BlockNote JSON blocks embedded in the document, version token. One point read per page.
-2. **Collections.** A schema document plus one document per row. Field types in v1: text, number, date, select, multi-select, checkbox, URL, relation. A relation links to pages, or to the rows of a collection, its own included, and can hold a list (ADR-024). A collection sits under a page in the tree, or at the top.
+2. **Tables.** A schema document plus one document per row. Field types in v1: text, number, date, select, multi-select, checkbox, URL, relation. A relation links to pages, or to the rows of a table, its own included, and can hold a list (ADR-024). A table sits under a page in the tree, or at the top. Until ADR-026 tables were called collections; a collection is now a top-level page and everything under it, one wiki, a view of the tree rather than a stored family.
 3. **Edges.** One document per link, partitioned by source page. A mirrored reverse edge partitioned by target so backlinks are a single-partition query. Edge types: link, mention, relation, parent, tag.
 
 **Chunks** live in a separate container from day one, even with embeddings off. Chunk at block and heading level. Each chunk stores page id, heading path, text, and when embeddings are enabled: vector, model name, model version and dimensions.
@@ -173,16 +173,16 @@ Cairn contains one small OAuth 2.1 authorization server that delegates login to 
 | `update_page` | Replace a block, append blocks or replace the whole body. Requires version token. |
 | `get_backlinks` | Pages linking to a page, with edge type. |
 | `get_neighbours` | Outbound and inbound edges for a page, one hop. |
-| `list_collections` | Collections with their schemas. |
-| `query_collection` | Filter and sort rows. Simple filter grammar, not SQL. |
+| `list_tables` | Tables with their schemas. |
+| `query_table` | Filter and sort rows. Simple filter grammar, not SQL. |
 | `upsert_row` | Create or update a row. Returns field-level validation errors. |
-| `create_collection` | Create a collection with a typed schema. Added during the PoC: this list assumed collections were created in the web editor, which is Phase 2, so without it collections cannot be used at all. |
+| `create_table` | Create a table with a typed schema. Added during the PoC: this list assumed tables were created in the web editor, which is Phase 2, so without it tables cannot be used at all. |
 | `get_history` | Revisions of a page or row, newest first, with actor, time and change note (ADR-008). |
 | `get_revision` | One revision's content, and its diff against the version it replaced. |
 
 Write tools (`create_page`, `update_page`, `upsert_row`) accept an optional `change_note` so an agent can say why it made a change. It is shown in the review console's recent changes.
 
-Server instructions: at initialize, Cairn also tells the client when to use it: search before answering, save durable knowledge without being asked, prefer updating an existing page, and give every write a change note (ADR-011). Tools alone are available but never required, so without this Claude uses Cairn only when asked. The instructions end with a live summary of what the workspace holds: collections with row counts, top-level pages with their size, and common tags, so Claude knows which questions Cairn can answer (ADR-012).
+Server instructions: at initialize, Cairn also tells the client when to use it: search before answering, save durable knowledge without being asked, prefer updating an existing page, and give every write a change note (ADR-011). Tools alone are available but never required, so without this Claude uses Cairn only when asked. The instructions end with a live summary of what the workspace holds: tables with row counts, top-level pages with their size, and common tags, so Claude knows which questions Cairn can answer (ADR-012).
 
 The same capabilities are on a REST API at `/api/v1` and a `cairn` command-line tool with a skill file, for agents that have a shell and would rather not pay for tool schemas in every session (ADR-013). A changes feed, `GET /api/v1/changes?since=`, lets an agent or script ask what changed since it last looked.
 
@@ -204,8 +204,8 @@ Search p95 latency under 800 ms on Cosmos free tier, measured warm. Cold-start l
 Given page A links to page B, when page A is saved, then `get_backlinks(B)` returns A within 10 seconds.
 Given the link is removed and A is saved, then the backlink disappears.
 
-**P0.4 Collections with typed rows.**
-Given a collection with a required date field, when `upsert_row` omits it, then the call fails with an error naming the field.
+**P0.4 Tables with typed rows.**
+Given a table with a required date field, when `upsert_row` omits it, then the call fails with an error naming the field.
 
 **P0.5 MCP server usable from claude.ai as a custom connector.**
 Given a deployed instance, when the owner adds the connector URL in Claude, then OAuth completes and all tools in section 8 are callable.
@@ -213,7 +213,7 @@ Status 2026-09-12: the OAuth server is built and tested end to end with a stand-
 
 **P0.6 Storage and search adapter interfaces with Cosmos and SQLite implementations.** (Since ADR-020 the Cosmos implementation is optional and waits for a trigger; the interfaces and the SQLite implementation are done.)
 Given the conformance test suite, when run against both adapters, then all tests pass with no adapter-specific branches in business logic.
-Given an adapter that declares collection-query pushdown, when the suite runs the query set with pushdown on and off, then the results are identical.
+Given an adapter that declares table-query pushdown, when the suite runs the query set with pushdown on and off, then the results are identical.
 
 **P0.10 Every write is a revision (ADR-008).**
 Given a page updated three times, when the owner opens its history, then they see four revisions with actor, time and change note, and can restore any of them.
@@ -228,7 +228,7 @@ Given a page, then it renders in read mode with resolved links and backlinks, an
 Given a workspace whose edges and chunks have been deleted, when the owner runs rebuild, then backlinks and search results match what they were before, with no change to any page.
 
 **P0.7 Export.**
-Given a workspace, when the owner runs export, then they get a zip with one Markdown file per page (folder tree mirrors hierarchy), one JSON file per collection, and all attachments.
+Given a workspace, when the owner runs export, then they get a zip with one Markdown file per page (folder tree mirrors hierarchy), one JSON file per table, and all attachments.
 Status 2026-09-12: done as a folder rather than a zip, written by `cairn export`, whole or from one root, and read back by `cairn import` without loss (ADR-016). Attachments do not exist yet; history is not exported yet.
 
 **P0.8 Azure free-tier deployment.**
@@ -237,7 +237,7 @@ Status 2026-09-12: Azure uses Container Apps and Blob Storage instead of Functio
 
 ### P1: fast follow
 
-1. **Web editor** with BlockNote, page tree, backlinks panel, collection table view.
+1. **Web editor** with BlockNote, page tree, backlinks panel, table view.
 2. **Embeddings** with hybrid search and fallback as described in section 7. Done 2026-09-13 with a model inside the container (ADR-022).
 3. **AWS:** the same container on an AWS container service, with a deploy script. DynamoDB and S3 adapters only on an ADR-020 trigger.
 4. **Attachments** up to 25 MB per file, stored via the blob adapter.
@@ -311,11 +311,11 @@ Mitigation: phase gate below. No editor code until the MCP-only phase passes its
 
 **Phase 0: foundations (1 week).** Adapter interfaces, SQLite adapter, conformance tests, eval query set written. Plus the two spikes from ADR-006: Hono on Azure Functions (S1) and the MCP transport shape (S2). S2 is done; S1 was closed without running when ADR-020 dropped Functions.
 
-**Phase 1: MCP only (2 to 3 weeks).** Pages, collections, edges, keyword search, MCP server, OAuth, a container deploy on your own server and on Azure. Use it from Claude daily. (The Cosmos adapter was here until ADR-020 made it optional.)
+**Phase 1: MCP only (2 to 3 weeks).** Pages, tables, edges, keyword search, MCP server, OAuth, a container deploy on your own server and on Azure. Use it from Claude daily. (The Cosmos adapter was here until ADR-020 made it optional.)
 
 Gate: usage and recall targets from section 10 met for two weeks. If not, stop or rethink.
 
-**Phase 2: editor (3 to 4 weeks).** BlockNote frontend, page tree, backlinks panel, collection table, export UI.
+**Phase 2: editor (3 to 4 weeks).** BlockNote frontend, page tree, backlinks panel, table view, export UI.
 
 **Phase 3: options (open-ended).** A multilingual or bring-your-own embedding model, AWS adapters, Desktop extension, import.
 
@@ -327,7 +327,7 @@ Record decisions in `docs/decisions/` as short ADRs. Already decided in design d
 2. ADR-002: Graph is modelled as edge documents in the document store. No Gremlin API.
 3. ADR-003: Embeddings are opt-in via a bring-your-own OpenAI-compatible endpoint. No bundled model in the cloud path. Superseded as the default by ADR-022.
 4. ADR-004: Chunks live in their own container. Vector container is created at enable time, not deploy time.
-5. ADR-005: Adapter boundary. Search is its own adapter, derived data is rebuildable, no cross-document transactions, consistency stated per operation, collection filtering in core with optional pushdown.
+5. ADR-005: Adapter boundary. Search is its own adapter, derived data is rebuildable, no cross-document transactions, consistency stated per operation, table filtering in core with optional pushdown.
 6. ADR-006: Hono plus stateless MCP transport, written to the lowest common denominator of the platforms.
 7. ADR-007: Auth is one small OAuth server in front of any OIDC provider.
 8. ADR-008: Every write is a revision, and agents write directly.

@@ -4,7 +4,7 @@ import type { Actor, Revision } from "@cairn/core";
 import { budgetList, budgetText, DEFAULT_TOKEN_BUDGET } from "../budget.js";
 import type { AppContext } from "../context.js";
 import {
-  collectionJson,
+  tableJson,
   describeError,
   editPage,
   EDIT_MODES,
@@ -20,9 +20,9 @@ import {
 export { replaceSection } from "../operations.js";
 
 /**
- * The MCP tools from PRD section 8, plus `create_collection`, which section 8
- * originally omitted because collections were assumed to be created in the web
- * editor. The editor is Phase 2, so without it collections cannot be used.
+ * The MCP tools from PRD section 8, plus `create_table`, which section 8
+ * originally omitted because tables were assumed to be created in the web
+ * editor. The editor is Phase 2, so without it tables cannot be used.
  *
  * Every write is attributed to the calling agent and recorded as a revision
  * (ADR-008). Write tools take an optional `change_note`, shown to the owner in
@@ -219,17 +219,17 @@ export function registerTools(server: McpServer, context: AppContext, actor: Act
     },
   );
 
-  const collectionIds = async () => new Set((await context.collections.list(ws)).map((collection) => collection.id));
+  const tableIds = async () => new Set((await context.tables.list(ws)).map((table) => table.id));
   const WHICH = {
     page_id: z.string().optional(),
-    collection_id: z.string().optional().describe("With row_id, a row."),
+    table_id: z.string().optional().describe("With row_id, a row."),
     row_id: z.string().optional(),
   };
   const needOne = () =>
     failure({
       error: "validation_failed",
-      message: "Pass page_id, or collection_id, or collection_id with row_id.",
-      fields: [{ field: "page_id", message: "or collection_id, with row_id for a row" }],
+      message: "Pass page_id, or table_id, or table_id with row_id.",
+      fields: [{ field: "page_id", message: "or table_id, with row_id for a row" }],
     });
 
   server.registerTool(
@@ -237,20 +237,20 @@ export function registerTools(server: McpServer, context: AppContext, actor: Act
     {
       title: "What links here",
       description:
-        "Pages and rows linking to, mentioning or parenting a page, collection or row. Useful for context the user did not name. Updated within seconds of a write.",
+        "Pages and rows linking to, mentioning or parenting a page, table or row. Useful for context the user did not name. Updated within seconds of a write.",
       inputSchema: WHICH,
     },
-    async ({ page_id, collection_id, row_id }): Promise<ToolResult> => {
+    async ({ page_id, table_id, row_id }): Promise<ToolResult> => {
       try {
         const edges = page_id
           ? await context.pages.backlinks(ws, page_id)
-          : collection_id && row_id
-            ? await context.collections.rowBacklinks(ws, collection_id, row_id)
-            : collection_id
-              ? await context.collections.backlinks(ws, collection_id)
+          : table_id && row_id
+            ? await context.tables.rowBacklinks(ws, table_id, row_id)
+            : table_id
+              ? await context.tables.backlinks(ws, table_id)
               : null;
         if (edges === null) return needOne();
-        const ids = await collectionIds();
+        const ids = await tableIds();
         return json({ backlinks: edges.map((edge) => linkJson(edge, "source", ids)) });
       } catch (error) {
         return toolError(error);
@@ -264,19 +264,19 @@ export function registerTools(server: McpServer, context: AppContext, actor: Act
       title: "One hop around a page or row",
       description:
         "Everything one hop from a page or row, both directions: links, mentions, parent, tags, relations. Call it again to walk further.",
-      inputSchema: { page_id: WHICH.page_id, collection_id: WHICH.collection_id, row_id: WHICH.row_id },
+      inputSchema: { page_id: WHICH.page_id, table_id: WHICH.table_id, row_id: WHICH.row_id },
     },
-    async ({ page_id, collection_id, row_id }): Promise<ToolResult> => {
+    async ({ page_id, table_id, row_id }): Promise<ToolResult> => {
       try {
         let outbound, inbound;
         if (page_id) ({ outbound, inbound } = await context.pages.neighbours(ws, page_id));
-        else if (collection_id && row_id) {
+        else if (table_id && row_id) {
           [outbound, inbound] = await Promise.all([
-            context.collections.rowLinks(ws, collection_id, row_id),
-            context.collections.rowBacklinks(ws, collection_id, row_id),
+            context.tables.rowLinks(ws, table_id, row_id),
+            context.tables.rowBacklinks(ws, table_id, row_id),
           ]);
         } else return needOne();
-        const ids = await collectionIds();
+        const ids = await tableIds();
         return json({
           outbound: outbound.map((e) => linkJson(e, "target", ids)),
           inbound: inbound.map((e) => linkJson(e, "source", ids)),
@@ -290,9 +290,9 @@ export function registerTools(server: McpServer, context: AppContext, actor: Act
   server.registerTool(
     "move",
     {
-      title: "Move a page or collection",
+      title: "Move a page or table",
       description:
-        "Put a page or collection under a page, or at the top with parent_id null. Only its place changes. Needs its current version.",
+        "Put a page or table under a page, or at the top with parent_id null. Only its place changes. Needs its current version.",
       inputSchema: {
         id: z.string(),
         parent_id: z.string().nullable(),
@@ -310,17 +310,17 @@ export function registerTools(server: McpServer, context: AppContext, actor: Act
   );
 
   server.registerTool(
-    "list_collections",
+    "list_tables",
     {
-      title: "List collections",
+      title: "List tables",
       description:
-        "Collections with their field schemas. Read this before query_collection or upsert_row so you use the right field names and types.",
+        "Tables with their field schemas. Read this before query_table or upsert_row so you use the right field names and types.",
       inputSchema: {},
     },
     async (): Promise<ToolResult> => {
       try {
-        const collections = await context.collections.list(ws);
-        return json({ collections: collections.map(collectionJson) });
+        const tables = await context.tables.list(ws);
+        return json({ tables: tables.map(tableJson) });
       } catch (error) {
         return toolError(error);
       }
@@ -328,12 +328,12 @@ export function registerTools(server: McpServer, context: AppContext, actor: Act
   );
 
   server.registerTool(
-    "create_collection",
+    "create_table",
     {
-      title: "Create a collection",
+      title: "Create a table",
       description:
-        "Create a collection with a typed schema. Field types: text, number, date, select, multi_select, checkbox, url, relation. " +
-        "select and multi_select need an options list. A relation links to pages, or to a collection's rows with target (its own id allowed); multiple holds a list. " +
+        "Create a table with a typed schema. Field types: text, number, date, select, multi_select, checkbox, url, relation. " +
+        "select and multi_select need an options list. A relation links to pages, or to a table's rows with target (its own id allowed); multiple holds a list. " +
         "Mark a field required only when a row is meaningless without it. parent_id: the page it sits under.",
       inputSchema: {
         name: z.string().min(1),
@@ -363,12 +363,12 @@ export function registerTools(server: McpServer, context: AppContext, actor: Act
     },
     async ({ name, fields, parent_id }): Promise<ToolResult> => {
       try {
-        const collection = await context.collections.create(
+        const table = await context.tables.create(
           ws,
           { name, fields: toFieldDefs(fields), parentId: parent_id ?? null },
           by(undefined),
         );
-        return json({ id: collection.id, name: collection.name, version: collection.version });
+        return json({ id: table.id, name: table.name, version: table.version });
       } catch (error) {
         return toolError(error);
       }
@@ -376,15 +376,15 @@ export function registerTools(server: McpServer, context: AppContext, actor: Act
   );
 
   server.registerTool(
-    "query_collection",
+    "query_table",
     {
-      title: "Query collection rows",
+      title: "Query table rows",
       description:
         "Filter and sort rows. Operators: eq, ne, lt, lte, gt, gte, contains, in, exists. " +
         "contains is a substring match on text and a membership test on multi_select. Conditions combine with AND. " +
-        "Field names come from list_collections.",
+        "Field names come from list_tables.",
       inputSchema: {
-        collection_id: z.string(),
+        table_id: z.string(),
         where: z
           .array(
             z.object({
@@ -416,9 +416,9 @@ export function registerTools(server: McpServer, context: AppContext, actor: Act
         cursor: z.string().optional(),
       },
     },
-    async ({ collection_id, where, sort, limit, cursor }): Promise<ToolResult> => {
+    async ({ table_id, where, sort, limit, cursor }): Promise<ToolResult> => {
       try {
-        const result = await context.collections.queryRows(ws, collection_id, {
+        const result = await context.tables.queryRows(ws, table_id, {
           where: where as never,
           sort: sort as never,
           limit: limit ?? 25,
@@ -444,7 +444,7 @@ export function registerTools(server: McpServer, context: AppContext, actor: Act
         "Create a row, or update one by passing row_id and its version. Validation reports every bad field at once, so one retry can fix them all. " +
         "Dates are ISO 8601 strings, multi_select takes a list of option names, and a relation takes an id, or a list of ids when the field is multiple.",
       inputSchema: {
-        collection_id: z.string(),
+        table_id: z.string(),
         values: z.record(z.string(), z.unknown()),
         row_id: z.string().optional(),
         version: z
@@ -454,11 +454,11 @@ export function registerTools(server: McpServer, context: AppContext, actor: Act
         change_note: CHANGE_NOTE,
       },
     },
-    async ({ collection_id, values, row_id, version, change_note }): Promise<ToolResult> => {
+    async ({ table_id, values, row_id, version, change_note }): Promise<ToolResult> => {
       try {
-        const row = await context.collections.upsertRow(
+        const row = await context.tables.upsertRow(
           ws,
-          collection_id,
+          table_id,
           { values: values as never },
           by(change_note),
           {
@@ -477,29 +477,29 @@ export function registerTools(server: McpServer, context: AppContext, actor: Act
     {
       title: "History of a page or row",
       description:
-        "Earlier versions of a page, or of a row when collection_id is given, newest first, with who made each change, when, and why. " +
+        "Earlier versions of a page, or of a row when table_id is given, newest first, with who made each change, when, and why. " +
         "Use it to see what changed recently before editing, or to find a version to compare with get_revision. The owner sees the same history.",
       inputSchema: {
         page_id: z.string().optional().describe("For a page's history."),
-        collection_id: z.string().optional().describe("With row_id, for a row's history."),
+        table_id: z.string().optional().describe("With row_id, for a row's history."),
         row_id: z.string().optional(),
         limit: z.number().int().min(1).max(50).optional(),
       },
     },
-    async ({ page_id, collection_id, row_id, limit }): Promise<ToolResult> => {
+    async ({ page_id, table_id, row_id, limit }): Promise<ToolResult> => {
       try {
         let revisions: Revision[];
         if (page_id) {
           revisions = await context.pages.history(ws, page_id, { limit: limit ?? 10 });
-        } else if (collection_id && row_id) {
-          revisions = await context.collections.rowHistory(ws, collection_id, row_id, {
+        } else if (table_id && row_id) {
+          revisions = await context.tables.rowHistory(ws, table_id, row_id, {
             limit: limit ?? 10,
           });
         } else {
           return failure({
             error: "validation_failed",
-            message: "Pass page_id, or collection_id with row_id.",
-            fields: [{ field: "page_id", message: "or collection_id and row_id" }],
+            message: "Pass page_id, or table_id with row_id.",
+            fields: [{ field: "page_id", message: "or table_id and row_id" }],
           });
         }
         return json({
@@ -525,11 +525,11 @@ export function registerTools(server: McpServer, context: AppContext, actor: Act
       inputSchema: {
         version: z.string(),
         page_id: z.string().optional(),
-        collection_id: z.string().optional(),
+        table_id: z.string().optional(),
         row_id: z.string().optional(),
       },
     },
-    async ({ version, page_id, collection_id, row_id }): Promise<ToolResult> => {
+    async ({ version, page_id, table_id, row_id }): Promise<ToolResult> => {
       try {
         if (page_id) {
           const view = await context.pages.revision(ws, page_id, version);
@@ -545,8 +545,8 @@ export function registerTools(server: McpServer, context: AppContext, actor: Act
             diff: renderDiff(view.diff),
           });
         }
-        if (collection_id && row_id) {
-          const view = await context.collections.rowRevision(ws, collection_id, row_id, version);
+        if (table_id && row_id) {
+          const view = await context.tables.rowRevision(ws, table_id, row_id, version);
           return json({
             ...revisionSummary(view.revision),
             values: view.snapshot.values,
@@ -555,8 +555,8 @@ export function registerTools(server: McpServer, context: AppContext, actor: Act
         }
         return failure({
           error: "validation_failed",
-          message: "Pass page_id, or collection_id with row_id.",
-          fields: [{ field: "page_id", message: "or collection_id and row_id" }],
+          message: "Pass page_id, or table_id with row_id.",
+          fields: [{ field: "page_id", message: "or table_id and row_id" }],
         });
       } catch (error) {
         return toolError(error);

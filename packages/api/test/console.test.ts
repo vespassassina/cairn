@@ -398,9 +398,9 @@ describe("reviewing and editing", () => {
   });
 });
 
-describe("collections", () => {
+describe("tables", () => {
   beforeEach(async () => {
-    await context.collections.create(
+    await context.tables.create(
       context.workspaceId,
       {
         name: "Peptides",
@@ -414,7 +414,7 @@ describe("collections", () => {
       { actor: OWNER },
       "col_peptides",
     );
-    await context.collections.upsertRow(
+    await context.tables.upsertRow(
       context.workspaceId,
       "col_peptides",
       { values: { name: "Semaglutide", categories: ["fat-loss"], side_effects: 4, approved: true } },
@@ -465,7 +465,7 @@ describe("collections", () => {
 
   it("shows row history with the agent's note, and restores a version", async () => {
     const first = await context.store.getRow(context.workspaceId, "col_peptides", "row_sema");
-    await context.collections.upsertRow(
+    await context.tables.upsertRow(
       context.workspaceId,
       "col_peptides",
       { values: { name: "Semaglutide", side_effects: 9 } },
@@ -489,29 +489,29 @@ describe("collections", () => {
   });
 });
 
-describe("collections in the tree and rows as links (ADR-024)", () => {
+describe("tables in the tree and rows as links (ADR-024)", () => {
   beforeEach(async () => {
     const ws = context.workspaceId;
     await context.pages.create(ws, { title: "Peptides", body: "See [[col_stacks/row_wolverine]] and [[col_stacks]]." }, { actor: OWNER }, "pg_home");
     await context.pages.create(ws, { title: "BPC-157", body: "Healing." }, { actor: OWNER }, "pg_bpc");
-    await context.collections.create(ws, { name: "Peptides", fields: [{ name: "name", type: "text", required: true }, { name: "page", type: "relation" }] }, { actor: OWNER }, "col_peptides");
-    await context.collections.create(
+    await context.tables.create(ws, { name: "Peptides", fields: [{ name: "name", type: "text", required: true }, { name: "page", type: "relation" }] }, { actor: OWNER }, "col_peptides");
+    await context.tables.create(
       ws,
       { name: "Stacks", parentId: "pg_home", fields: [{ name: "title", type: "text", required: true }, { name: "components", type: "relation", target: "col_peptides", multiple: true }] },
       { actor: OWNER },
       "col_stacks",
     );
-    await context.collections.upsertRow(ws, "col_peptides", { values: { name: "BPC-157", page: "pg_bpc" } }, AGENT, { id: "row_bpc" });
-    await context.collections.upsertRow(ws, "col_stacks", { values: { title: "Wolverine", components: ["row_bpc"] } }, AGENT, { id: "row_wolverine" });
+    await context.tables.upsertRow(ws, "col_peptides", { values: { name: "BPC-157", page: "pg_bpc" } }, AGENT, { id: "row_bpc" });
+    await context.tables.upsertRow(ws, "col_stacks", { values: { title: "Wolverine", components: ["row_bpc"] } }, AGENT, { id: "row_wolverine" });
   });
 
-  it("shows a collection under its page in the tree and inside the page", async () => {
+  it("shows a table under its page in the tree and inside the page", async () => {
     const { html } = await get("/p/pg_home");
     expect(html).toContain('href="/t/col_stacks"');
     expect(html).toContain('aria-label="Tables in this page"');
     expect(html).toContain("1 rows · title, components");
     expect(html).not.toContain("Collections here");
-    // The wiki links to a row and a collection resolve to them, named.
+    // The wiki links to a row and a table resolve to them, named.
     expect(html).toContain('href="/t/col_stacks/r/row_wolverine"');
     expect(html).toContain("Stacks: Wolverine");
   });
@@ -531,36 +531,36 @@ describe("collections in the tree and rows as links (ADR-024)", () => {
     expect(page.html).toContain("Peptides: BPC-157");
   });
 
-  it("moves a collection from its page, keeping its rows", async () => {
-    const collection = await context.collections.get(context.workspaceId, "col_peptides");
-    const moved = await post("/t/col_peptides/move", { parent: "pg_home", version: collection.version, note: "Group the tables" });
+  it("moves a table from its page, keeping its rows", async () => {
+    const table = await context.tables.get(context.workspaceId, "col_peptides");
+    const moved = await post("/t/col_peptides/move", { parent: "pg_home", version: table.version, note: "Group the tables" });
     expect(moved.status).toBe(303);
-    expect((await context.collections.get(context.workspaceId, "col_peptides")).parentId).toBe("pg_home");
+    expect((await context.tables.get(context.workspaceId, "col_peptides")).parentId).toBe("pg_home");
     expect((await get("/t/col_peptides?moved=1")).html).toContain("Moved under Peptides.");
-    expect((await context.collections.queryRows(context.workspaceId, "col_peptides")).items).toHaveLength(1);
+    expect((await context.tables.queryRows(context.workspaceId, "col_peptides")).items).toHaveLength(1);
   });
 
   it("reads a list of row ids from a relation field in the form", async () => {
-    const row = await context.collections.getRow(context.workspaceId, "col_stacks", "row_wolverine");
+    const row = await context.tables.getRow(context.workspaceId, "col_stacks", "row_wolverine");
     const saved = await post("/t/col_stacks/r/row_wolverine", { title: "Wolverine", components: "row_bpc, row_tb", version: row.version, note: "" });
     expect(saved.status).toBe(303);
-    expect((await context.collections.getRow(context.workspaceId, "col_stacks", "row_wolverine")).values["components"]).toEqual(["row_bpc", "row_tb"]);
+    expect((await context.tables.getRow(context.workspaceId, "col_stacks", "row_wolverine")).values["components"]).toEqual(["row_bpc", "row_tb"]);
   });
 
-  it("puts a collection under a page from the page itself", async () => {
-    const peptides = await context.collections.get(context.workspaceId, "col_peptides");
+  it("puts a table under a page from the page itself", async () => {
+    const peptides = await context.tables.get(context.workspaceId, "col_peptides");
     const page = await get("/p/pg_home");
     expect(page.html).toContain("Put a table here");
     expect(page.html).toContain(`value="col_peptides@${peptides.version}"`);
-    const moved = await post("/p/pg_home/tables", { collection: `col_peptides@${peptides.version}`, note: "Both tables in one place" });
+    const moved = await post("/p/pg_home/tables", { table: `col_peptides@${peptides.version}`, note: "Both tables in one place" });
     expect(moved.status).toBe(303);
-    expect((await context.collections.get(context.workspaceId, "col_peptides")).parentId).toBe("pg_home");
+    expect((await context.tables.get(context.workspaceId, "col_peptides")).parentId).toBe("pg_home");
 
-    const stale = await post("/p/pg_bpc/tables", { collection: `col_peptides@${peptides.version}` });
+    const stale = await post("/p/pg_bpc/tables", { table: `col_peptides@${peptides.version}` });
     expect(stale.status).toBe(409);
   });
 
-  it("groups the collections page under each root page", async () => {
+  it("groups the tables page under each root page", async () => {
     const { html } = await get("/t");
     const underHome = html.indexOf('<a href="/p/pg_home">Peptides</a>');
     const loose = html.indexOf("Not in any collection");
@@ -579,8 +579,8 @@ describe("collections are the home page (ADR-026)", () => {
     await context.pages.create(ws, { title: "Recovery", parentId: "pg_root", body: "Category." }, { actor: OWNER }, "pg_recovery");
     await context.pages.create(ws, { title: "BPC-157", parentId: "pg_recovery", body: "Healing." }, { actor: OWNER }, "pg_bpc");
     await context.pages.create(ws, { title: "Garden", body: "Another wiki." }, { actor: OWNER }, "pg_garden");
-    await context.collections.create(ws, { name: "Stacks", parentId: "pg_root", fields: [{ name: "title", type: "text" }] }, { actor: OWNER }, "col_stacks");
-    await context.collections.create(ws, { name: "Loose", fields: [{ name: "title", type: "text" }] }, { actor: OWNER }, "col_loose");
+    await context.tables.create(ws, { name: "Stacks", parentId: "pg_root", fields: [{ name: "title", type: "text" }] }, { actor: OWNER }, "col_stacks");
+    await context.tables.create(ws, { name: "Loose", fields: [{ name: "title", type: "text" }] }, { actor: OWNER }, "col_loose");
   });
 
   it("shows each collection with its summary and counts, and tables in none", async () => {

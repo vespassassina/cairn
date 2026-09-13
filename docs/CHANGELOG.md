@@ -6,6 +6,26 @@ Entries link to the ADR when there is one. A change of direction that has no ADR
 
 ## 2026-09-13
 
+### Tables are tables in the API, the MCP tools, the CLI and the export (ADR-026, step 2)
+
+Step 1 renamed them in the web app; agents still read "collection" for a table, which now means a top-level page and its tree. The owner chose one word for people and agents alike, so every surface says table.
+
+1. **MCP:** `list_tables`, `create_table` and `query_table`, and `table_id` wherever `collection_id` was. The old tool names are gone rather than kept beside the new ones, since each extra tool costs every session tokens. The server instructions gain one sentence saying what a collection is, and the workspace summary lists "Collections (top-level pages)" and "Tables". Measured with `pnpm context-cost`: about 2,942 tokens a session before, 2,931 after.
+2. **REST:** `/api/v1/tables`. The `/api/v1/collections` paths still answer, and still list under `collections`, so a CLI from before this change keeps working.
+3. **CLI:** `cairn tables`, and `cairn export --tables`. `cairn collections` and `--collections` still work.
+4. **Export format version 2:** tables in `tables/`, counted as `tables`. Import reads version 1 exports as well.
+5. **Sync:** saved state from before the rename is read and its keys renamed, so the next sync carries on where the last left off.
+6. **Code:** the types, services, ports and tests say table (`Table`, `TableService`, `getTable`, `services/tables.ts`). The SQLite adapter keeps its `collections` table and `collection_id` columns, so no database migrates. Ids keep their `col_` prefix.
+7. **Docs:** the PRD, ARCHITECTURE, CLI, LOCAL, ROADMAP, README, CLAUDE.md, the skill and the example seed say table. The PRD's data model now says what a collection is.
+
+Four tests added: the old REST paths, the old CLI command, a version 1 export, and sync state from before. 344 tests pass, 1 skipped.
+
+### The peptide wiki is one collection
+
+Following ADR-026, on the Azure Cairn, through the REST API, with an export taken first as a backup: the root page "Peptide database" (`pg_peptides`) was renamed "Peptides" and given a front page saying what the wiki holds and what its two tables are, and the nine other top-level pages (the category pages and the Stacks page) were moved under it. Every id stayed and nothing was deleted. The console's home now shows one collection, Peptides, with 96 pages and 2 tables, and the laptop's copy was brought level with `cairn sync`.
+
+One name clash remains, left for the owner to decide: the Peptides collection holds a table also called Peptides.
+
 ### The web app opens on collections, and typed tables are called tables (ADR-026, step 1)
 
 The owner: "home should just show available collections. a collection is kind of a database, tree shaped not table shaped", and "i open cairn web app, i see what collections are available each is a wiki. i navigate there". A collection is now a top-level page and everything under it; what Cairn called collections, rows sharing one set of fields, are tables.

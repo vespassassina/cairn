@@ -3,7 +3,7 @@ import {
   matchesCondition,
   sortRows,
   validateRow,
-  type Collection,
+  type Table,
   type Row,
 } from "../src/index.js";
 
@@ -11,7 +11,7 @@ function row(values: Row["values"], id = "row_1"): Row {
   return {
     id,
     workspaceId: "ws",
-    collectionId: "col",
+    tableId: "col",
     values,
     createdAt: "2026-09-11T00:00:00.000Z",
     updatedAt: "2026-09-11T00:00:00.000Z",
@@ -83,7 +83,7 @@ describe("sortRows", () => {
 });
 
 describe("validateRow", () => {
-  const collection: Collection = {
+  const table: Table = {
     id: "col",
     workspaceId: "ws",
     name: "Prints",
@@ -103,7 +103,7 @@ describe("validateRow", () => {
 
   it("accepts a valid row", () => {
     expect(
-      validateRow(collection, {
+      validateRow(table, {
         values: {
           title: "Bracket",
           printed: "2026-09-01",
@@ -118,12 +118,12 @@ describe("validateRow", () => {
   });
 
   it("names a missing required field (PRD P0.4)", () => {
-    const errors = validateRow(collection, { values: { title: "Bracket" } });
+    const errors = validateRow(table, { values: { title: "Bracket" } });
     expect(errors).toEqual([{ field: "printed", message: "required" }]);
   });
 
   it("reports every problem at once so one retry can fix them all", () => {
-    const errors = validateRow(collection, {
+    const errors = validateRow(table, {
       values: { title: 4, printed: "not a date", grams: "heavy", material: "nylon" },
     });
     expect(errors.map((e) => e.field).sort()).toEqual([
@@ -136,7 +136,7 @@ describe("validateRow", () => {
   });
 
   it("rejects unknown fields and lists the known ones", () => {
-    const errors = validateRow(collection, {
+    const errors = validateRow(table, {
       values: { title: "x", printed: "2026-09-01", colour: "red" },
     });
     expect(errors).toHaveLength(1);
@@ -145,7 +145,7 @@ describe("validateRow", () => {
   });
 
   it("rejects an option not in a multi_select, and a non-http URL", () => {
-    const errors = validateRow(collection, {
+    const errors = validateRow(table, {
       values: {
         title: "x",
         printed: "2026-09-01",
@@ -159,7 +159,7 @@ describe("validateRow", () => {
 
   it("treats an empty value as absent rather than invalid", () => {
     expect(
-      validateRow(collection, {
+      validateRow(table, {
         values: { title: "x", printed: "2026-09-01", tags: [], grams: null },
       }),
     ).toEqual([]);

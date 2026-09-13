@@ -1,5 +1,5 @@
 /**
- * The Cairn export format, version 1 (ADR-016).
+ * The Cairn export format, version 2 (ADR-016; version 2 is ADR-026).
  *
  * A folder anyone can read without Cairn, and that `cairn import` can read
  * back without losing anything that matters:
@@ -7,7 +7,10 @@
  *   cairn-export.json          manifest: format, version, when, what
  *   pages/<slug>.md            one page: a small front matter, then its Markdown
  *   pages/<slug>/<child>.md    its children, so folders mirror the page tree
- *   collections/<slug>.json    one collection: schema and rows
+ *   tables/<slug>.json         one table: schema and rows
+ *
+ * Version 1 differed only in names: the folder was `collections/` and the
+ * manifest counted `collections`. `cairn import` reads both.
  *
  * Ids travel in the front matter, not the file name, so links survive an
  * import and files can be renamed freely. Derived data (links, search chunks)
@@ -17,7 +20,12 @@
  */
 
 export const FORMAT = "cairn-export";
-export const FORMAT_VERSION = 1;
+export const FORMAT_VERSION = 2;
+
+/** Where an export of this format version keeps its tables. */
+export function tablesFolder(version: number): string {
+  return version >= 2 ? "tables" : "collections";
+}
 export const MANIFEST = "cairn-export.json";
 
 export interface ExportPage {
@@ -31,7 +39,7 @@ export interface ExportPage {
   version?: string;
 }
 
-export interface ExportCollection {
+export interface ExportTable {
   id: string;
   name: string;
   /** The page it sits under (ADR-024). Absent in exports made before it existed. */
@@ -46,7 +54,7 @@ export interface Manifest {
   exported_at: string;
   source: string;
   root: string | null;
-  counts: { pages: number; collections: number; rows: number };
+  counts: { pages: number; tables: number; rows: number };
 }
 
 // File names.
@@ -99,10 +107,10 @@ export function assignPaths(pages: ExportPage[]): Map<string, string> {
   return paths;
 }
 
-export function collectionPath(collection: { id: string; name: string }, taken: Set<string>): string {
-  const name = freeName(slugify(collection.name, collection.id), collection.id, (candidate) => taken.has(candidate));
+export function tablePath(table: { id: string; name: string }, taken: Set<string>): string {
+  const name = freeName(slugify(table.name, table.id), table.id, (candidate) => taken.has(candidate));
   taken.add(name);
-  return `collections/${name}.json`;
+  return `tables/${name}.json`;
 }
 
 // Front matter. A strict subset of YAML: one `key: value` per line, values
@@ -179,25 +187,25 @@ export function orderForImport(pages: ExportPage[]): ExportPage[] {
 }
 
 /**
- * Collections in an order that creates each one after the collections its
- * relation fields point at, since a relation to a collection that does not
+ * Tables in an order that creates each one after the tables its
+ * relation fields point at, since a relation to a table that does not
  * exist yet is refused (ADR-024). A cycle keeps the order it was given.
  */
-export function orderCollections<T extends { id: string; fields: unknown[] }>(collections: T[]): T[] {
-  const byId = new Map(collections.map((collection) => [collection.id, collection]));
+export function orderTables<T extends { id: string; fields: unknown[] }>(tables: T[]): T[] {
+  const byId = new Map(tables.map((table) => [table.id, table]));
   const ordered: T[] = [];
   const done = new Set<string>();
-  const visit = (collection: T, trail: Set<string>) => {
-    if (done.has(collection.id) || trail.has(collection.id)) return;
-    trail.add(collection.id);
-    for (const field of collection.fields as Array<{ type?: unknown; target?: unknown }>) {
+  const visit = (table: T, trail: Set<string>) => {
+    if (done.has(table.id) || trail.has(table.id)) return;
+    trail.add(table.id);
+    for (const field of table.fields as Array<{ type?: unknown; target?: unknown }>) {
       if (field.type !== "relation" || typeof field.target !== "string") continue;
       const target = byId.get(field.target);
-      if (target && target.id !== collection.id) visit(target, trail);
+      if (target && target.id !== table.id) visit(target, trail);
     }
-    done.add(collection.id);
-    ordered.push(collection);
+    done.add(table.id);
+    ordered.push(table);
   };
-  for (const collection of collections) visit(collection, new Set());
+  for (const table of tables) visit(table, new Set());
   return ordered;
 }

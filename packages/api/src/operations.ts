@@ -4,7 +4,7 @@ import {
   parseRowNodeId,
   ValidationError,
   VersionConflictError,
-  type Collection,
+  type Table,
   type Diff,
   type Edge,
   type FieldDef,
@@ -42,14 +42,14 @@ export function rowJson(row: Row): Record<string, unknown> {
   return { id: row.id, values: row.values, version: row.version, updated_at: row.updatedAt };
 }
 
-export function collectionJson(collection: Collection): Record<string, unknown> {
+export function tableJson(table: Table): Record<string, unknown> {
   return {
-    id: collection.id,
-    name: collection.name,
-    parent_id: collection.parentId,
-    version: collection.version,
-    updated_at: collection.updatedAt,
-    fields: collection.fields,
+    id: table.id,
+    name: table.name,
+    parent_id: table.parentId,
+    version: table.version,
+    updated_at: table.updatedAt,
+    fields: table.fields,
   };
 }
 
@@ -76,17 +76,17 @@ export function toFieldDefs(fields: FieldInput[]): FieldDef[] {
 
 /**
  * One end of a link, named for what it is (ADR-024): `page_id` for a page,
- * `collection_id` for a collection, and both `collection_id` and `row_id`
- * for a row. `collectionIds` tells a collection from a page, since a link to
+ * `table_id` for a table, and both `table_id` and `row_id`
+ * for a row. `tableIds` tells a table from a page, since a link to
  * either is written `[[id]]`.
  */
-export function linkJson(edge: Edge, end: "source" | "target", collectionIds: ReadonlySet<string>): Record<string, unknown> {
+export function linkJson(edge: Edge, end: "source" | "target", tableIds: ReadonlySet<string>): Record<string, unknown> {
   const id = end === "source" ? edge.sourceId : edge.targetId;
   const row = parseRowNodeId(id);
   const where = row
-    ? { collection_id: row.collectionId, row_id: row.rowId }
-    : collectionIds.has(id)
-      ? { collection_id: id }
+    ? { table_id: row.tableId, row_id: row.rowId }
+    : tableIds.has(id)
+      ? { table_id: id }
       : { page_id: id };
   return { ...where, type: edge.type, label: edge.label };
 }
@@ -278,7 +278,7 @@ export function describeError(error: unknown, wording: ErrorWording): DescribedE
 }
 
 /**
- * Move a page or a collection under a page, or to the top with null
+ * Move a page or a table under a page, or to the top with null
  * (ADR-024). The id says which: pages are tried first. Needs the version the
  * caller read, like any other write.
  */
@@ -288,7 +288,7 @@ export async function moveRecord(
   parentId: string | null,
   version: string,
   by: WriteContext,
-): Promise<{ kind: "page" | "collection"; id: string; parent_id: string | null; version: string }> {
+): Promise<{ kind: "page" | "table"; id: string; parent_id: string | null; version: string }> {
   const ws = context.workspaceId;
   if (parentId === id) throw new ValidationError([{ field: "parent_id", message: "a record cannot be its own parent" }]);
   if (parentId !== null && !(await context.store.getPage(ws, parentId))) {
@@ -304,8 +304,8 @@ export async function moveRecord(
     const moved = await context.pages.update(ws, id, { title: page.title, body: page.body, tags: page.tags, parentId }, version, by);
     return { kind: "page", id, parent_id: moved.parentId, version: moved.version };
   }
-  const collection = await context.store.getCollection(ws, id);
-  if (!collection) throw new NotFoundError("page or collection", id);
-  const moved = await context.collections.move(ws, id, parentId, version, by);
-  return { kind: "collection", id, parent_id: moved.parentId, version: moved.version };
+  const table = await context.store.getTable(ws, id);
+  if (!table) throw new NotFoundError("page or table", id);
+  const moved = await context.tables.move(ws, id, parentId, version, by);
+  return { kind: "table", id, parent_id: moved.parentId, version: moved.version };
 }

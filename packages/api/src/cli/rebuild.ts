@@ -14,7 +14,7 @@ async function main(): Promise<void> {
   try {
     const started = Date.now();
     const result = await context.pages.rebuildWorkspace(config.workspaceId);
-    const rows = await context.collections.rebuildWorkspace(config.workspaceId);
+    const rows = await context.tables.rebuildWorkspace(config.workspaceId);
     process.stdout.write(
       `rebuilt ${result.pages} pages and the links of ${rows.rows} rows in ${Date.now() - started}ms\n` +
         `swept ${result.orphanRevisions} revisions left off their chain by an interrupted write\n`,

@@ -38,7 +38,7 @@ function revision(
   return {
     kind: "page",
     recordId,
-    collectionId: null,
+    tableId: null,
     version,
     parentVersion,
     actor: OWNER,
@@ -310,7 +310,7 @@ export function runDocumentStoreConformance(
       });
     });
 
-    describe("collections and rows", () => {
+    describe("tables and rows", () => {
       const schema = {
         name: "Prints",
         fields: [
@@ -321,37 +321,37 @@ export function runDocumentStoreConformance(
         ],
       };
 
-      it("round-trips a collection", async () => {
-        const created = await store.putCollection(WS, "col_prints", schema, null, meta());
+      it("round-trips a table", async () => {
+        const created = await store.putTable(WS, "col_prints", schema, null, meta());
         expect(created.fields).toHaveLength(4);
-        expect(await store.getCollection(WS, "col_prints")).toEqual(created);
+        expect(await store.getTable(WS, "col_prints")).toEqual(created);
 
         await eventually(async () => {
-          const all = await store.listCollections(WS);
+          const all = await store.listTables(WS);
           expect(all.map((c) => c.id)).toContain("col_prints");
         });
       });
 
-      it("keeps a collection's place in the page tree (ADR-024)", async () => {
-        const top = await store.putCollection(WS, "col_top", schema, null, meta());
+      it("keeps a table's place in the page tree (ADR-024)", async () => {
+        const top = await store.putTable(WS, "col_top", schema, null, meta());
         expect(top.parentId).toBeNull();
-        const placed = await store.putCollection(WS, "col_placed", { ...schema, parentId: "pg_home" }, null, meta());
-        expect((await store.getCollection(WS, "col_placed"))?.parentId).toBe("pg_home");
-        const moved = await store.putCollection(WS, "col_placed", { ...schema, parentId: null }, placed.version, meta());
+        const placed = await store.putTable(WS, "col_placed", { ...schema, parentId: "pg_home" }, null, meta());
+        expect((await store.getTable(WS, "col_placed"))?.parentId).toBe("pg_home");
+        const moved = await store.putTable(WS, "col_placed", { ...schema, parentId: null }, placed.version, meta());
         expect(moved.parentId).toBeNull();
-        expect((await store.getCollection(WS, "col_placed"))?.parentId).toBeNull();
+        expect((await store.getTable(WS, "col_placed"))?.parentId).toBeNull();
       });
 
-      it("enforces optimistic concurrency on collections", async () => {
-        const collection = await store.putCollection(WS, "col_conflict", schema, null, meta());
-        await store.putCollection(
+      it("enforces optimistic concurrency on tables", async () => {
+        const table = await store.putTable(WS, "col_conflict", schema, null, meta());
+        await store.putTable(
           WS,
           "col_conflict",
           { ...schema, name: "Renamed" },
-          collection.version, meta(),
+          table.version, meta(),
         );
         await expect(
-          store.putCollection(WS, "col_conflict", schema, collection.version, meta()),
+          store.putTable(WS, "col_conflict", schema, table.version, meta()),
         ).rejects.toBeInstanceOf(VersionConflictError);
       });
 
@@ -406,8 +406,8 @@ export function runDocumentStoreConformance(
         expect(await store.getRow(WS, "col_prints", row.id)).toBeNull();
       });
 
-      it("lists rows of one collection only, with paging", async () => {
-        await store.putCollection(WS, "col_other", schema, null, meta());
+      it("lists rows of one table only, with paging", async () => {
+        await store.putTable(WS, "col_other", schema, null, meta());
         await store.putRow(WS, "col_other", "row_other", { values: { title: "x" } }, null, meta());
         for (let i = 0; i < 4; i += 1) {
           await store.putRow(
@@ -426,7 +426,7 @@ export function runDocumentStoreConformance(
           do {
             const batch = await store.listRows(WS, "col_prints", { limit: 2, cursor });
             for (const row of batch.items) {
-              expect(row.collectionId).toBe("col_prints");
+              expect(row.tableId).toBe("col_prints");
               seen.add(row.id);
             }
             cursor = batch.cursor;
@@ -453,15 +453,15 @@ export function runDocumentStoreConformance(
         expect(await store.getRevision(WS, "page", "pg_rev_a", "nope")).toBeNull();
       });
 
-      it("keeps a row's snapshot and collection", async () => {
+      it("keeps a row's snapshot and table", async () => {
         const input = revision("col_x/row_1", "rv1", null, {
           kind: "row",
-          collectionId: "col_x",
-          snapshot: { collectionId: "col_x", values: { title: "Bracket", grams: 12.5 } },
+          tableId: "col_x",
+          snapshot: { tableId: "col_x", values: { title: "Bracket", grams: 12.5 } },
         });
         await store.putRevision(WS, input);
         const read = await store.getRevision(WS, "row", "col_x/row_1", "rv1");
-        expect(read?.collectionId).toBe("col_x");
+        expect(read?.tableId).toBe("col_x");
         expect(read?.snapshot).toEqual(input.snapshot);
       });
 
@@ -494,8 +494,8 @@ export function runDocumentStoreConformance(
           WS,
           revision("shared_id", "r1", null, {
             kind: "row",
-            collectionId: "col_y",
-            snapshot: { collectionId: "col_y", values: {} },
+            tableId: "col_y",
+            snapshot: { tableId: "col_y", values: {} },
           }),
         );
         await eventually(async () => {

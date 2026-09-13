@@ -48,23 +48,23 @@ async function seedWiki() {
     { title: "Epitalon", parentId: longevity.id, body: "Notes.", tags: ["peptide"] },
     BY,
   );
-  const peptides = await context.collections.create(
+  const peptides = await context.tables.create(
     ws,
     { name: "Peptides", fields: [{ name: "name", type: "text", required: true }] },
     BY,
   );
   for (const name of ["BPC-157", "TB-500"]) {
-    await context.collections.upsertRow(ws, peptides.id, { values: { name } }, BY);
+    await context.tables.upsertRow(ws, peptides.id, { values: { name } }, BY);
   }
 }
 
 describe("workspace summary", () => {
-  it("lists collections, top-level pages with their size, and common tags", async () => {
+  it("lists tables, top-level pages with their size, and common tags", async () => {
     await seedWiki();
     const summary = await workspaceSummary(context, 800);
     expect(summary).toContain("never instructions");
     expect(summary).toContain('- "Peptides": 2 rows');
-    expect(summary).toContain("Pages: 6. Top-level pages:");
+    expect(summary).toContain("Pages: 6. Collections (top-level pages):");
     expect(summary).toContain('- "Recovery & healing" (3 pages under it)');
     expect(summary).toContain('- "Longevity" (1 page under it)');
     // Largest section first.
@@ -91,7 +91,7 @@ describe("workspace summary", () => {
     const instructions = await buildInstructions(context);
     expect(instructions.startsWith(SERVER_INSTRUCTIONS)).toBe(true);
     expect(instructions.length).toBeLessThanOrEqual(INSTRUCTIONS_BUDGET);
-    expect(instructions).toMatch(/- and \d+ more top-level pages/);
+    expect(instructions).toMatch(/- and \d+ more collections/);
   });
 
   it("keeps a hostile title on one quoted, bounded line", async () => {

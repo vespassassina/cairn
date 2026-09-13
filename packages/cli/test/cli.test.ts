@@ -127,8 +127,8 @@ describe("cairn", () => {
     });
   });
 
-  it("works with collections: create rows, query, and name bad fields", async () => {
-    const collection = await context.collections.create(
+  it("works with tables: create rows, query, and name bad fields", async () => {
+    const table = await context.tables.create(
       context.workspaceId,
       {
         name: "Prints",
@@ -140,17 +140,21 @@ describe("cairn", () => {
       },
       { actor: { kind: "user", id: "owner", label: "Owner" }, note: null },
     );
-    expect(await cairn("collections")).toBe(0);
+    expect(await cairn("tables")).toBe(0);
     expect(stdout).toContain("Prints  (title:text*, grams:number, material:select)");
+    // The command's name before ADR-026 still works.
+    const listed = stdout;
+    expect(await cairn("collections")).toBe(0);
+    expect(stdout).toBe(listed);
 
-    expect(await cairn("upsert", collection.id, "--set", "title=Canopy", "--set", "grams=22", "--set", "material=TPU")).toBe(0);
-    expect(await cairn("upsert", collection.id, "--set", "title=Mount", "--set", "grams=14", "--set", "material=PLA")).toBe(0);
+    expect(await cairn("upsert", table.id, "--set", "title=Canopy", "--set", "grams=22", "--set", "material=TPU")).toBe(0);
+    expect(await cairn("upsert", table.id, "--set", "title=Mount", "--set", "grams=14", "--set", "material=PLA")).toBe(0);
 
-    expect(await cairn("rows", collection.id, "--where", "grams gt 15")).toBe(0);
+    expect(await cairn("rows", table.id, "--where", "grams gt 15")).toBe(0);
     expect(stdout).toContain('"title":"Canopy"');
     expect(stdout).not.toContain("Mount");
 
-    expect(await cairn("upsert", collection.id, "--set", "grams=heavy")).toBe(1);
+    expect(await cairn("upsert", table.id, "--set", "grams=heavy")).toBe(1);
     expect(stderr).toContain("validation_failed");
     expect(stderr).toContain("title:");
     expect(stderr).toContain("grams:");
@@ -187,22 +191,22 @@ describe("cairn", () => {
     expect(stderr).toContain("cannot reach Cairn");
   });
 
-  it("moves a collection under a page and shows a row's links (ADR-024)", async () => {
+  it("moves a table under a page and shows a row's links (ADR-024)", async () => {
     const ws = context.workspaceId;
     const home = await context.pages.create(ws, { title: "Peptides", body: "Hub." }, { actor: OWNER });
-    const peptides = await context.collections.create(ws, { name: "Peptides", fields: [{ name: "name", type: "text", required: true }] }, { actor: OWNER }, "col_peptides");
-    await context.collections.create(
+    const peptides = await context.tables.create(ws, { name: "Peptides", fields: [{ name: "name", type: "text", required: true }] }, { actor: OWNER }, "col_peptides");
+    await context.tables.create(
       ws,
       { name: "Stacks", fields: [{ name: "title", type: "text", required: true }, { name: "components", type: "relation", target: "col_peptides", multiple: true }] },
       { actor: OWNER },
       "col_stacks",
     );
-    await context.collections.upsertRow(ws, "col_peptides", { values: { name: "BPC-157" } }, { actor: OWNER }, { id: "row_bpc" });
+    await context.tables.upsertRow(ws, "col_peptides", { values: { name: "BPC-157" } }, { actor: OWNER }, { id: "row_bpc" });
     expect(await cairn("upsert", "col_stacks", "--id", "row_wolverine", "--set", "title=Wolverine", "--set", 'components=["row_bpc"]', "--note", "The healing stack")).toBe(0);
 
     expect(await cairn("move", "col_peptides", "--parent", home.id, "--version", peptides.version, "--note", "Group the tables")).toBe(0);
-    expect(stdout).toContain(`ok collection col_peptides now under ${home.id}`);
-    expect(await cairn("collections")).toBe(0);
+    expect(stdout).toContain(`ok table col_peptides now under ${home.id}`);
+    expect(await cairn("tables")).toBe(0);
     expect(stdout).toContain(`under ${home.id}`);
     expect(stdout).toContain("components:relation->col_peptides[]");
 

@@ -1,5 +1,5 @@
 import { NotFoundError, ValidationError } from "../errors.js";
-import { newCollectionId, newRowId, newVersion, revisionRecordId, rowNodeId } from "../ids.js";
+import { newTableId, newRowId, newVersion, revisionRecordId, rowNodeId } from "../ids.js";
 import { diffLines, type Diff } from "../history/diff.js";
 import { readHistory, writeWithRevision } from "../history/revisions.js";
 import type { DocumentStore } from "../ports/document-store.js";
@@ -14,8 +14,8 @@ import {
 import { extractRowReferences } from "../indexer/extract.js";
 import { validateRow, validateSchema } from "../query/validate.js";
 import type {
-  Collection,
-  CollectionInput,
+  Table,
+  TableInput,
   Edge,
   ExpectedVersion,
   Id,
@@ -48,34 +48,34 @@ function valuesAsLines(values: RowSnapshot["values"]): string {
 const MAX_SCAN = 5_000;
 
 /**
- * Collections and rows.
+ * Tables and rows.
  *
- * Filtering and sorting run here, in memory, over one collection (ADR-005 rule
+ * Filtering and sorting run here, in memory, over one table (ADR-005 rule
  * 5). An adapter that declares `rowQueryPushdown` handles the same query
  * natively, and the conformance suite proves the two agree.
  */
-export class CollectionService {
+export class TableService {
   constructor(private readonly store: DocumentStore) {}
 
-  async get(workspaceId: WorkspaceId, id: Id): Promise<Collection> {
-    const collection = await this.store.getCollection(workspaceId, id);
-    if (!collection) throw new NotFoundError("collection", id);
-    return collection;
+  async get(workspaceId: WorkspaceId, id: Id): Promise<Table> {
+    const table = await this.store.getTable(workspaceId, id);
+    if (!table) throw new NotFoundError("table", id);
+    return table;
   }
 
-  async list(workspaceId: WorkspaceId): Promise<Collection[]> {
-    return this.store.listCollections(workspaceId);
+  async list(workspaceId: WorkspaceId): Promise<Table[]> {
+    return this.store.listTables(workspaceId);
   }
 
   /** Schemas are not versioned yet (ADR-008 consequence 5), but carry an actor. */
   async create(
     workspaceId: WorkspaceId,
-    input: CollectionInput,
+    input: TableInput,
     context: WriteContext,
-    id: Id = newCollectionId(),
-  ): Promise<Collection> {
+    id: Id = newTableId(),
+  ): Promise<Table> {
     await this.checkSchema(workspaceId, id, input);
-    return this.store.putCollection(workspaceId, id, { ...input, parentId: input.parentId ?? null }, null, {
+    return this.store.putTable(workspaceId, id, { ...input, parentId: input.parentId ?? null }, null, {
       version: newVersion(),
       actor: context.actor,
       at: new Date().toISOString(),
@@ -83,58 +83,58 @@ export class CollectionService {
   }
 
   /**
-   * Replace a collection's name and schema, and move it when `parentId` is
+   * Replace a table's name and schema, and move it when `parentId` is
    * given (ADR-024). Changing a relation field re-derives the links of every
-   * row in the collection, since they come from the schema as well as the row.
+   * row in the table, since they come from the schema as well as the row.
    */
   async update(
     workspaceId: WorkspaceId,
     id: Id,
-    input: CollectionInput,
+    input: TableInput,
     expectedVersion: ExpectedVersion,
     context: WriteContext,
-  ): Promise<Collection> {
+  ): Promise<Table> {
     await this.checkSchema(workspaceId, id, input);
-    const before = await this.store.getCollection(workspaceId, id);
+    const before = await this.store.getTable(workspaceId, id);
     const parentId = input.parentId !== undefined ? input.parentId : (before?.parentId ?? null);
-    const collection = await this.store.putCollection(workspaceId, id, { ...input, parentId }, expectedVersion, {
+    const table = await this.store.putTable(workspaceId, id, { ...input, parentId }, expectedVersion, {
       version: newVersion(),
       actor: context.actor,
       at: new Date().toISOString(),
     });
-    const relations = (c: Collection | null) => JSON.stringify((c?.fields ?? []).filter((f) => f.type === "relation"));
-    if (before && relations(before) !== relations(collection)) await this.relinkRows(collection);
-    return collection;
+    const relations = (c: Table | null) => JSON.stringify((c?.fields ?? []).filter((f) => f.type === "relation"));
+    if (before && relations(before) !== relations(table)) await this.relinkRows(table);
+    return table;
   }
 
-  /** Move a collection under a page, or to the top with null. */
+  /** Move a table under a page, or to the top with null. */
   async move(
     workspaceId: WorkspaceId,
     id: Id,
     parentId: Id | null,
     expectedVersion: Version,
     context: WriteContext,
-  ): Promise<Collection> {
-    const collection = await this.get(workspaceId, id);
-    return this.update(workspaceId, id, { name: collection.name, fields: collection.fields, parentId }, expectedVersion, context);
+  ): Promise<Table> {
+    const table = await this.get(workspaceId, id);
+    return this.update(workspaceId, id, { name: table.name, fields: table.fields, parentId }, expectedVersion, context);
   }
 
-  /** Collections directly under a page, or at the top for null. */
-  async children(workspaceId: WorkspaceId, parentId: Id | null): Promise<Collection[]> {
-    return (await this.list(workspaceId)).filter((collection) => collection.parentId === parentId);
+  /** Tables directly under a page, or at the top for null. */
+  async children(workspaceId: WorkspaceId, parentId: Id | null): Promise<Table[]> {
+    return (await this.list(workspaceId)).filter((table) => table.parentId === parentId);
   }
 
   /** Pages and rows linking to this row. Eventually consistent, like page backlinks. */
-  async rowBacklinks(workspaceId: WorkspaceId, collectionId: Id, id: Id): Promise<Edge[]> {
-    return this.store.getInboundEdges(workspaceId, rowNodeId(collectionId, id));
+  async rowBacklinks(workspaceId: WorkspaceId, tableId: Id, id: Id): Promise<Edge[]> {
+    return this.store.getInboundEdges(workspaceId, rowNodeId(tableId, id));
   }
 
   /** This row's own links, from its relation fields. */
-  async rowLinks(workspaceId: WorkspaceId, collectionId: Id, id: Id): Promise<Edge[]> {
-    return this.store.getOutboundEdges(workspaceId, rowNodeId(collectionId, id));
+  async rowLinks(workspaceId: WorkspaceId, tableId: Id, id: Id): Promise<Edge[]> {
+    return this.store.getOutboundEdges(workspaceId, rowNodeId(tableId, id));
   }
 
-  /** Pages linking to the collection itself, with `[[collection-id]]`. */
+  /** Pages linking to the table itself, with `[[table-id]]`. */
   async backlinks(workspaceId: WorkspaceId, id: Id): Promise<Edge[]> {
     return this.store.getInboundEdges(workspaceId, id);
   }
@@ -145,7 +145,7 @@ export class CollectionService {
    */
   async rebuildWorkspace(workspaceId: WorkspaceId): Promise<{ rows: number }> {
     let rows = 0;
-    for (const collection of await this.list(workspaceId)) rows += await this.relinkRows(collection);
+    for (const table of await this.list(workspaceId)) rows += await this.relinkRows(table);
     return { rows };
   }
 
@@ -155,23 +155,23 @@ export class CollectionService {
    * row with a relation value, so it stays cheap on every start.
    */
   async needsRelink(workspaceId: WorkspaceId): Promise<boolean> {
-    for (const collection of await this.list(workspaceId)) {
-      if (!collection.fields.some((field) => field.type === "relation")) continue;
-      const batch = await this.store.listRows(workspaceId, collection.id, { limit: 50, cursor: null });
-      const linked = batch.items.find((row) => extractRowReferences(collection, row).length > 0);
+    for (const table of await this.list(workspaceId)) {
+      if (!table.fields.some((field) => field.type === "relation")) continue;
+      const batch = await this.store.listRows(workspaceId, table.id, { limit: 50, cursor: null });
+      const linked = batch.items.find((row) => extractRowReferences(table, row).length > 0);
       if (!linked) continue;
-      return (await this.store.getOutboundEdges(workspaceId, rowNodeId(collection.id, linked.id))).length === 0;
+      return (await this.store.getOutboundEdges(workspaceId, rowNodeId(table.id, linked.id))).length === 0;
     }
     return false;
   }
 
-  private async relinkRows(collection: Collection): Promise<number> {
+  private async relinkRows(table: Table): Promise<number> {
     let count = 0;
     let cursor: string | null = null;
     do {
-      const batch: Paged<Row> = await this.store.listRows(collection.workspaceId, collection.id, { limit: 500, cursor });
+      const batch: Paged<Row> = await this.store.listRows(table.workspaceId, table.id, { limit: 500, cursor });
       for (const row of batch.items) {
-        await this.store.replaceEdgesForSource(collection.workspaceId, rowNodeId(collection.id, row.id), extractRowReferences(collection, row));
+        await this.store.replaceEdgesForSource(table.workspaceId, rowNodeId(table.id, row.id), extractRowReferences(table, row));
         count += 1;
       }
       cursor = batch.cursor;
@@ -179,8 +179,8 @@ export class CollectionService {
     return count;
   }
 
-  private async checkSchema(workspaceId: WorkspaceId, id: Id, input: CollectionInput): Promise<void> {
-    const existing = new Set((await this.list(workspaceId)).map((collection) => collection.id));
+  private async checkSchema(workspaceId: WorkspaceId, id: Id, input: TableInput): Promise<void> {
+    const existing = new Set((await this.list(workspaceId)).map((table) => table.id));
     const errors = validateSchema(id, input.fields, (target) => existing.has(target));
     if (errors.length > 0) throw new ValidationError(errors);
   }
@@ -193,13 +193,13 @@ export class CollectionService {
    */
   async upsertRow(
     workspaceId: WorkspaceId,
-    collectionId: Id,
+    tableId: Id,
     input: RowInput,
     context: WriteContext,
     options: { id?: Id; expectedVersion?: ExpectedVersion } = {},
   ): Promise<Row> {
-    const collection = await this.get(workspaceId, collectionId);
-    const errors = validateRow(collection, input);
+    const table = await this.get(workspaceId, tableId);
+    const errors = validateRow(table, input);
     if (errors.length > 0) throw new ValidationError(errors);
 
     const id = options.id ?? newRowId();
@@ -211,26 +211,26 @@ export class CollectionService {
       {
         workspaceId,
         kind: "row",
-        recordId: revisionRecordId("row", id, collectionId),
-        collectionId,
+        recordId: revisionRecordId("row", id, tableId),
+        tableId,
         expectedVersion,
-        snapshot: { collectionId, values: input.values },
+        snapshot: { tableId, values: input.values },
       },
       context,
-      (meta) => this.store.putRow(workspaceId, collectionId, id, input, expectedVersion, meta),
+      (meta) => this.store.putRow(workspaceId, tableId, id, input, expectedVersion, meta),
     );
     // Derived data after the row, as for pages: a crash in between is
     // repaired by reindex (ADR-005 rules 2 and 3).
-    await this.store.replaceEdgesForSource(workspaceId, rowNodeId(collectionId, id), extractRowReferences(collection, row));
+    await this.store.replaceEdgesForSource(workspaceId, rowNodeId(tableId, id), extractRowReferences(table, row));
     return row;
   }
 
   async getRow(
     workspaceId: WorkspaceId,
-    collectionId: Id,
+    tableId: Id,
     id: Id,
   ): Promise<Row> {
-    const row = await this.store.getRow(workspaceId, collectionId, id);
+    const row = await this.store.getRow(workspaceId, tableId, id);
     if (!row) throw new NotFoundError("row", id);
     return row;
   }
@@ -238,43 +238,43 @@ export class CollectionService {
   /** Records a deletion revision holding the last values, then deletes. */
   async deleteRow(
     workspaceId: WorkspaceId,
-    collectionId: Id,
+    tableId: Id,
     id: Id,
     expectedVersion: Version,
     context: WriteContext,
   ): Promise<void> {
-    const row = await this.getRow(workspaceId, collectionId, id);
+    const row = await this.getRow(workspaceId, tableId, id);
     await writeWithRevision(
       this.store,
       {
         workspaceId,
         kind: "row",
-        recordId: revisionRecordId("row", id, collectionId),
-        collectionId,
+        recordId: revisionRecordId("row", id, tableId),
+        tableId,
         expectedVersion,
-        snapshot: { collectionId, values: row.values },
+        snapshot: { tableId, values: row.values },
         deleted: true,
       },
       context,
-      () => this.store.deleteRow(workspaceId, collectionId, id, expectedVersion),
+      () => this.store.deleteRow(workspaceId, tableId, id, expectedVersion),
     );
-    await this.store.replaceEdgesForSource(workspaceId, rowNodeId(collectionId, id), []);
+    await this.store.replaceEdgesForSource(workspaceId, rowNodeId(tableId, id), []);
   }
 
   // History (ADR-008).
 
   async rowHistory(
     workspaceId: WorkspaceId,
-    collectionId: Id,
+    tableId: Id,
     id: Id,
     options: { limit?: number } = {},
   ): Promise<Revision[]> {
-    const row = await this.store.getRow(workspaceId, collectionId, id);
+    const row = await this.store.getRow(workspaceId, tableId, id);
     return readHistory(
       this.store,
       workspaceId,
       "row",
-      revisionRecordId("row", id, collectionId),
+      revisionRecordId("row", id, tableId),
       row?.version ?? null,
       options,
     );
@@ -282,11 +282,11 @@ export class CollectionService {
 
   async rowRevision(
     workspaceId: WorkspaceId,
-    collectionId: Id,
+    tableId: Id,
     id: Id,
     version: Version,
   ): Promise<RowRevisionView> {
-    const recordId = revisionRecordId("row", id, collectionId);
+    const recordId = revisionRecordId("row", id, tableId);
     const revision = await this.store.getRevision(workspaceId, "row", recordId, version);
     if (!revision) throw new NotFoundError("revision", `${recordId}@${version}`);
     const snapshot = revision.snapshot as RowSnapshot;
@@ -308,16 +308,16 @@ export class CollectionService {
   /** Restore a row's values from an earlier revision, as a new revision. */
   async restoreRow(
     workspaceId: WorkspaceId,
-    collectionId: Id,
+    tableId: Id,
     id: Id,
     version: Version,
     expectedVersion: Version,
     context: WriteContext,
   ): Promise<Row> {
-    const { snapshot } = await this.rowRevision(workspaceId, collectionId, id, version);
+    const { snapshot } = await this.rowRevision(workspaceId, tableId, id, version);
     return this.upsertRow(
       workspaceId,
-      collectionId,
+      tableId,
       { values: snapshot.values },
       { actor: context.actor, note: context.note ?? `Restored version ${version.slice(0, 8)}` },
       { id, expectedVersion },
@@ -330,20 +330,20 @@ export class CollectionService {
    */
   async queryRows(
     workspaceId: WorkspaceId,
-    collectionId: Id,
+    tableId: Id,
     query: RowQuery = {},
     options: { pushdown?: boolean } = {},
   ): Promise<Paged<Row>> {
     const pushdown = options.pushdown ?? true;
     if (pushdown && this.store.capabilities.rowQueryPushdown && this.store.queryRows) {
-      return this.store.queryRows(workspaceId, collectionId, query);
+      return this.store.queryRows(workspaceId, tableId, query);
     }
-    return this.queryRowsInMemory(workspaceId, collectionId, query);
+    return this.queryRowsInMemory(workspaceId, tableId, query);
   }
 
   private async queryRowsInMemory(
     workspaceId: WorkspaceId,
-    collectionId: Id,
+    tableId: Id,
     query: RowQuery,
   ): Promise<Paged<Row>> {
     const limit = clampLimit(query.limit);
@@ -352,7 +352,7 @@ export class CollectionService {
     const rows: Row[] = [];
     let cursor: string | null = null;
     do {
-      const batch: Paged<Row> = await this.store.listRows(workspaceId, collectionId, {
+      const batch: Paged<Row> = await this.store.listRows(workspaceId, tableId, {
         limit: 500,
         cursor,
       });

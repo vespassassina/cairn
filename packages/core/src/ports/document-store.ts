@@ -1,7 +1,7 @@
 import type {
   Actor,
-  Collection,
-  CollectionInput,
+  Table,
+  TableInput,
   EdgeInput,
   Edge,
   ExpectedVersion,
@@ -37,7 +37,7 @@ export interface DocumentStoreCapabilities {
  * rule 4). Two levels exist:
  *
  * 1. Immediate. A read after a successful write sees that write. All point
- *    reads and writes of pages, collections and rows are immediate.
+ *    reads and writes of pages, tables and rows are immediate.
  * 2. Eventual, bounded at {@link EVENTUAL_CONSISTENCY_BOUND_MS}. Everything
  *    derived, and every list operation, may lag. Tests poll, they never read
  *    once straight after a write.
@@ -104,25 +104,25 @@ export interface DocumentStore {
   /** Eventual. Backlinks. One partition query, never a scan. */
   getInboundEdges(workspaceId: WorkspaceId, targetId: Id): Promise<Edge[]>;
 
-  // Collections and rows.
+  // Tables and rows.
 
   /** Immediate. */
-  getCollection(workspaceId: WorkspaceId, id: Id): Promise<Collection | null>;
+  getTable(workspaceId: WorkspaceId, id: Id): Promise<Table | null>;
 
   /** Immediate. @throws VersionConflictError */
-  putCollection(
+  putTable(
     workspaceId: WorkspaceId,
     id: Id,
-    input: CollectionInput,
+    input: TableInput,
     expectedVersion: ExpectedVersion,
     meta: WriteMeta,
-  ): Promise<Collection>;
+  ): Promise<Table>;
 
   /** Eventual. */
-  listCollections(workspaceId: WorkspaceId): Promise<Collection[]>;
+  listTables(workspaceId: WorkspaceId): Promise<Table[]>;
 
   /** Immediate. */
-  getRow(workspaceId: WorkspaceId, collectionId: Id, id: Id): Promise<Row | null>;
+  getRow(workspaceId: WorkspaceId, tableId: Id, id: Id): Promise<Row | null>;
 
   /**
    * Immediate. Validation happens in core before this is called, so an adapter
@@ -132,7 +132,7 @@ export interface DocumentStore {
    */
   putRow(
     workspaceId: WorkspaceId,
-    collectionId: Id,
+    tableId: Id,
     id: Id,
     input: RowInput,
     expectedVersion: ExpectedVersion,
@@ -142,7 +142,7 @@ export interface DocumentStore {
   /** Immediate. @throws VersionConflictError */
   deleteRow(
     workspaceId: WorkspaceId,
-    collectionId: Id,
+    tableId: Id,
     id: Id,
     expectedVersion: ExpectedVersion,
   ): Promise<void>;
@@ -153,7 +153,7 @@ export interface DocumentStore {
    */
   listRows(
     workspaceId: WorkspaceId,
-    collectionId: Id,
+    tableId: Id,
     options?: { limit?: number; cursor?: string | null },
   ): Promise<Paged<Row>>;
 
@@ -164,7 +164,7 @@ export interface DocumentStore {
    */
   queryRows?(
     workspaceId: WorkspaceId,
-    collectionId: Id,
+    tableId: Id,
     query: RowQuery,
   ): Promise<Paged<Row>>;
 

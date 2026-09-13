@@ -2,8 +2,8 @@ import { DatabaseSync } from "node:sqlite";
 import {
   VersionConflictError,
   type Actor,
-  type Collection,
-  type CollectionInput,
+  type Table,
+  type TableInput,
   type DocumentStore,
   type DocumentStoreCapabilities,
   type Edge,
@@ -28,7 +28,7 @@ import {
  * step, no dependency.
  *
  * This adapter is the reference implementation and the one CI always runs
- * (PRD R3). It declares no pushdown capability: collection filtering stays in
+ * (PRD R3). It declares no pushdown capability: table filtering stays in
  * core, which keeps the in-memory path exercised on every run.
  */
 
@@ -42,6 +42,9 @@ const LEGACY_ACTOR = JSON.stringify({
   label: "Before history was recorded",
 } satisfies Actor);
 
+// Tables are stored under the name they had before ADR-026: the
+// `collections` table and the `collection_id` columns. Storage names are
+// private to this adapter, and keeping them needs no migration.
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS pages (
   workspace_id TEXT NOT NULL,
@@ -131,7 +134,7 @@ interface PageRecord {
   version: string;
 }
 
-interface CollectionRecord {
+interface TableRecord {
   workspace_id: string;
   id: string;
   name: string;
@@ -174,7 +177,7 @@ function toRevision(record: RevisionRecord): Revision {
     workspaceId: record.workspace_id,
     kind: record.kind as RevisionKind,
     recordId: record.record_id,
-    collectionId: record.collection_id,
+    tableId: record.collection_id,
     version: record.version,
     parentVersion: record.parent_version,
     actor: JSON.parse(record.actor) as Actor,
@@ -227,12 +230,12 @@ function toPage(record: PageRecord): Page {
   };
 }
 
-function toCollection(record: CollectionRecord): Collection {
+function toTable(record: TableRecord): Table {
   return {
     id: record.id,
     workspaceId: record.workspace_id,
     name: record.name,
-    fields: JSON.parse(record.fields) as Collection["fields"],
+    fields: JSON.parse(record.fields) as Table["fields"],
     parentId: record.parent_id ?? null,
     createdAt: record.created_at,
     updatedAt: record.updated_at,
@@ -245,7 +248,7 @@ function toRow(record: RowRecord): Row {
   return {
     id: record.id,
     workspaceId: record.workspace_id,
-    collectionId: record.collection_id,
+    tableId: record.collection_id,
     values: JSON.parse(record.values_) as Row["values"],
     createdAt: record.created_at,
     updatedAt: record.updated_at,
@@ -306,7 +309,7 @@ export class SqliteDocumentStore implements DocumentStore {
           `ALTER TABLE ${table} ADD COLUMN updated_by TEXT NOT NULL DEFAULT '${LEGACY_ACTOR}'`,
         );
       }
-      // Collections gained a place in the page tree (ADR-024).
+      // Tables gained a place in the page tree (ADR-024).
       if (table === "collections" && !columns.some((column) => column.name === "parent_id")) {
         this.db.exec("ALTER TABLE collections ADD COLUMN parent_id TEXT");
       }
@@ -504,26 +507,26 @@ export class SqliteDocumentStore implements DocumentStore {
     );
   }
 
-  // Collections and rows.
+  // Tables and rows.
 
-  async getCollection(workspaceId: WorkspaceId, id: Id): Promise<Collection | null> {
+  async getTable(workspaceId: WorkspaceId, id: Id): Promise<Table | null> {
     const record = this.db
       .prepare("SELECT * FROM collections WHERE workspace_id = ? AND id = ?")
-      .get(workspaceId, id) as CollectionRecord | undefined;
-    return record ? toCollection(record) : null;
+      .get(workspaceId, id) as TableRecord | undefined;
+    return record ? toTable(record) : null;
   }
 
-  async putCollection(
+  async putTable(
     workspaceId: WorkspaceId,
     id: Id,
-    input: CollectionInput,
+    input: TableInput,
     expectedVersion: ExpectedVersion,
     meta: WriteMeta,
-  ): Promise<Collection> {
-    const existing = await this.getCollection(workspaceId, id);
-    this.assertVersion("collection", id, existing, expectedVersion);
+  ): Promise<Table> {
+    const existing = await this.getTable(workspaceId, id);
+    this.assertVersion("table", id, existing, expectedVersion);
 
-    const collection: Collection = {
+    const table: Table = {
       id,
       workspaceId,
       name: input.name,
@@ -542,12 +545,12 @@ export class SqliteDocumentStore implements DocumentStore {
              WHERE workspace_id = ? AND id = ? AND version = ?`,
           )
           .run(
-            collection.name,
-            JSON.stringify(collection.fields),
-            collection.parentId,
-            collection.updatedAt,
-            JSON.stringify(collection.updatedBy),
-            collection.version,
+            table.name,
+            JSON.stringify(table.fields),
+            table.parentId,
+            table.updatedAt,
+            JSON.stringify(table.updatedBy),
+            table.version,
             workspaceId,
             id,
             existing.version,
@@ -561,63 +564,63 @@ export class SqliteDocumentStore implements DocumentStore {
           .run(
             workspaceId,
             id,
-            collection.name,
-            JSON.stringify(collection.fields),
-            collection.parentId,
-            collection.createdAt,
-            collection.updatedAt,
-            JSON.stringify(collection.updatedBy),
-            collection.version,
+            table.name,
+            JSON.stringify(table.fields),
+            table.parentId,
+            table.createdAt,
+            table.updatedAt,
+            JSON.stringify(table.updatedBy),
+            table.version,
           );
 
     if (applied.changes === 0) {
       throw new VersionConflictError(
-        "collection",
+        "table",
         id,
         expectedVersion,
-        await this.getCollection(workspaceId, id),
+        await this.getTable(workspaceId, id),
       );
     }
-    return collection;
+    return table;
   }
 
-  async listCollections(workspaceId: WorkspaceId): Promise<Collection[]> {
-    const records = asRecords<CollectionRecord>(
+  async listTables(workspaceId: WorkspaceId): Promise<Table[]> {
+    const records = asRecords<TableRecord>(
       this.db
         .prepare("SELECT * FROM collections WHERE workspace_id = ? ORDER BY id")
         .all(workspaceId),
     );
-    return records.map(toCollection);
+    return records.map(toTable);
   }
 
   async getRow(
     workspaceId: WorkspaceId,
-    collectionId: Id,
+    tableId: Id,
     id: Id,
   ): Promise<Row | null> {
     const record = this.db
       .prepare(
         "SELECT * FROM rows_ WHERE workspace_id = ? AND collection_id = ? AND id = ?",
       )
-      .get(workspaceId, collectionId, id) as RowRecord | undefined;
+      .get(workspaceId, tableId, id) as RowRecord | undefined;
     return record ? toRow(record) : null;
   }
 
   async putRow(
     workspaceId: WorkspaceId,
-    collectionId: Id,
+    tableId: Id,
     id: Id,
     input: RowInput,
     expectedVersion: ExpectedVersion,
     meta: WriteMeta,
   ): Promise<Row> {
-    const existing = await this.getRow(workspaceId, collectionId, id);
+    const existing = await this.getRow(workspaceId, tableId, id);
     this.assertVersion("row", id, existing, expectedVersion);
 
     const row: Row = {
       id,
       workspaceId,
-      collectionId,
+      tableId,
       values: input.values,
       createdAt: existing?.createdAt ?? meta.at,
       updatedAt: meta.at,
@@ -637,7 +640,7 @@ export class SqliteDocumentStore implements DocumentStore {
             JSON.stringify(row.updatedBy),
             row.version,
             workspaceId,
-            collectionId,
+            tableId,
             id,
             existing.version,
           )
@@ -649,7 +652,7 @@ export class SqliteDocumentStore implements DocumentStore {
           )
           .run(
             workspaceId,
-            collectionId,
+            tableId,
             id,
             JSON.stringify(row.values),
             row.createdAt,
@@ -663,7 +666,7 @@ export class SqliteDocumentStore implements DocumentStore {
         "row",
         id,
         expectedVersion,
-        await this.getRow(workspaceId, collectionId, id),
+        await this.getRow(workspaceId, tableId, id),
       );
     }
     return row;
@@ -671,23 +674,23 @@ export class SqliteDocumentStore implements DocumentStore {
 
   async deleteRow(
     workspaceId: WorkspaceId,
-    collectionId: Id,
+    tableId: Id,
     id: Id,
     expectedVersion: ExpectedVersion,
   ): Promise<void> {
-    const existing = await this.getRow(workspaceId, collectionId, id);
+    const existing = await this.getRow(workspaceId, tableId, id);
     this.assertVersion("row", id, existing, expectedVersion);
     this.db
       .prepare(
         `DELETE FROM rows_
          WHERE workspace_id = ? AND collection_id = ? AND id = ? AND version = ?`,
       )
-      .run(workspaceId, collectionId, id, existing!.version);
+      .run(workspaceId, tableId, id, existing!.version);
   }
 
   async listRows(
     workspaceId: WorkspaceId,
-    collectionId: Id,
+    tableId: Id,
     options: { limit?: number; cursor?: string | null } = {},
   ): Promise<Paged<Row>> {
     const limit = clampLimit(options.limit);
@@ -699,7 +702,7 @@ export class SqliteDocumentStore implements DocumentStore {
            WHERE workspace_id = ? AND collection_id = ? AND id > ?
            ORDER BY id LIMIT ?`,
         )
-        .all(workspaceId, collectionId, after, limit + 1),
+        .all(workspaceId, tableId, after, limit + 1),
     );
     return this.paginate(records.map(toRow), limit);
   }
@@ -720,7 +723,7 @@ export class SqliteDocumentStore implements DocumentStore {
         revision.kind,
         revision.recordId,
         revision.version,
-        revision.collectionId,
+        revision.tableId,
         revision.parentVersion,
         JSON.stringify(revision.actor),
         revision.actor.kind,

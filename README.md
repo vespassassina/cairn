@@ -74,7 +74,7 @@ deploy/azure/deploy.sh
 
 ## Your data
 
-`cairn export <folder>` writes every page as a Markdown file, in folders that mirror your page tree, and every collection as JSON. It needs no Cairn to read. `cairn import <folder>` reads it back into any Cairn, keeping ids and links, and running it twice changes nothing. Export everything, or one page and everything under it with `--root` (ADR-016).
+`cairn export <folder>` writes every page as a Markdown file, in folders that mirror your page tree, and every table as JSON. It needs no Cairn to read. `cairn import <folder>` reads it back into any Cairn, keeping ids and links, and running it twice changes nothing. Export everything, or one page and everything under it with `--root` (ADR-016).
 
 `cairn sync <a> <b>` keeps two Cairns the same, such as your laptop and a cloud copy: changes and deletions go both ways, and when both sides changed a page, the newer edit wins and the other stays in its history (ADR-023). Add `--every 5m` to keep them in step.
 

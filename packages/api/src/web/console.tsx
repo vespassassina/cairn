@@ -11,7 +11,7 @@ import {
   rowNodeId,
   ValidationError,
   VersionConflictError,
-  type Collection,
+  type Table,
   type Edge,
   type FieldDef,
   type FieldError,
@@ -34,7 +34,7 @@ import { NO_LOCAL_TRUST, trustedForConsole, type LocalTrust } from "../trust.js"
 
 /**
  * The review console (ADR-009): recent changes, read-mode pages, a Markdown
- * editor, history with restore, collections as a table, and search.
+ * editor, history with restore, tables, and search.
  *
  * Rendered on the server, plain forms, posts that redirect. Everything works
  * with JavaScript off except table sorting and the "/" shortcut.
@@ -116,63 +116,63 @@ async function allPages(context: AppContext): Promise<Page[]> {
   return pages;
 }
 
-const collectionHref = (id: string) => `/t/${encodeURIComponent(id)}`;
-const rowHref = (collectionId: string, rowId: string) => `${collectionHref(collectionId)}/r/${encodeURIComponent(rowId)}`;
+const tableHref = (id: string) => `/t/${encodeURIComponent(id)}`;
+const rowHref = (tableId: string, rowId: string) => `${tableHref(tableId)}/r/${encodeURIComponent(rowId)}`;
 
 interface LinkedRow {
-  collection: Collection;
+  table: Table;
   row: Row;
 }
 
 /**
  * Names and console addresses for everything a link can point at: pages,
- * collections, and the rows given (ADR-024). Pages win a clash of ids.
+ * tables, and the rows given (ADR-024). Pages win a clash of ids.
  */
-function resolverFor(pages: Page[], collections: Collection[] = [], rows: LinkedRow[] = []): LinkResolver {
+function resolverFor(pages: Page[], tables: Table[] = [], rows: LinkedRow[] = []): LinkResolver {
   const titles = new Map<string, string>();
   const hrefs = new Map<string, string>();
   for (const page of pages) {
     titles.set(page.id, page.title);
     hrefs.set(page.id, pageHref(page.id));
   }
-  for (const collection of collections) {
-    if (titles.has(collection.id)) continue;
-    titles.set(collection.id, collection.name);
-    hrefs.set(collection.id, collectionHref(collection.id));
+  for (const table of tables) {
+    if (titles.has(table.id)) continue;
+    titles.set(table.id, table.name);
+    hrefs.set(table.id, tableHref(table.id));
   }
-  for (const { collection, row } of rows) {
-    const id = rowNodeId(collection.id, row.id);
-    titles.set(id, `${collection.name}: ${rowLabel(row.values, collection, row.id)}`);
-    hrefs.set(id, rowHref(collection.id, row.id));
+  for (const { table, row } of rows) {
+    const id = rowNodeId(table.id, row.id);
+    titles.set(id, `${table.name}: ${rowLabel(row.values, table, row.id)}`);
+    hrefs.set(id, rowHref(table.id, row.id));
   }
   return { title: (id) => titles.get(id) ?? null, href: (id) => hrefs.get(id) ?? null };
 }
 
 /** The rows behind a set of link ends, for their names. Ids that are not rows are skipped. */
-async function rowsFor(context: AppContext, ids: string[], collections: Collection[]): Promise<LinkedRow[]> {
-  const byId = new Map(collections.map((collection) => [collection.id, collection]));
+async function rowsFor(context: AppContext, ids: string[], tables: Table[]): Promise<LinkedRow[]> {
+  const byId = new Map(tables.map((table) => [table.id, table]));
   const found: LinkedRow[] = [];
   for (const id of new Set(ids)) {
     const parsed = parseRowNodeId(id);
-    const collection = parsed ? byId.get(parsed.collectionId) : undefined;
-    if (!parsed || !collection) continue;
-    const row = await context.store.getRow(context.workspaceId, collection.id, parsed.rowId);
-    if (row) found.push({ collection, row });
+    const table = parsed ? byId.get(parsed.tableId) : undefined;
+    if (!parsed || !table) continue;
+    const row = await context.store.getRow(context.workspaceId, table.id, parsed.rowId);
+    if (row) found.push({ table, row });
   }
   return found;
 }
 
-/** Every row of the collections a table's relation fields point at, for their names. */
-async function targetRows(context: AppContext, collection: Collection, collections: Collection[]): Promise<LinkedRow[]> {
+/** Every row of the tables a table's relation fields point at, for their names. */
+async function targetRows(context: AppContext, table: Table, tables: Table[]): Promise<LinkedRow[]> {
   const targets = new Set(
-    collection.fields.filter((field) => field.type === "relation" && relationTarget(field) !== "pages").map(relationTarget),
+    table.fields.filter((field) => field.type === "relation" && relationTarget(field) !== "pages").map(relationTarget),
   );
   const rows: LinkedRow[] = [];
   for (const target of targets) {
-    const targetCollection = collections.find((c) => c.id === target);
-    if (!targetCollection) continue;
-    const page = await context.collections.queryRows(context.workspaceId, target, { limit: 500 });
-    for (const row of page.items) rows.push({ collection: targetCollection, row });
+    const targetTable = tables.find((c) => c.id === target);
+    if (!targetTable) continue;
+    const page = await context.tables.queryRows(context.workspaceId, target, { limit: 500 });
+    for (const row of page.items) rows.push({ table: targetTable, row });
   }
   return rows;
 }
@@ -208,22 +208,22 @@ function summaryOf(body: string, max = 180): string {
 }
 
 /** A human label for a row: its first non-empty text field, or its id. */
-function rowLabel(values: Record<string, FieldValue>, collection: Collection | null, id: string) {
-  const textField = collection?.fields.find(
+function rowLabel(values: Record<string, FieldValue>, table: Table | null, id: string) {
+  const textField = table?.fields.find(
     (field) => field.type === "text" && typeof values[field.name] === "string" && values[field.name],
   );
   return textField ? String(values[textField.name]) : id;
 }
 
 function rowIdOf(revision: Revision): string {
-  return revision.recordId.slice((revision.collectionId?.length ?? 0) + 1);
+  return revision.recordId.slice((revision.tableId?.length ?? 0) + 1);
 }
 
 // Components.
 
-const Tree: FC<{ pages: Page[]; collections?: Collection[]; currentId?: string | undefined; rootId?: string | null }> = ({
+const Tree: FC<{ pages: Page[]; tables?: Table[]; currentId?: string | undefined; rootId?: string | null }> = ({
   pages,
-  collections = [],
+  tables = [],
   currentId,
   rootId = null,
 }) => {
@@ -236,23 +236,23 @@ const Tree: FC<{ pages: Page[]; collections?: Collection[]; currentId?: string |
     children.set(parent, list);
   }
   for (const list of children.values()) list.sort((a, b) => a.title.localeCompare(b.title));
-  // Collections sit in the tree under their page (ADR-024), after its child pages.
-  const tables = new Map<string | null, Collection[]>();
-  for (const collection of collections) {
-    const parent = collection.parentId && byId.has(collection.parentId) ? collection.parentId : null;
-    tables.set(parent, [...(tables.get(parent) ?? []), collection]);
+  // Tables sit in the tree under their page (ADR-024), after its child pages.
+  const tablesUnder = new Map<string | null, Table[]>();
+  for (const table of tables) {
+    const parent = table.parentId && byId.has(table.parentId) ? table.parentId : null;
+    tablesUnder.set(parent, [...(tablesUnder.get(parent) ?? []), table]);
   }
-  for (const list of tables.values()) list.sort((a, b) => a.name.localeCompare(b.name));
-  const current = currentId ? collections.find((collection) => collection.id === currentId) : undefined;
+  for (const list of tablesUnder.values()) list.sort((a, b) => a.name.localeCompare(b.name));
+  const current = currentId ? tables.find((table) => table.id === currentId) : undefined;
   const open = new Set(ancestorsOf(current?.parentId ?? currentId ?? null, byId).map((page) => page.id));
   if (current?.parentId) open.add(current.parentId);
   if (currentId) open.add(currentId);
 
   const tableItems = (parent: string | null): Child[] =>
-    (tables.get(parent) ?? []).map((collection) => (
+    (tablesUnder.get(parent) ?? []).map((table) => (
       <li>
-        <a href={collectionHref(collection.id)} aria-current={collection.id === currentId ? "page" : undefined}>
-          {collection.name}
+        <a href={tableHref(table.id)} aria-current={table.id === currentId ? "page" : undefined}>
+          {table.name}
         </a>{" "}
         <span class="ak-small">table</span>
       </li>
@@ -269,7 +269,7 @@ const Tree: FC<{ pages: Page[]; collections?: Collection[]; currentId?: string |
             {page.title}
           </a>
         );
-        return children.has(page.id) || tables.has(page.id) ? (
+        return children.has(page.id) || tablesUnder.has(page.id) ? (
           <li>
             <details open={open.has(page.id)}>
               <summary>{link}</summary>
@@ -426,31 +426,31 @@ const RevisionTimeline: FC<{
     </ol>
   );
 
-/** Rows in a collection, as text: "79", or "500+" past the scan limit. */
-async function rowCount(context: AppContext, collectionId: string): Promise<string> {
-  const page = await context.collections.queryRows(context.workspaceId, collectionId, { limit: 500 });
+/** Rows in a table, as text: "79", or "500+" past the scan limit. */
+async function rowCount(context: AppContext, tableId: string): Promise<string> {
+  const page = await context.tables.queryRows(context.workspaceId, tableId, { limit: 500 });
   return `${page.items.length}${page.cursor ? "+" : ""}`;
 }
 
 /**
- * The collections a page holds, shown in the page below its text, once
- * (ADR-024), and a form to put another collection here: how a page becomes
- * the root of collections.
+ * The tables a page holds, shown in the page below its text, once
+ * (ADR-024), and a form to put another table here: how a page becomes
+ * a place for tables.
  */
-const PageTables: FC<{ page: Page; tables: Collection[]; counts: Map<string, string>; others: Collection[] }> = ({
+const PageTables: FC<{ page: Page; tables: Table[]; counts: Map<string, string>; others: Table[] }> = ({
   page,
   tables,
   counts,
   others,
 }) => (
   <section class="cairn-tables" aria-label="Tables in this page">
-    {tables.map((collection) => (
+    {tables.map((table) => (
       <div class="cairn-table-card">
         <h2>
-          <a href={collectionHref(collection.id)}>{collection.name}</a>
+          <a href={tableHref(table.id)}>{table.name}</a>
         </h2>
         <p class="ak-small">
-          {counts.get(collection.id) ?? "0"} rows · {collection.fields.map((field) => field.name).join(", ")}
+          {counts.get(table.id) ?? "0"} rows · {table.fields.map((field) => field.name).join(", ")}
         </p>
       </div>
     ))}
@@ -459,11 +459,11 @@ const PageTables: FC<{ page: Page; tables: Collection[]; counts: Map<string, str
         <summary>Put a table here</summary>
         <form method="post" action={`${pageHref(page.id)}/tables`} class="cairn-editor">
           <label for="adopt">Table</label>
-          <select class="ak-select" id="adopt" name="collection">
+          <select class="ak-select" id="adopt" name="table">
             {[...others]
               .sort((a, b) => a.name.localeCompare(b.name))
-              .map((collection) => (
-                <option value={`${collection.id}@${collection.version}`}>{collection.name}</option>
+              .map((table) => (
+                <option value={`${table.id}@${table.version}`}>{table.name}</option>
               ))}
           </select>
           <label for="adopt_note">Why (optional)</label>
@@ -554,11 +554,11 @@ function fieldInput(field: FieldDef, value: FieldValue | undefined, error?: stri
 }
 
 function readRowValues(
-  collection: Collection,
+  table: Table,
   form: Record<string, string | File | (string | File)[]>,
 ): Record<string, FieldValue> {
   const values: Record<string, FieldValue> = {};
-  for (const field of collection.fields) {
+  for (const field of table.fields) {
     const raw = form[field.name];
     const all = (Array.isArray(raw) ? raw : raw === undefined ? [] : [raw]).filter(
       (entry): entry is string => typeof entry === "string",
@@ -587,14 +587,14 @@ function readRowValues(
 }
 
 const RowForm: FC<{
-  collection: Collection;
+  table: Table;
   action: string;
   values: Record<string, FieldValue>;
   errors: FieldError[];
   version?: string | undefined;
   note: string;
   cancel: string;
-}> = ({ collection, action, values, errors, version, note, cancel }) => (
+}> = ({ table, action, values, errors, version, note, cancel }) => (
   <form method="post" action={action} class="cairn-editor" data-dirty-guard>
     {version ? <input type="hidden" name="version" value={version} /> : null}
     {errors.length > 0 ? (
@@ -603,7 +603,7 @@ const RowForm: FC<{
       </Banner>
     ) : null}
     <div class="cairn-fields">
-      {collection.fields.map((field) => {
+      {table.fields.map((field) => {
         const error = errors.find((e) => e.field === field.name)?.message;
         return (
           <>
@@ -792,7 +792,7 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
   // the tree, and everything under it: a wiki, with its pages and tables.
   app.get("/", async (c) => {
     const pages = await allPages(context);
-    const tables = await context.collections.list(ws);
+    const tables = await context.tables.list(ws);
     const byId = new Map(pages.map((page) => [page.id, page]));
     const rootOf = (id: string | null): string | null => {
       let at = id ? byId.get(id) : undefined;
@@ -808,7 +808,7 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
       if (root && root !== page.id) pageCount.set(root, (pageCount.get(root) ?? 0) + 1);
     }
     const tableCount = new Map<string, number>();
-    const loose: Collection[] = [];
+    const loose: Table[] = [];
     for (const table of tables) {
       const root = rootOf(table.parentId);
       if (root) tableCount.set(root, (tableCount.get(root) ?? 0) + 1);
@@ -848,7 +848,7 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
             <ul>
               {loose.map((table) => (
                 <li>
-                  <a href={collectionHref(table.id)}>{table.name}</a>
+                  <a href={tableHref(table.id)}>{table.name}</a>
                 </li>
               ))}
             </ul>
@@ -872,22 +872,22 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
       cursor,
       ...(actorKind ? { actorKind } : {}),
     });
-    const collections = new Map(
-      (await context.collections.list(ws)).map((collection) => [collection.id, collection]),
+    const tables = new Map(
+      (await context.tables.list(ws)).map((table) => [table.id, table]),
     );
 
     const hrefFor = (revision: Revision) =>
       revision.kind === "page"
         ? `${pageHref(revision.recordId)}/v/${encodeURIComponent(revision.version)}`
-        : `/t/${encodeURIComponent(revision.collectionId ?? "")}/r/${encodeURIComponent(
+        : `/t/${encodeURIComponent(revision.tableId ?? "")}/r/${encodeURIComponent(
             rowIdOf(revision),
           )}/v/${encodeURIComponent(revision.version)}`;
 
     const labelFor = (revision: Revision) => {
       if (revision.kind === "page") return (revision.snapshot as PageSnapshot).title;
-      const collection = collections.get(revision.collectionId ?? "") ?? null;
+      const table = tables.get(revision.tableId ?? "") ?? null;
       const values = (revision.snapshot as { values: Record<string, FieldValue> }).values;
-      return `${collection?.name ?? "Table"}: ${rowLabel(values, collection, rowIdOf(revision))}`;
+      return `${table?.name ?? "Table"}: ${rowLabel(values, table, rowIdOf(revision))}`;
     };
 
     const chip = (value: string | undefined, label: string) => (
@@ -985,15 +985,15 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
       return notFound(c, `Page ${c.req.param("id")}`);
     }
     const pages = await allPages(context);
-    const collections = await context.collections.list(ws);
+    const tables = await context.tables.list(ws);
     const byId = new Map(pages.map((p) => [p.id, p]));
     const { outbound, inbound } = await context.pages.neighbours(ws, page.id);
-    const linkedRows = await rowsFor(context, [...outbound.map((e) => e.targetId), ...inbound.map((e) => e.sourceId)], collections);
-    const titles = resolverFor(pages, collections, linkedRows);
+    const linkedRows = await rowsFor(context, [...outbound.map((e) => e.targetId), ...inbound.map((e) => e.sourceId)], tables);
+    const titles = resolverFor(pages, tables, linkedRows);
     const children = pages.filter((p) => p.parentId === page.id);
-    const tablesHere = collections.filter((collection) => collection.parentId === page.id);
+    const tablesHere = tables.filter((table) => table.parentId === page.id);
     const tableCounts = new Map(
-      await Promise.all(tablesHere.map(async (collection) => [collection.id, await rowCount(context, collection.id)] as const)),
+      await Promise.all(tablesHere.map(async (table) => [table.id, await rowCount(context, table.id)] as const)),
     );
     const flash = c.req.query("saved")
       ? "Saved."
@@ -1007,7 +1007,7 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
       c,
       <Layout title={page.title} section="collections">
         <div class="cairn-page">
-          <Tree pages={pages} collections={collections} currentId={page.id} rootId={ancestorsOf(page.id, byId)[0]?.id ?? page.id} />
+          <Tree pages={pages} tables={tables} currentId={page.id} rootId={ancestorsOf(page.id, byId)[0]?.id ?? page.id} />
           <div>
             {flash ? <Banner kind="ok">{flash}</Banner> : null}
             <ol class="ak-breadcrumb">
@@ -1041,7 +1041,7 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
                 raw(renderMarkdown(page.body, titles))
               )}
             </article>
-            <PageTables page={page} tables={tablesHere} counts={tableCounts} others={collections.filter((c) => c.parentId !== page.id)} />
+            <PageTables page={page} tables={tablesHere} counts={tableCounts} others={tables.filter((c) => c.parentId !== page.id)} />
           </div>
           <aside class="cairn-rail" aria-label="About this page">
             <h3>Linked from</h3>
@@ -1386,28 +1386,28 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
     );
   });
 
-  // Collections.
+  // Tables.
 
   app.get("/t", async (c) => {
-    const collections = await context.collections.list(ws);
+    const tables = await context.tables.list(ws);
     const pages = await allPages(context);
     const byId = new Map(pages.map((page) => [page.id, page]));
     const counts = new Map(
-      await Promise.all(collections.map(async (collection) => [collection.id, await rowCount(context, collection.id)] as const)),
+      await Promise.all(tables.map(async (table) => [table.id, await rowCount(context, table.id)] as const)),
     );
-    // Grouped by the page each collection sits under (ADR-024): the roots,
-    // by title, then the collections under no page.
-    const groups = new Map<string | null, Collection[]>();
-    for (const collection of collections) {
-      const parent = collection.parentId && byId.has(collection.parentId) ? collection.parentId : null;
-      groups.set(parent, [...(groups.get(parent) ?? []), collection]);
+    // Grouped by the page each table sits under (ADR-024): the roots,
+    // by title, then the tables under no page.
+    const groups = new Map<string | null, Table[]>();
+    for (const table of tables) {
+      const parent = table.parentId && byId.has(table.parentId) ? table.parentId : null;
+      groups.set(parent, [...(groups.get(parent) ?? []), table]);
     }
     const roots = [...groups.keys()]
       .filter((id): id is string => id !== null)
       .sort((a, b) => byId.get(a)!.title.localeCompare(byId.get(b)!.title));
     const order: Array<string | null> = [...roots, ...(groups.has(null) ? [null] : [])];
 
-    const table = (list: Collection[]) => (
+    const tableOf = (list: Table[]) => (
       <div class="ak-tblwrap">
         <table class="ak-table">
           <thead>
@@ -1421,15 +1421,15 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
           <tbody>
             {[...list]
               .sort((a, b) => a.name.localeCompare(b.name))
-              .map((collection) => (
+              .map((table) => (
                 <tr>
                   <td>
-                    <a href={collectionHref(collection.id)}>{collection.name}</a>
+                    <a href={tableHref(table.id)}>{table.name}</a>
                   </td>
-                  <td class="ak-num">{counts.get(collection.id)}</td>
-                  <td>{collection.fields.map((field) => field.name).join(", ")}</td>
+                  <td class="ak-num">{counts.get(table.id)}</td>
+                  <td>{table.fields.map((field) => field.name).join(", ")}</td>
                   <td>
-                    <When at={collection.updatedAt} />
+                    <When at={table.updatedAt} />
                   </td>
                 </tr>
               ))}
@@ -1448,7 +1448,7 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
             <p class="ak-lede">Grouped under the page each one sits in. A page shows its tables below its text.</p>
           </div>
         </header>
-        {collections.length === 0 ? (
+        {tables.length === 0 ? (
           <div class="ak-empty">No tables yet. Ask Claude to create one.</div>
         ) : (
           order.map((root) => (
@@ -1469,7 +1469,7 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
                   </h2>
                 </>
               )}
-              {table(groups.get(root)!)}
+              {tableOf(groups.get(root)!)}
             </section>
           ))
         )}
@@ -1477,7 +1477,7 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
     );
   });
 
-  const loadCollection = (c: Context) => context.store.getCollection(ws, c.req.param("cid") ?? "");
+  const loadTable = (c: Context) => context.store.getTable(ws, c.req.param("cid") ?? "");
 
   const cell = (field: FieldDef, value: FieldValue | undefined, links: LinkResolver): Child => {
     if (value === undefined || value === null || value === "") return <span class="ak-dash">–</span>;
@@ -1503,20 +1503,20 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
   };
 
   app.get("/t/:cid", async (c) => {
-    const collection = await loadCollection(c);
-    if (!collection) return notFound(c, `Table ${c.req.param("cid")}`);
-    const rows = await context.collections.queryRows(ws, collection.id, { limit: 500 });
-    const base = `/t/${encodeURIComponent(collection.id)}`;
+    const table = await loadTable(c);
+    if (!table) return notFound(c, `Table ${c.req.param("cid")}`);
+    const rows = await context.tables.queryRows(ws, table.id, { limit: 500 });
+    const base = `/t/${encodeURIComponent(table.id)}`;
     const pages = await allPages(context);
-    const collections = await context.collections.list(ws);
-    const links = resolverFor(pages, collections, await targetRows(context, collection, collections));
+    const tables = await context.tables.list(ws);
+    const links = resolverFor(pages, tables, await targetRows(context, table, tables));
     const byId = new Map(pages.map((p) => [p.id, p]));
-    const parent = collection.parentId ? byId.get(collection.parentId) : undefined;
-    const backlinks = await context.collections.backlinks(ws, collection.id);
+    const parent = table.parentId ? byId.get(table.parentId) : undefined;
+    const backlinks = await context.tables.backlinks(ws, table.id);
     const moved = c.req.query("moved");
     return render(
       c,
-      <Layout title={collection.name} section="tables">
+      <Layout title={table.name} section="tables">
         {moved ? <Banner kind="ok">{parent ? `Moved under ${parent.title}.` : "Moved to the top."}</Banner> : null}
         <header class="ak-pagehead">
           <div>
@@ -1532,9 +1532,9 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
                   <a href="/t">Tables</a>
                 </li>
               )}
-              <li aria-current="page">{collection.name}</li>
+              <li aria-current="page">{table.name}</li>
             </ol>
-            <h1>{collection.name}</h1>
+            <h1>{table.name}</h1>
             <p class="ak-small">
               {rows.items.length}
               {rows.cursor ? "+" : ""} rows. Click a column to sort.
@@ -1560,7 +1560,7 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
             <table class="ak-table" data-ak-table data-filter="rowfilter">
               <thead>
                 <tr>
-                  {collection.fields.map((field) => (
+                  {table.fields.map((field) => (
                     <th
                       data-sort={field.type === "number" ? "n" : "s"}
                       class={field.type === "number" ? "ak-num" : undefined}
@@ -1573,7 +1573,7 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
               <tbody>
                 {rows.items.map((row) => (
                   <tr>
-                    {collection.fields.map((field, i) => (
+                    {table.fields.map((field, i) => (
                       <td
                         class={field.type === "number" ? "ak-num" : undefined}
                         data-v={
@@ -1608,16 +1608,16 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
           <section>
             <h2>Place in the tree</h2>
             <form method="post" action={`${base}/move`} class="cairn-editor">
-              <input type="hidden" name="version" value={collection.version} />
+              <input type="hidden" name="version" value={table.version} />
               <label for="parent">Under</label>
               <select class="ak-select" id="parent" name="parent">
-                <option value="" selected={!collection.parentId}>
+                <option value="" selected={!table.parentId}>
                   The top, with no page
                 </option>
                 {[...pages]
                   .sort((a, b) => a.title.localeCompare(b.title))
                   .map((page) => (
-                    <option value={page.id} selected={page.id === collection.parentId}>
+                    <option value={page.id} selected={page.id === table.parentId}>
                       {page.title}
                     </option>
                   ))}
@@ -1638,12 +1638,12 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
   });
 
   app.post("/t/:cid/move", async (c) => {
-    const collection = await loadCollection(c);
-    if (!collection) return notFound(c, `Table ${c.req.param("cid")}`);
+    const table = await loadTable(c);
+    if (!table) return notFound(c, `Table ${c.req.param("cid")}`);
     const form = await c.req.parseBody();
     const parent = text(form, "parent").trim();
     try {
-      await moveRecord(context, collection.id, parent === "" ? null : parent, text(form, "version"), by(c, text(form, "note")));
+      await moveRecord(context, table.id, parent === "" ? null : parent, text(form, "version"), by(c, text(form, "note")));
     } catch (error) {
       if (!(error instanceof VersionConflictError) && !(error instanceof ValidationError)) throw error;
       return render(
@@ -1654,23 +1654,23 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
             {error instanceof VersionConflictError
               ? "The table changed since you opened it."
               : error.errors.map((e) => e.message).join("; ")}{" "}
-            <a href={collectionHref(collection.id)}>Back to {collection.name}</a>
+            <a href={tableHref(table.id)}>Back to {table.name}</a>
           </Banner>
         </Layout>,
         409,
       );
     }
-    return c.redirect(`${collectionHref(collection.id)}?moved=1`, 303);
+    return c.redirect(`${tableHref(table.id)}?moved=1`, 303);
   });
 
-  // From a page: put a collection under it (ADR-024).
+  // From a page: put a table under it (ADR-024).
   app.post("/p/:id/tables", async (c) => {
     const page = await loadPage(c);
     if (!page) return notFound(c, `Page ${c.req.param("id")}`);
     const form = await c.req.parseBody();
-    const [collectionId = "", version = ""] = text(form, "collection").split("@");
+    const [tableId = "", version = ""] = text(form, "table").split("@");
     try {
-      await moveRecord(context, collectionId, page.id, version, by(c, text(form, "note")));
+      await moveRecord(context, tableId, page.id, version, by(c, text(form, "note")));
     } catch (error) {
       if (!(error instanceof VersionConflictError) && !(error instanceof ValidationError) && !(error instanceof NotFoundError)) throw error;
       return render(
@@ -1689,7 +1689,7 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
   });
 
   const RowPage: FC<{
-    collection: Collection;
+    table: Table;
     row: Row | null;
     values: Record<string, FieldValue>;
     errors: FieldError[];
@@ -1699,13 +1699,13 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
     notice?: Child;
     version?: string | undefined;
     links?: { outbound: Edge[]; inbound: Edge[]; resolver: LinkResolver } | undefined;
-  }> = ({ collection, row, values, errors, note, history, flash, notice, version, links }) => {
-    const base = `/t/${encodeURIComponent(collection.id)}`;
-    const title = row ? rowLabel(row.values, collection, row.id) : "New row";
+  }> = ({ table, row, values, errors, note, history, flash, notice, version, links }) => {
+    const base = `/t/${encodeURIComponent(table.id)}`;
+    const title = row ? rowLabel(row.values, table, row.id) : "New row";
     return (
-      <Layout title={`${collection.name}: ${title}`} section="tables">
+      <Layout title={`${table.name}: ${title}`} section="tables">
         <p class="ak-eyebrow">
-          <a href="/t">Tables</a> · <a href={base}>{collection.name}</a>
+          <a href="/t">Tables</a> · <a href={base}>{table.name}</a>
         </p>
         <h1>{title}</h1>
         {flash ? <Banner kind="ok">{flash}</Banner> : null}
@@ -1717,7 +1717,7 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
         ) : null}
         <div class="ak-split">
           <RowForm
-            collection={collection}
+            table={table}
             action={row ? `${base}/r/${encodeURIComponent(row.id)}` : `${base}/new`}
             values={values}
             errors={errors}
@@ -1751,24 +1751,24 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
   };
 
   app.get("/t/:cid/new", async (c) => {
-    const collection = await loadCollection(c);
-    if (!collection) return notFound(c, `Table ${c.req.param("cid")}`);
+    const table = await loadTable(c);
+    if (!table) return notFound(c, `Table ${c.req.param("cid")}`);
     return render(
       c,
-      <RowPage collection={collection} row={null} values={{}} errors={[]} note="" history={[]} />,
+      <RowPage table={table} row={null} values={{}} errors={[]} note="" history={[]} />,
     );
   });
 
   app.post("/t/:cid/new", async (c) => {
-    const collection = await loadCollection(c);
-    if (!collection) return notFound(c, `Table ${c.req.param("cid")}`);
+    const table = await loadTable(c);
+    if (!table) return notFound(c, `Table ${c.req.param("cid")}`);
     const form = await c.req.parseBody({ all: true });
-    const values = readRowValues(collection, form);
+    const values = readRowValues(table, form);
     const note = text(form, "note");
     try {
-      const row = await context.collections.upsertRow(ws, collection.id, { values }, by(c, note));
+      const row = await context.tables.upsertRow(ws, table.id, { values }, by(c, note));
       return c.redirect(
-        `/t/${encodeURIComponent(collection.id)}/r/${encodeURIComponent(row.id)}?saved=1`,
+        `/t/${encodeURIComponent(table.id)}/r/${encodeURIComponent(row.id)}?saved=1`,
         303,
       );
     } catch (error) {
@@ -1776,7 +1776,7 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
       return render(
         c,
         <RowPage
-          collection={collection}
+          table={table}
           row={null}
           values={values}
           errors={error.errors}
@@ -1789,11 +1789,11 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
   });
 
   app.get("/t/:cid/r/:rid", async (c) => {
-    const collection = await loadCollection(c);
-    if (!collection) return notFound(c, `Table ${c.req.param("cid")}`);
-    const row = await context.store.getRow(ws, collection.id, c.req.param("rid"));
+    const table = await loadTable(c);
+    if (!table) return notFound(c, `Table ${c.req.param("cid")}`);
+    const row = await context.store.getRow(ws, table.id, c.req.param("rid"));
     if (!row) return notFound(c, `Row ${c.req.param("rid")}`);
-    const history = await context.collections.rowHistory(ws, collection.id, row.id, {
+    const history = await context.tables.rowHistory(ws, table.id, row.id, {
       limit: 50,
     });
     const flash = c.req.query("saved")
@@ -1801,17 +1801,17 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
       : c.req.query("restored")
         ? "Restored, as a new version."
         : null;
-    const [outbound, inbound, collections] = await Promise.all([
-      context.collections.rowLinks(ws, collection.id, row.id),
-      context.collections.rowBacklinks(ws, collection.id, row.id),
-      context.collections.list(ws),
+    const [outbound, inbound, tables] = await Promise.all([
+      context.tables.rowLinks(ws, table.id, row.id),
+      context.tables.rowBacklinks(ws, table.id, row.id),
+      context.tables.list(ws),
     ]);
-    const linked = await rowsFor(context, [...outbound.map((e) => e.targetId), ...inbound.map((e) => e.sourceId)], collections);
-    const resolver = resolverFor(await allPages(context), collections, linked);
+    const linked = await rowsFor(context, [...outbound.map((e) => e.targetId), ...inbound.map((e) => e.sourceId)], tables);
+    const resolver = resolverFor(await allPages(context), tables, linked);
     return render(
       c,
       <RowPage
-        collection={collection}
+        table={table}
         row={row}
         values={row.values}
         errors={[]}
@@ -1824,22 +1824,22 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
   });
 
   app.post("/t/:cid/r/:rid", async (c) => {
-    const collection = await loadCollection(c);
-    if (!collection) return notFound(c, `Table ${c.req.param("cid")}`);
-    const row = await context.store.getRow(ws, collection.id, c.req.param("rid"));
+    const table = await loadTable(c);
+    if (!table) return notFound(c, `Table ${c.req.param("cid")}`);
+    const row = await context.store.getRow(ws, table.id, c.req.param("rid"));
     if (!row) return notFound(c, `Row ${c.req.param("rid")}`);
     const form = await c.req.parseBody({ all: true });
-    const values = readRowValues(collection, form);
+    const values = readRowValues(table, form);
     const note = text(form, "note");
-    const history = () => context.collections.rowHistory(ws, collection.id, row.id, { limit: 50 });
+    const history = () => context.tables.rowHistory(ws, table.id, row.id, { limit: 50 });
 
     try {
-      await context.collections.upsertRow(ws, collection.id, { values }, by(c, note), {
+      await context.tables.upsertRow(ws, table.id, { values }, by(c, note), {
         id: row.id,
         expectedVersion: text(form, "version"),
       });
       return c.redirect(
-        `/t/${encodeURIComponent(collection.id)}/r/${encodeURIComponent(row.id)}?saved=1`,
+        `/t/${encodeURIComponent(table.id)}/r/${encodeURIComponent(row.id)}?saved=1`,
         303,
       );
     } catch (error) {
@@ -1847,7 +1847,7 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
         return render(
           c,
           <RowPage
-            collection={collection}
+            table={table}
             row={row}
             values={values}
             errors={error.errors}
@@ -1863,7 +1863,7 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
         return render(
           c,
           <RowPage
-            collection={collection}
+            table={table}
             row={current}
             values={values}
             errors={[]}
@@ -1887,30 +1887,30 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
   });
 
   app.get("/t/:cid/r/:rid/v/:version", async (c) => {
-    const collection = await loadCollection(c);
-    if (!collection) return notFound(c, `Table ${c.req.param("cid")}`);
+    const table = await loadTable(c);
+    if (!table) return notFound(c, `Table ${c.req.param("cid")}`);
     const rowId = c.req.param("rid");
     let view;
     try {
-      view = await context.collections.rowRevision(ws, collection.id, rowId, c.req.param("version"));
+      view = await context.tables.rowRevision(ws, table.id, rowId, c.req.param("version"));
     } catch (error) {
       if (error instanceof NotFoundError) return notFound(c, "That version");
       throw error;
     }
-    const row = await context.store.getRow(ws, collection.id, rowId);
-    const base = `/t/${encodeURIComponent(collection.id)}/r/${encodeURIComponent(rowId)}`;
+    const row = await context.store.getRow(ws, table.id, rowId);
+    const base = `/t/${encodeURIComponent(table.id)}/r/${encodeURIComponent(rowId)}`;
     const isCurrent = row?.version === view.revision.version;
     return render(
       c,
-      <Layout title={`${collection.name}, earlier version`} section="tables">
+      <Layout title={`${table.name}, earlier version`} section="tables">
         <p class="ak-eyebrow">
-          <a href={`/t/${encodeURIComponent(collection.id)}`}>{collection.name}</a> ·{" "}
-          <a href={base}>{rowLabel(view.snapshot.values, collection, rowId)}</a> · version{" "}
+          <a href={`/t/${encodeURIComponent(table.id)}`}>{table.name}</a> ·{" "}
+          <a href={base}>{rowLabel(view.snapshot.values, table, rowId)}</a> · version{" "}
           <span class="ak-mono">{view.revision.version.slice(0, 8)}</span>
         </p>
         <header class="ak-pagehead">
           <div>
-            <h1>{rowLabel(view.snapshot.values, collection, rowId)}</h1>
+            <h1>{rowLabel(view.snapshot.values, table, rowId)}</h1>
             <p class="ak-small">
               <When at={view.revision.createdAt} /> by <ActorPill actor={view.revision.actor} />
               {isCurrent ? (
@@ -1946,7 +1946,7 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
     const rid = c.req.param("rid");
     const form = await c.req.parseBody();
     try {
-      await context.collections.restoreRow(
+      await context.tables.restoreRow(
         ws,
         cid,
         rid,

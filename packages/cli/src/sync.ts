@@ -1,12 +1,12 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { ApiError, type CairnClient } from "./client.js";
-import { orderCollections, orderForImport, type ExportPage } from "./export-format.js";
+import { orderTables, orderForImport, type ExportPage } from "./export-format.js";
 
 /**
  * `cairn sync` (ADR-023): keep two Cairns the same.
  *
- * Every run reads every page, collection and row from both servers and
+ * Every run reads every page, table and row from both servers and
  * compares each record with the hash both sides agreed on at the last sync.
  * A side that differs from it changed the record, and the change is copied
  * to the other side. When both changed, the newer edit wins, and the one it
@@ -19,15 +19,15 @@ import { orderCollections, orderForImport, type ExportPage } from "./export-form
 type Json = Record<string, unknown>;
 const list = (value: unknown) => (Array.isArray(value) ? (value as Json[]) : []);
 
-export type Kind = "page" | "collection" | "row";
+export type Kind = "page" | "table" | "row";
 export type Side = "a" | "b";
 
 export interface SyncRecord {
-  /** `page:<id>`, `collection:<id>` or `row:<collection id>/<row id>`. */
+  /** `page:<id>`, `table:<id>` or `row:<table id>/<row id>`. */
   key: string;
   kind: Kind;
   id: string;
-  collectionId: string | null;
+  tableId: string | null;
   /** A title or name, for reports. */
   label: string;
   /** What a person wrote. Versions, times and actors are left out. */
@@ -80,17 +80,17 @@ async function sha256(text: string): Promise<string> {
 export async function record(
   kind: Kind,
   id: string,
-  collectionId: string | null,
+  tableId: string | null,
   label: string,
   content: Json,
   updatedAt: string,
   version: string,
 ): Promise<SyncRecord> {
-  const key = kind === "row" ? `row:${collectionId}/${id}` : `${kind}:${id}`;
-  return { key, kind, id, collectionId, label, content, hash: await sha256(stable({ kind, content })), updatedAt, version };
+  const key = kind === "row" ? `row:${tableId}/${id}` : `${kind}:${id}`;
+  return { key, kind, id, tableId, label, content, hash: await sha256(stable({ kind, content })), updatedAt, version };
 }
 
-/** Every page, collection and row on one server. */
+/** Every page, table and row on one server. */
 export async function readSide(client: CairnClient): Promise<Snapshot> {
   const snapshot: Snapshot = new Map();
   const add = (entry: SyncRecord) => snapshot.set(entry.key, entry);
@@ -113,17 +113,17 @@ export async function readSide(client: CairnClient): Promise<Snapshot> {
     cursor = (json?.["cursor"] as string | null) ?? null;
   } while (cursor !== null);
 
-  const { json } = await client.request("GET", "/collections");
-  for (const collection of list(json?.["collections"])) {
-    const cid = String(collection["id"]);
-    const name = String(collection["name"]);
-    const content = { name, fields: collection["fields"], parent_id: collection["parent_id"] ?? null };
-    add(await record("collection", cid, null, name, content, String(collection["updated_at"]), String(collection["version"])));
+  const { json } = await client.request("GET", "/tables");
+  for (const table of list(json?.["tables"])) {
+    const cid = String(table["id"]);
+    const name = String(table["name"]);
+    const content = { name, fields: table["fields"], parent_id: table["parent_id"] ?? null };
+    add(await record("table", cid, null, name, content, String(table["updated_at"]), String(table["version"])));
     let rowCursor: string | null = null;
     do {
       const page = await client.request(
         "GET",
-        `/collections/${encodeURIComponent(cid)}/rows?limit=200${rowCursor === null ? "" : `&cursor=${encodeURIComponent(rowCursor)}`}`,
+        `/tables/${encodeURIComponent(cid)}/rows?limit=200${rowCursor === null ? "" : `&cursor=${encodeURIComponent(rowCursor)}`}`,
       );
       for (const row of list(page.json?.["rows"])) {
         const rid = String(row["id"]);
@@ -177,15 +177,15 @@ export function plan(a: Snapshot, b: Snapshot, base: Base): SyncPlan {
 }
 
 export interface SyncReport {
-  written: Record<Side, { pages: number; collections: number; rows: number; deleted: number }>;
+  written: Record<Side, { pages: number; tables: number; rows: number; deleted: number }>;
   conflicts: Array<{ key: string; label: string; kept_from: string }>;
   warnings: string[];
   skipped: string[];
   unchanged: number;
 }
 
-// Pages first, so a collection's parent is there before it moves under it (ADR-024).
-const WRITE_ORDER: Kind[] = ["page", "collection", "row"];
+// Pages first, so a table's parent is there before it moves under it (ADR-024).
+const WRITE_ORDER: Kind[] = ["page", "table", "row"];
 
 /**
  * Carries out a plan. Records that changed between the read and the write
@@ -200,8 +200,8 @@ export async function apply(
   const base: Base = { ...syncPlan.base };
   const report: SyncReport = {
     written: {
-      a: { pages: 0, collections: 0, rows: 0, deleted: 0 },
-      b: { pages: 0, collections: 0, rows: 0, deleted: 0 },
+      a: { pages: 0, tables: 0, rows: 0, deleted: 0 },
+      b: { pages: 0, tables: 0, rows: 0, deleted: 0 },
     },
     conflicts: [],
     warnings: [],
@@ -228,7 +228,7 @@ export async function apply(
       base[action.key] = action.source!.hash;
       const counts = report.written[action.to];
       if (action.kind === "page") counts.pages += 1;
-      else if (action.kind === "collection") counts.collections += 1;
+      else if (action.kind === "table") counts.tables += 1;
       else counts.rows += 1;
       if (action.conflict) {
         report.conflicts.push({ key: action.key, label: action.source!.label, kept_from: sides[other(action.to)].url });
@@ -268,15 +268,15 @@ export async function apply(
         for (const page of orderForImport(pages)) ordered.push(byId.get(`${side}:${page.id}`)!);
       }
       batch = ordered;
-    } else if (kind === "collection") {
-      // A relation's target collection before the collection that points at it.
+    } else if (kind === "table") {
+      // A relation's target table before the table that points at it.
       const byKey = new Map(batch.map((action) => [`${action.to}:${action.source!.id}`, action]));
       const ordered: SyncAction[] = [];
       for (const side of ["a", "b"] as const) {
         const items = batch
           .filter((action) => action.to === side)
           .map((action) => ({ id: action.source!.id, fields: (action.source!.content["fields"] as unknown[]) ?? [] }));
-        for (const item of orderCollections(items)) ordered.push(byKey.get(`${side}:${item.id}`)!);
+        for (const item of orderTables(items)) ordered.push(byKey.get(`${side}:${item.id}`)!);
       }
       batch = ordered;
     }
@@ -285,14 +285,14 @@ export async function apply(
       const { client } = sides[action.to];
       const source = action.source!;
       const ifMatch = action.target?.version ?? null;
-      if (kind === "collection") {
+      if (kind === "table") {
         let parent = (source.content["parent_id"] as string | null) ?? null;
         if (parent !== null && !willExist(action.to, parent)) {
           report.warnings.push(`${source.label} (${source.id}) moved to top level on ${sides[action.to].url}, because its parent ${parent} is not there`);
           parent = null;
         }
         await write(action, () =>
-          client.request("PUT", `/collections/${encodeURIComponent(source.id)}`, { body: { ...source.content, parent_id: parent }, ifMatch }),
+          client.request("PUT", `/tables/${encodeURIComponent(source.id)}`, { body: { ...source.content, parent_id: parent }, ifMatch }),
         );
       } else if (kind === "page") {
         let parent = (source.content["parent_id"] as string | null) ?? null;
@@ -310,7 +310,7 @@ export async function apply(
         await write(action, () =>
           client.request(
             "PUT",
-            `/collections/${encodeURIComponent(source.collectionId!)}/rows/${encodeURIComponent(source.id)}`,
+            `/tables/${encodeURIComponent(source.tableId!)}/rows/${encodeURIComponent(source.id)}`,
             { body: { ...source.content, change_note: note(action) }, ifMatch },
           ),
         );
@@ -325,7 +325,7 @@ export async function apply(
     await write(action, () =>
       sides[action.to].client.request(
         "DELETE",
-        `/collections/${encodeURIComponent(target.collectionId!)}/rows/${encodeURIComponent(target.id)}`,
+        `/tables/${encodeURIComponent(target.tableId!)}/rows/${encodeURIComponent(target.id)}`,
         { body: { change_note: note(action) }, ifMatch: target.version },
       ),
     );
@@ -353,9 +353,9 @@ export async function apply(
       }),
     );
   }
-  for (const action of deletes.filter((x) => x.kind === "collection")) {
+  for (const action of deletes.filter((x) => x.kind === "table")) {
     report.warnings.push(
-      `collection ${action.target!.label} (${action.target!.id}) is gone from ${sides[other(action.to)].url} but not from ${sides[action.to].url}; sync cannot delete collections`,
+      `table ${action.target!.label} (${action.target!.id}) is gone from ${sides[other(action.to)].url} but not from ${sides[action.to].url}; sync cannot delete tables`,
     );
     keepPrevious(action.key);
   }
@@ -381,7 +381,15 @@ export async function statePath(credentialsFile: string, a: string, b: string): 
 export async function loadState(path: string, a: string, b: string): Promise<SyncState> {
   try {
     const state = JSON.parse(await readFile(path, "utf8")) as SyncState;
-    if (state && typeof state.base === "object" && state.base !== null) return state;
+    if (state && typeof state.base === "object" && state.base !== null) {
+      // Saved before ADR-026, when a table was keyed `collection:<id>`.
+      for (const key of Object.keys(state.base)) {
+        if (!key.startsWith("collection:")) continue;
+        state.base[`table:${key.slice("collection:".length)}`] = state.base[key]!;
+        delete state.base[key];
+      }
+      return state;
+    }
   } catch {
     // No state yet, or unreadable: every difference is treated as a conflict.
   }

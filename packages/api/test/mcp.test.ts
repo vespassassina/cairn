@@ -114,16 +114,16 @@ describe("transport and auth", () => {
     const names = (body.result.tools as Array<{ name: string }>).map((t) => t.name);
     expect(names.sort()).toEqual(
       [
-        "create_collection",
+        "create_table",
         "create_page",
         "get_backlinks",
         "get_history",
         "get_neighbours",
         "get_page",
         "get_revision",
-        "list_collections",
+        "list_tables",
         "move",
-        "query_collection",
+        "query_table",
         "search",
         "update_page",
         "upsert_row",
@@ -303,16 +303,16 @@ describe("page tools", () => {
   });
 });
 
-describe("collections in the tree and rows as links (ADR-024)", () => {
-  it("puts a collection under a page, links rows to rows, and finds the backlinks", async () => {
+describe("tables in the tree and rows as links (ADR-024)", () => {
+  it("puts a table under a page, links rows to rows, and finds the backlinks", async () => {
     const home = await callTool("create_page", { title: "Peptides", body: "Everything about peptides." });
     const homeId = home.data["id"] as string;
-    const peptides = await callTool("create_collection", {
+    const peptides = await callTool("create_table", {
       name: "Peptides",
       fields: [{ name: "name", type: "text", required: true }],
     });
     const peptidesId = peptides.data["id"] as string;
-    const stacks = await callTool("create_collection", {
+    const stacks = await callTool("create_table", {
       name: "Stacks",
       parent_id: homeId,
       fields: [
@@ -322,28 +322,28 @@ describe("collections in the tree and rows as links (ADR-024)", () => {
     });
     const stacksId = stacks.data["id"] as string;
 
-    const bpc = await callTool("upsert_row", { collection_id: peptidesId, values: { name: "BPC-157" } });
-    const tb = await callTool("upsert_row", { collection_id: peptidesId, values: { name: "TB-500" } });
+    const bpc = await callTool("upsert_row", { table_id: peptidesId, values: { name: "BPC-157" } });
+    const tb = await callTool("upsert_row", { table_id: peptidesId, values: { name: "TB-500" } });
     const wolverine = await callTool("upsert_row", {
-      collection_id: stacksId,
+      table_id: stacksId,
       values: { title: "Wolverine", components: [bpc.data["id"], tb.data["id"]] },
       change_note: "The healing stack",
     });
     expect(wolverine.isError).toBe(false);
 
-    const backlinks = await callTool("get_backlinks", { collection_id: peptidesId, row_id: bpc.data["id"] });
+    const backlinks = await callTool("get_backlinks", { table_id: peptidesId, row_id: bpc.data["id"] });
     expect(backlinks.data["backlinks"]).toEqual([
-      { collection_id: stacksId, row_id: wolverine.data["id"], type: "relation", label: "components" },
+      { table_id: stacksId, row_id: wolverine.data["id"], type: "relation", label: "components" },
     ]);
-    const around = await callTool("get_neighbours", { collection_id: stacksId, row_id: wolverine.data["id"] });
+    const around = await callTool("get_neighbours", { table_id: stacksId, row_id: wolverine.data["id"] });
     expect((around.data["outbound"] as unknown[]).length).toBe(2);
 
-    const listed = await callTool("list_collections");
-    const placed = (listed.data["collections"] as Array<Record<string, unknown>>).find((c) => c["id"] === stacksId)!;
+    const listed = await callTool("list_tables");
+    const placed = (listed.data["tables"] as Array<Record<string, unknown>>).find((c) => c["id"] === stacksId)!;
     expect(placed["parent_id"]).toBe(homeId);
 
     const moved = await callTool("move", { id: peptidesId, parent_id: homeId, version: peptides.data["version"], change_note: "Group under Peptides" });
-    expect(moved.data).toMatchObject({ kind: "collection", id: peptidesId, parent_id: homeId });
+    expect(moved.data).toMatchObject({ kind: "table", id: peptidesId, parent_id: homeId });
   });
 
   it("refuses a bad move, naming the field", async () => {
@@ -359,9 +359,9 @@ describe("collections in the tree and rows as links (ADR-024)", () => {
   });
 });
 
-describe("collection tools", () => {
-  it("creates a collection, upserts rows and queries them", async () => {
-    const collection = await callTool("create_collection", {
+describe("table tools", () => {
+  it("creates a table, upserts rows and queries them", async () => {
+    const table = await callTool("create_table", {
       name: "Prints",
       fields: [
         { name: "title", type: "text", required: true },
@@ -369,21 +369,21 @@ describe("collection tools", () => {
         { name: "material", type: "select", options: ["pla", "petg"] },
       ],
     });
-    const collectionId = collection.data["id"] as string;
+    const tableId = table.data["id"] as string;
 
-    const listed = await callTool("list_collections");
-    expect((listed.data["collections"] as Array<{ id: string }>)[0]!.id).toBe(collectionId);
+    const listed = await callTool("list_tables");
+    expect((listed.data["tables"] as Array<{ id: string }>)[0]!.id).toBe(tableId);
 
     for (const values of [
       { title: "Bracket", grams: 12.5, material: "pla" },
       { title: "Enclosure", grams: 210, material: "petg" },
     ]) {
-      const row = await callTool("upsert_row", { collection_id: collectionId, values });
+      const row = await callTool("upsert_row", { table_id: tableId, values });
       expect(row.isError).toBe(false);
     }
 
-    const heavy = await callTool("query_collection", {
-      collection_id: collectionId,
+    const heavy = await callTool("query_table", {
+      table_id: tableId,
       where: [{ field: "grams", op: "gt", value: 100 }],
       sort: [{ field: "grams", direction: "desc" }],
     });
@@ -393,7 +393,7 @@ describe("collection tools", () => {
   });
 
   it("names every invalid field at once so one retry fixes them all", async () => {
-    const collection = await callTool("create_collection", {
+    const table = await callTool("create_table", {
       name: "Prints",
       fields: [
         { name: "title", type: "text", required: true },
@@ -403,7 +403,7 @@ describe("collection tools", () => {
     });
 
     const result = await callTool("upsert_row", {
-      collection_id: collection.data["id"],
+      table_id: table.data["id"],
       values: { material: "nylon" },
     });
 
@@ -414,17 +414,17 @@ describe("collection tools", () => {
   });
 
   it("updates an existing row by id and version", async () => {
-    const collection = await callTool("create_collection", {
+    const table = await callTool("create_table", {
       name: "Parts",
       fields: [{ name: "title", type: "text", required: true }],
     });
     const row = await callTool("upsert_row", {
-      collection_id: collection.data["id"],
+      table_id: table.data["id"],
       values: { title: "First" },
     });
 
     const updated = await callTool("upsert_row", {
-      collection_id: collection.data["id"],
+      table_id: table.data["id"],
       row_id: row.data["id"],
       version: row.data["version"],
       values: { title: "Second" },
@@ -433,7 +433,7 @@ describe("collection tools", () => {
     expect((updated.data["values"] as Record<string, unknown>)["title"]).toBe("Second");
 
     const stale = await callTool("upsert_row", {
-      collection_id: collection.data["id"],
+      table_id: table.data["id"],
       row_id: row.data["id"],
       version: row.data["version"],
       values: { title: "Third" },
@@ -519,7 +519,7 @@ describe("history tools (ADR-008)", () => {
   });
 
   it("gives row history and a field diff", async () => {
-    const collection = await callTool("create_collection", {
+    const table = await callTool("create_table", {
       name: "Parts",
       fields: [
         { name: "title", type: "text", required: true },
@@ -527,11 +527,11 @@ describe("history tools (ADR-008)", () => {
       ],
     });
     const row = await callTool("upsert_row", {
-      collection_id: collection.data["id"],
+      table_id: table.data["id"],
       values: { title: "Bracket", grams: 12 },
     });
     const updated = await callTool("upsert_row", {
-      collection_id: collection.data["id"],
+      table_id: table.data["id"],
       row_id: row.data["id"],
       version: row.data["version"],
       values: { title: "Bracket", grams: 14 },
@@ -539,13 +539,13 @@ describe("history tools (ADR-008)", () => {
     });
 
     const history = await callTool("get_history", {
-      collection_id: collection.data["id"],
+      table_id: table.data["id"],
       row_id: row.data["id"],
     });
     expect((history.data["revisions"] as unknown[]).length).toBe(2);
 
     const revision = await callTool("get_revision", {
-      collection_id: collection.data["id"],
+      table_id: table.data["id"],
       row_id: row.data["id"],
       version: updated.data["version"],
     });

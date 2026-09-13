@@ -1,10 +1,10 @@
-import { mkdtemp, readdir, rm } from "node:fs/promises";
+import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { closeContext, createApp, createContext, OWNER, type AppContext } from "@cairn/api";
 import { run, type Io } from "../src/main.js";
-import { parseInterval, plan, record, type Snapshot, type SyncRecord } from "../src/sync.js";
+import { loadState, parseInterval, plan, record, type Snapshot, type SyncRecord } from "../src/sync.js";
 
 /**
  * cairn sync (ADR-023): two real Cairns, driven through the command, must end
@@ -50,14 +50,14 @@ async function seed(context: AppContext) {
   const healing = await context.pages.create(ws, { title: "Recovery & healing", body: "Category.", tags: ["category"] }, BY, "pg_cat_healing");
   await context.pages.create(ws, { title: "BPC-157", parentId: healing.id, body: "## Status\n\nResearch only.\n", tags: ["peptide"] }, BY, "pg_bpc-157");
   await context.pages.create(ws, { title: "TB-500", parentId: healing.id, body: "Pairs with [[pg_bpc-157]].", tags: ["peptide"] }, BY, "pg_tb-500");
-  const peptides = await context.collections.create(
+  const peptides = await context.tables.create(
     ws,
     { name: "Peptides", fields: [{ name: "name", type: "text", required: true }, { name: "grams", type: "number" }] },
     BY,
     "col_peptides",
   );
-  await context.collections.upsertRow(ws, peptides.id, { values: { name: "BPC-157", grams: 5 } }, BY, { id: "row_bpc" });
-  await context.collections.upsertRow(ws, peptides.id, { values: { name: "TB-500", grams: 2 } }, BY, { id: "row_tb" });
+  await context.tables.upsertRow(ws, peptides.id, { values: { name: "BPC-157", grams: 5 } }, BY, { id: "row_bpc" });
+  await context.tables.upsertRow(ws, peptides.id, { values: { name: "TB-500", grams: 2 } }, BY, { id: "row_tb" });
 }
 
 async function edit(context: AppContext, id: string, body: string) {
@@ -92,13 +92,13 @@ describe("cairn sync between two servers", () => {
   it("copies everything into an empty Cairn, keeping ids, tree and rows", async () => {
     await seed(a);
     expect(await sync()).toBe(0);
-    expect(stdout).toContain(`to ${B_URL}: 3 pages, 1 collection, 2 rows written`);
+    expect(stdout).toContain(`to ${B_URL}: 3 pages, 1 table, 2 rows written`);
 
     const bpc = await b.pages.get(b.workspaceId, "pg_bpc-157");
     expect(bpc.parentId).toBe("pg_cat_healing");
     expect(bpc.body).toBe("## Status\n\nResearch only.\n");
     expect(bpc.tags).toEqual(["peptide"]);
-    const row = await b.collections.getRow(b.workspaceId, "col_peptides", "row_tb");
+    const row = await b.tables.getRow(b.workspaceId, "col_peptides", "row_tb");
     expect(row.values).toEqual({ name: "TB-500", grams: 2 });
 
     const history = await b.pages.history(b.workspaceId, "pg_bpc-157");
@@ -126,13 +126,13 @@ describe("cairn sync between two servers", () => {
     await sync();
     await edit(b, "pg_tb-500", "Edited on B.");
     await edit(a, "pg_bpc-157", "Edited on A.");
-    const version = (await b.collections.getRow(b.workspaceId, "col_peptides", "row_bpc")).version;
-    await b.collections.upsertRow(b.workspaceId, "col_peptides", { values: { name: "BPC-157", grams: 10 } }, BY, { id: "row_bpc", expectedVersion: version });
+    const version = (await b.tables.getRow(b.workspaceId, "col_peptides", "row_bpc")).version;
+    await b.tables.upsertRow(b.workspaceId, "col_peptides", { values: { name: "BPC-157", grams: 10 } }, BY, { id: "row_bpc", expectedVersion: version });
 
     expect(await sync()).toBe(0);
     expect((await a.pages.get(a.workspaceId, "pg_tb-500")).body).toBe("Edited on B.");
     expect((await b.pages.get(b.workspaceId, "pg_bpc-157")).body).toBe("Edited on A.");
-    expect((await a.collections.getRow(a.workspaceId, "col_peptides", "row_bpc")).values["grams"]).toBe(10);
+    expect((await a.tables.getRow(a.workspaceId, "col_peptides", "row_bpc")).values["grams"]).toBe(10);
     expect(stdout).not.toContain("conflict");
   });
 
@@ -151,12 +151,12 @@ describe("cairn sync between two servers", () => {
     await sync();
     const tb = await a.pages.get(a.workspaceId, "pg_tb-500");
     await a.pages.delete(a.workspaceId, "pg_tb-500", tb.version, BY);
-    const row = await b.collections.getRow(b.workspaceId, "col_peptides", "row_tb");
-    await b.collections.deleteRow(b.workspaceId, "col_peptides", "row_tb", row.version, BY);
+    const row = await b.tables.getRow(b.workspaceId, "col_peptides", "row_tb");
+    await b.tables.deleteRow(b.workspaceId, "col_peptides", "row_tb", row.version, BY);
 
     await sync();
     expect(await pageOrNull(b, "pg_tb-500")).toBeNull();
-    await expect(a.collections.getRow(a.workspaceId, "col_peptides", "row_tb")).rejects.toThrow();
+    await expect(a.tables.getRow(a.workspaceId, "col_peptides", "row_tb")).rejects.toThrow();
     expect(stdout).toContain(`to ${B_URL}: 1 deleted`);
   });
 
@@ -206,43 +206,43 @@ describe("cairn sync between two servers", () => {
     expect(await pageOrNull(b, "pg_bpc-157")).toBeNull();
   });
 
-  it("copies collections in the tree and linked rows, targets first (ADR-024)", async () => {
+  it("copies tables in the tree and linked rows, targets first (ADR-024)", async () => {
     const ws = a.workspaceId;
     await a.pages.create(ws, { title: "Peptides", body: "Hub." }, BY, "pg_home");
-    // Named so the linking collection sorts before its target.
-    await a.collections.create(ws, { name: "Targets", parentId: "pg_home", fields: [{ name: "name", type: "text", required: true }] }, BY, "col_z_targets");
-    await a.collections.create(
+    // Named so the linking table sorts before its target.
+    await a.tables.create(ws, { name: "Targets", parentId: "pg_home", fields: [{ name: "name", type: "text", required: true }] }, BY, "col_z_targets");
+    await a.tables.create(
       ws,
       { name: "Links", parentId: "pg_home", fields: [{ name: "title", type: "text", required: true }, { name: "to", type: "relation", target: "col_z_targets", multiple: true }] },
       BY,
       "col_a_links",
     );
-    await a.collections.upsertRow(ws, "col_z_targets", { values: { name: "BPC-157" } }, BY, { id: "row_bpc" });
-    await a.collections.upsertRow(ws, "col_a_links", { values: { title: "Stack", to: ["row_bpc"] } }, BY, { id: "row_stack" });
+    await a.tables.upsertRow(ws, "col_z_targets", { values: { name: "BPC-157" } }, BY, { id: "row_bpc" });
+    await a.tables.upsertRow(ws, "col_a_links", { values: { title: "Stack", to: ["row_bpc"] } }, BY, { id: "row_stack" });
 
     expect(await sync()).toBe(0);
     expect(stderr).toBe("");
-    expect((await b.collections.get(b.workspaceId, "col_a_links")).parentId).toBe("pg_home");
-    expect((await b.collections.rowBacklinks(b.workspaceId, "col_z_targets", "row_bpc")).map((e) => e.sourceId)).toEqual(["col_a_links/row_stack"]);
+    expect((await b.tables.get(b.workspaceId, "col_a_links")).parentId).toBe("pg_home");
+    expect((await b.tables.rowBacklinks(b.workspaceId, "col_z_targets", "row_bpc")).map((e) => e.sourceId)).toEqual(["col_a_links/row_stack"]);
 
     // A move on one side reaches the other.
-    const links = await b.collections.get(b.workspaceId, "col_a_links");
-    await b.collections.move(b.workspaceId, "col_a_links", null, links.version, BY);
+    const links = await b.tables.get(b.workspaceId, "col_a_links");
+    await b.tables.move(b.workspaceId, "col_a_links", null, links.version, BY);
     await sync();
-    expect((await a.collections.get(a.workspaceId, "col_a_links")).parentId).toBeNull();
+    expect((await a.tables.get(a.workspaceId, "col_a_links")).parentId).toBeNull();
   });
 
-  it("says when a collection's schema loses a conflict, since schemas keep no history", async () => {
+  it("says when a table's schema loses a conflict, since schemas keep no history", async () => {
     await seed(a);
     await sync();
     for (const [side, name] of [[a, "Peptides on A"], [b, "Peptides on B"]] as const) {
-      const collection = await side.collections.get(side.workspaceId, "col_peptides");
+      const table = await side.tables.get(side.workspaceId, "col_peptides");
       await new Promise((resolve) => setTimeout(resolve, 5));
-      await side.collections.update(side.workspaceId, "col_peptides", { name, fields: collection.fields }, collection.version, BY);
+      await side.tables.update(side.workspaceId, "col_peptides", { name, fields: table.fields }, table.version, BY);
     }
     await sync();
-    expect((await a.collections.get(a.workspaceId, "col_peptides")).name).toBe("Peptides on B");
-    expect(stdout).toContain("Collections keep no history, so the other schema was replaced");
+    expect((await a.tables.get(a.workspaceId, "col_peptides")).name).toBe("Peptides on B");
+    expect(stdout).toContain("Tables keep no history, so the other schema was replaced");
   });
 
   it("refuses the same server twice, and a bad interval", async () => {
@@ -285,6 +285,12 @@ describe("the sync rules", () => {
     const result = plan(snap(x), snap(x, y), {});
     expect(result.actions).toMatchObject([{ key: "page:pg_y", op: "put", to: "a", conflict: false }]);
     expect(result.base).toEqual({ "page:pg_x": x.hash });
+  });
+
+  it("reads state saved before tables were called tables (ADR-026)", async () => {
+    const file = join(config, "old-state.json");
+    await writeFile(file, JSON.stringify({ servers: [A_URL, B_URL], last_sync: null, base: { "collection:col_x": "h1", "page:pg_x": "h2" } }));
+    expect((await loadState(file, A_URL, B_URL)).base).toEqual({ "table:col_x": "h1", "page:pg_x": "h2" });
   });
 
   it("reads intervals of at least 30 seconds", () => {
