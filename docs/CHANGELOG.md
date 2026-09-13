@@ -6,6 +6,10 @@ Entries link to the ADR when there is one. A change of direction that has no ADR
 
 ## 2026-09-13
 
+### Checked: the image with the embedding model, on Linux
+
+The first CI run with ADR-022 passed on every job. In the image smoke test, semantic search reached `ready`, a search ran in hybrid mode, and the container used 142.7 MiB with the model loaded and one page embedded. That is well inside Azure's 0.5 GiB; the peak while embedding a large wiki on Linux is still to be measured on a real deployment.
+
 ### Added: search by meaning, with sqlite-vec and a small English model in the container (ADR-022)
 
 Search now matches meaning as well as keywords, for English text. "Something to help me fall asleep" finds DSIP, whose page only says "sleep"; "anything for wrinkles" finds Matrixyl.
