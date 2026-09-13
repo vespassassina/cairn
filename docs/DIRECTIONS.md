@@ -13,11 +13,19 @@ Rules:
 
 ## 2026-09-13
 
+### Publish the first release
+
+> "then publish and build"
+
+Given after the image was made public, in answer to the agent asking whether to tag `v0.1.0`. The agent's push of the tag was blocked by its permissions, so the owner pushed it.
+
+Landed in: the `v0.1.0` tag and GitHub release, and the "Released: v0.1.0" changelog entry. The CLI was not published to npm: the package is private and PRD Q5 (the name) is still open.
+
 ### No pull requests: commit to main
 
 > "for the repo, disable PRs and just keep committing."
 
-Landed in: the Workflow section of `CLAUDE.md`. PR #1 still needs merging, and the repository setting that turns pull requests off still needs switching; both are the owner's to do in GitHub, because the agent's attempt to merge was blocked by its permissions.
+Landed in: the Workflow section of `CLAUDE.md`. PR #1 still needs merging, and the repository setting that turns pull requests off still needs switching; both are the owner's to do in GitHub, because the agent's attempt to merge was blocked by its permissions. Update, same day: both done. PR #1 was merged into `main` and pull requests are turned off in the repository settings.
 
 ### Vector search in SQLite, with a small model in the container, English only
 

@@ -12,9 +12,9 @@ Then check it works, point it at your server, and optionally teach Claude Code t
 
 ## 1. Download an executable
 
-Executables are attached to each release at https://github.com/vespassassina/cairn/releases, with a `SHA256SUMS` file to check them against. Until the first release is published, build them yourself (section 3); you get the same files.
+Executables are attached to each release at https://github.com/vespassassina/cairn/releases, with a `SHA256SUMS` file to check them against. The first release is `v0.1.0`. To run unreleased code from `main`, build them yourself (section 3).
 
-Once there is a release, the newest file for your machine is always at the same address, for example on an Apple silicon Mac:
+The newest file for your machine is always at the same address, for example on an Apple silicon Mac:
 
 ```
 curl -LO https://github.com/vespassassina/cairn/releases/latest/download/cairn-darwin-arm64

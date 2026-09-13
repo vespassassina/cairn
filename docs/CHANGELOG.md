@@ -6,6 +6,15 @@ Entries link to the ADR when there is one. A change of direction that has no ADR
 
 ## 2026-09-13
 
+### Released: v0.1.0
+
+The first release, tagged on 10b1d69 after that commit passed CI on `main`. The tag's run built and published:
+
+1. **Images** `ghcr.io/vespassassina/cairn:0.1.0`, `0.1` and `latest`, for amd64 and arm64. All three pull anonymously, so the deploy defaults, which use `latest`, work without the `edge` override.
+2. **The `cairn` executables** for macOS (arm64, x64), Linux (arm64, x64) and Windows (x64), with `SHA256SUMS`, on https://github.com/vespassassina/cairn/releases/tag/v0.1.0. The macOS arm64 file was downloaded from the `latest/download` address, matched its checksum, and printed `cairn 0.1.0`.
+
+The release workflow creates the release with an empty description, so the notes were added by hand after the run. The guides no longer tell readers to use `edge` or build the CLI "until the first release": `docs/CLI.md`, `docs/DEPLOY-AZURE.md` and `docs/AGENT-INSTALL.md`, where the image check now stops at anything but `200` on `latest` instead of falling back to `edge`.
+
 ### The container image is public
 
 The owner made `ghcr.io/vespassassina/cairn` public. Checked with the anonymous pull in `docs/AGENT-INSTALL.md`: `edge` returns 200, for amd64 and arm64. `latest` does not exist until the first release tag, so deploys use `CAIRN_IMAGE=ghcr.io/vespassassina/cairn:edge` until then, as the guides say.

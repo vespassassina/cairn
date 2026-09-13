@@ -13,6 +13,20 @@ Each entry answers four questions:
 
 ## 2026-09-13
 
+### The first release went out with no description, and its tag push was blocked
+
+1. **What happened.** `v0.1.0` built and published every file, but the GitHub release had an empty description. Earlier, the agent's push of the tag was blocked by its permissions.
+2. **Cause.** The release job in `ci.yml` attaches files and sets no body. Pushing a tag publishes a release, which the agent's permissions treat as outward-facing, like the pull request merge before it.
+3. **Fix.** Notes written and added with `gh release edit` after the run. The owner pushed the tag.
+4. **Lesson.** Draft the release notes before tagging, and expect the owner to push the tag: give them the two commands, and verify the run once the tag is on GitHub.
+
+### `cairn --version` fails with a confusing error
+
+1. **What happened.** Checking the released executable with `cairn --version` printed "Option '--version <value>' argument missing".
+2. **Cause.** `--version` is the page version token on write commands (`--version V`), so the CLI's own version is `cairn version` or `-V`. The agent guessed the conventional flag without reading `--help`.
+3. **Fix.** None yet in the CLI; `cairn version` printed `cairn 0.1.0`. Making a bare `--version` with no command print the CLI version is a small follow-up.
+4. **Lesson.** Read `--help` before calling a flag broken. A flag name other tools use for something else will be guessed wrong by agents too, so the error should say what to use.
+
 ### The first memory measurement missed the worst case by a factor of four
 
 1. **What happened.** The server with the embedding model measured 407 MB, comfortably inside Azure's 0.5 GiB. The bundled server started on a database with no vectors peaked at 1.3 GB and stayed there.

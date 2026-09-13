@@ -88,8 +88,8 @@ Human guide: `docs/DEPLOY-AZURE.md`. Say first: this creates a resource group, a
    curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $token" -H "Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.oci.image.manifest.v1+json" https://ghcr.io/v2/vespassassina/cairn/manifests/latest
    ```
 
-   If it prints anything else, try `edge` in place of `latest`, and use that as `CAIRN_IMAGE` below. If neither is `200`, stop: the image is not public yet.
-4. **First pass.** Run `deploy/azure/deploy.sh`, with `CAIRN_NAME`, `CAIRN_LOCATION` and `CAIRN_RG` set if they chose other values, and `CAIRN_IMAGE` if you are using `edge`. It prints the address and the callback URL. Give both to the person.
+   If it prints anything else, stop and tell the person: the image cannot be pulled, so the deployment would not start. `latest` is the newest release; `edge` follows `main` and is only for testing unreleased work.
+4. **First pass.** Run `deploy/azure/deploy.sh`, with `CAIRN_NAME`, `CAIRN_LOCATION` and `CAIRN_RG` set if they chose other values. It prints the address and the callback URL. Give both to the person.
 5. **The person creates the OAuth app.** For GitHub, tell them to open https://github.com/settings/applications/new and fill in:
    1. Application name: Cairn
    2. Homepage URL: the address from step 4

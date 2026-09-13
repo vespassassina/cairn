@@ -168,7 +168,7 @@ Entra ID does not say whether an email address is verified, so list people by su
 
 1. **"is not on this Cairn's list of allowed users".** The page names the exact entry, such as `github:yourlogin`. Add it to `CAIRN_ALLOWED_USERS` and run the script again.
 2. **GitHub says the redirect URI is not associated with the application.** The callback URL in the GitHub OAuth app must match the one the script printed, exactly.
-3. **The app does not start, and the logs say the image cannot be pulled.** The image must be public. On GitHub: your profile, Packages, cairn, Package settings, Change visibility, Public. Until the first release, use `CAIRN_IMAGE=ghcr.io/vespassassina/cairn:edge`.
+3. **The app does not start, and the logs say the image cannot be pulled.** The image must be public. On GitHub: your profile, Packages, cairn, Package settings, Change visibility, Public. It has been public since 2026-09-13, so check the name in `CAIRN_IMAGE` if you set one.
 4. **The logs show restore attempts failing right after the first deploy.** Azure takes a minute or two to give the app access to storage. The container retries for two minutes, and Container Apps restarts it after that.
 5. **The app restarts with "out of memory" in the logs.** The embedding model needs about 300 MB. Run the script again with `CAIRN_EMBEDDINGS=off` for keyword search only.
 6. **Anything else:** `az containerapp logs show -g cairn -n cairn --follow`, and the notes in `docs/LESSONS.md`.
