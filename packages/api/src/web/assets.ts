@@ -79,6 +79,15 @@ const CAIRN_CSS = `
 .cairn-checks{ display:flex; gap:var(--ak-s3); flex-wrap:wrap }
 
 .cairn-login{ max-width:420px; margin:12vh auto 0 }
+
+/* Collections inside a page, below its text (ADR-024), and grouped by root. */
+.cairn-tables{ margin-top:var(--ak-s6); border-top:1px solid var(--ak-rule); padding-top:var(--ak-s3) }
+.cairn-table-card{ padding:var(--ak-s3) 0; border-bottom:1px solid var(--ak-rule) }
+.cairn-table-card h2{ margin:0 0 var(--ak-s1) }
+.cairn-table-card p{ margin:0 }
+.cairn-tables .ak-disclosure{ margin-top:var(--ak-s4) }
+.cairn-group{ margin-bottom:var(--ak-s6) }
+.cairn-group .ak-breadcrumb{ margin-bottom:var(--ak-s1) }
 `;
 
 /**

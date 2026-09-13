@@ -13,6 +13,14 @@ Rules:
 
 ## 2026-09-13
 
+### The root page read as a loop
+
+> "the way the 2 collections are inside peptides is weird. it's like now it is a referencing recursive link. my idea was that a new page could be created and promoted to root of both."
+
+> "also when opening the collections page, show the root and sub collections"
+
+Lightly cleaned. Asked for a name, the owner chose "Peptide database" for the root page; asked how a page should show its collections, they chose inside the page, below its text. Landed in: the "A page shows its collections inside it" changelog entry, and ADR-024's amended decision 7.
+
 ### Proper HTML head, collections under a root, and links between rows
 
 > "cairn webapp also needs proper html tags including title which should read Cairn."

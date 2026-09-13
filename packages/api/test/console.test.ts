@@ -505,10 +505,12 @@ describe("collections in the tree and rows as links (ADR-024)", () => {
     await context.collections.upsertRow(ws, "col_stacks", { values: { title: "Wolverine", components: ["row_bpc"] } }, AGENT, { id: "row_wolverine" });
   });
 
-  it("shows a collection under its page in the tree and the page's rail", async () => {
+  it("shows a collection under its page in the tree and inside the page", async () => {
     const { html } = await get("/p/pg_home");
     expect(html).toContain('href="/c/col_stacks"');
-    expect(html).toContain("Collections here");
+    expect(html).toContain('aria-label="Collections in this page"');
+    expect(html).toContain("1 rows · title, components");
+    expect(html).not.toContain("Collections here");
     // The wiki links to a row and a collection resolve to them, named.
     expect(html).toContain('href="/c/col_stacks/r/row_wolverine"');
     expect(html).toContain("Stacks: Wolverine");
@@ -543,5 +545,29 @@ describe("collections in the tree and rows as links (ADR-024)", () => {
     const saved = await post("/c/col_stacks/r/row_wolverine", { title: "Wolverine", components: "row_bpc, row_tb", version: row.version, note: "" });
     expect(saved.status).toBe(303);
     expect((await context.collections.getRow(context.workspaceId, "col_stacks", "row_wolverine")).values["components"]).toEqual(["row_bpc", "row_tb"]);
+  });
+
+  it("puts a collection under a page from the page itself", async () => {
+    const peptides = await context.collections.get(context.workspaceId, "col_peptides");
+    const page = await get("/p/pg_home");
+    expect(page.html).toContain("Put a collection here");
+    expect(page.html).toContain(`value="col_peptides@${peptides.version}"`);
+    const moved = await post("/p/pg_home/collections", { collection: `col_peptides@${peptides.version}`, note: "Both tables in one place" });
+    expect(moved.status).toBe(303);
+    expect((await context.collections.get(context.workspaceId, "col_peptides")).parentId).toBe("pg_home");
+
+    const stale = await post("/p/pg_bpc/collections", { collection: `col_peptides@${peptides.version}` });
+    expect(stale.status).toBe(409);
+  });
+
+  it("groups the collections page under each root page", async () => {
+    const { html } = await get("/c");
+    const underHome = html.indexOf('<a href="/p/pg_home">Peptides</a>');
+    const loose = html.indexOf("Not under a page");
+    expect(underHome).toBeGreaterThan(-1);
+    expect(loose).toBeGreaterThan(underHome);
+    expect(html.indexOf('href="/c/col_stacks"')).toBeGreaterThan(underHome);
+    expect(html.indexOf('href="/c/col_stacks"')).toBeLessThan(loose);
+    expect(html.indexOf('href="/c/col_peptides"')).toBeGreaterThan(loose);
   });
 });

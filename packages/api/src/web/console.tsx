@@ -399,6 +399,60 @@ const RevisionTimeline: FC<{
     </ol>
   );
 
+/** Rows in a collection, as text: "79", or "500+" past the scan limit. */
+async function rowCount(context: AppContext, collectionId: string): Promise<string> {
+  const page = await context.collections.queryRows(context.workspaceId, collectionId, { limit: 500 });
+  return `${page.items.length}${page.cursor ? "+" : ""}`;
+}
+
+/**
+ * The collections a page holds, shown in the page below its text, once
+ * (ADR-024), and a form to put another collection here: how a page becomes
+ * the root of collections.
+ */
+const PageTables: FC<{ page: Page; tables: Collection[]; counts: Map<string, string>; others: Collection[] }> = ({
+  page,
+  tables,
+  counts,
+  others,
+}) => (
+  <section class="cairn-tables" aria-label="Collections in this page">
+    {tables.map((collection) => (
+      <div class="cairn-table-card">
+        <h2>
+          <a href={collectionHref(collection.id)}>{collection.name}</a>
+        </h2>
+        <p class="ak-small">
+          {counts.get(collection.id) ?? "0"} rows · {collection.fields.map((field) => field.name).join(", ")}
+        </p>
+      </div>
+    ))}
+    {others.length > 0 ? (
+      <details class="ak-disclosure">
+        <summary>Put a collection here</summary>
+        <form method="post" action={`${pageHref(page.id)}/collections`} class="cairn-editor">
+          <label for="adopt">Collection</label>
+          <select class="ak-select" id="adopt" name="collection">
+            {[...others]
+              .sort((a, b) => a.name.localeCompare(b.name))
+              .map((collection) => (
+                <option value={`${collection.id}@${collection.version}`}>{collection.name}</option>
+              ))}
+          </select>
+          <label for="adopt_note">Why (optional)</label>
+          <input class="ak-input" id="adopt_note" name="note" type="text" />
+          <div class="cairn-actions">
+            <button class="ak-btn" type="submit">
+              Put it under {page.title}
+            </button>
+            <span class="ak-small">Only its place changes; its rows stay as they are.</span>
+          </div>
+        </form>
+      </details>
+    ) : null}
+  </section>
+);
+
 // Row form helpers.
 
 function fieldInput(field: FieldDef, value: FieldValue | undefined, error?: string): Child {
@@ -861,6 +915,9 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
     const titles = resolverFor(pages, collections, linkedRows);
     const children = pages.filter((p) => p.parentId === page.id);
     const tablesHere = collections.filter((collection) => collection.parentId === page.id);
+    const tableCounts = new Map(
+      await Promise.all(tablesHere.map(async (collection) => [collection.id, await rowCount(context, collection.id)] as const)),
+    );
     const flash = c.req.query("saved")
       ? "Saved."
       : c.req.query("restored")
@@ -907,24 +964,13 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
                 raw(renderMarkdown(page.body, titles))
               )}
             </article>
+            <PageTables page={page} tables={tablesHere} counts={tableCounts} others={collections.filter((c) => c.parentId !== page.id)} />
           </div>
           <aside class="cairn-rail" aria-label="About this page">
             <h3>Linked from</h3>
             <EdgeList edges={inbound} direction="in" titles={titles} />
             <h3>Links to</h3>
             <EdgeList edges={outbound} direction="out" titles={titles} />
-            {tablesHere.length > 0 ? (
-              <>
-                <h3>Collections here</h3>
-                <ul>
-                  {tablesHere.map((collection) => (
-                    <li>
-                      <a href={collectionHref(collection.id)}>{collection.name}</a>
-                    </li>
-                  ))}
-                </ul>
-              </>
-            ) : null}
             {children.length > 0 ? (
               <>
                 <h3>Child pages</h3>
@@ -1267,7 +1313,54 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
 
   app.get("/c", async (c) => {
     const collections = await context.collections.list(ws);
-    const pageTitles = resolverFor(await allPages(context));
+    const pages = await allPages(context);
+    const byId = new Map(pages.map((page) => [page.id, page]));
+    const counts = new Map(
+      await Promise.all(collections.map(async (collection) => [collection.id, await rowCount(context, collection.id)] as const)),
+    );
+    // Grouped by the page each collection sits under (ADR-024): the roots,
+    // by title, then the collections under no page.
+    const groups = new Map<string | null, Collection[]>();
+    for (const collection of collections) {
+      const parent = collection.parentId && byId.has(collection.parentId) ? collection.parentId : null;
+      groups.set(parent, [...(groups.get(parent) ?? []), collection]);
+    }
+    const roots = [...groups.keys()]
+      .filter((id): id is string => id !== null)
+      .sort((a, b) => byId.get(a)!.title.localeCompare(byId.get(b)!.title));
+    const order: Array<string | null> = [...roots, ...(groups.has(null) ? [null] : [])];
+
+    const table = (list: Collection[]) => (
+      <div class="ak-tblwrap">
+        <table class="ak-table">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th class="ak-num">Rows</th>
+              <th>Fields</th>
+              <th>Updated</th>
+            </tr>
+          </thead>
+          <tbody>
+            {[...list]
+              .sort((a, b) => a.name.localeCompare(b.name))
+              .map((collection) => (
+                <tr>
+                  <td>
+                    <a href={collectionHref(collection.id)}>{collection.name}</a>
+                  </td>
+                  <td class="ak-num">{counts.get(collection.id)}</td>
+                  <td>{collection.fields.map((field) => field.name).join(", ")}</td>
+                  <td>
+                    <When at={collection.updatedAt} />
+                  </td>
+                </tr>
+              ))}
+          </tbody>
+        </table>
+      </div>
+    );
+
     return render(
       c,
       <Layout title="Collections" section="collections">
@@ -1275,43 +1368,33 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
           <div>
             <p class="ak-eyebrow">Browse</p>
             <h1>Collections</h1>
+            <p class="ak-lede">Grouped under the page each one sits in. Open a page to see its collections below its text.</p>
           </div>
         </header>
         {collections.length === 0 ? (
           <div class="ak-empty">No collections yet. Ask Claude to create one.</div>
         ) : (
-          <div class="ak-tblwrap">
-            <table class="ak-table">
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>In</th>
-                  <th>Fields</th>
-                  <th>Updated</th>
-                </tr>
-              </thead>
-              <tbody>
-                {collections.map((collection) => (
-                  <tr>
-                    <td>
-                      <a href={`/c/${encodeURIComponent(collection.id)}`}>{collection.name}</a>
-                    </td>
-                    <td>
-                      {collection.parentId && pageTitles.title(collection.parentId) !== null ? (
-                        <a href={pageHref(collection.parentId)}>{pageTitles.title(collection.parentId)}</a>
-                      ) : (
-                        <span class="ak-dash">–</span>
-                      )}
-                    </td>
-                    <td>{collection.fields.map((field) => field.name).join(", ")}</td>
-                    <td>
-                      <When at={collection.updatedAt} />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          order.map((root) => (
+            <section class="cairn-group">
+              {root === null ? (
+                <h2>Not under a page</h2>
+              ) : (
+                <>
+                  <ol class="ak-breadcrumb">
+                    {ancestorsOf(root, byId).map((ancestor) => (
+                      <li>
+                        <a href={pageHref(ancestor.id)}>{ancestor.title}</a>
+                      </li>
+                    ))}
+                  </ol>
+                  <h2>
+                    <a href={pageHref(root)}>{byId.get(root)!.title}</a>
+                  </h2>
+                </>
+              )}
+              {table(groups.get(root)!)}
+            </section>
+          ))
         )}
       </Layout>,
     );
@@ -1501,6 +1584,31 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
       );
     }
     return c.redirect(`${collectionHref(collection.id)}?moved=1`, 303);
+  });
+
+  // From a page: put a collection under it (ADR-024).
+  app.post("/p/:id/collections", async (c) => {
+    const page = await loadPage(c);
+    if (!page) return notFound(c, `Page ${c.req.param("id")}`);
+    const form = await c.req.parseBody();
+    const [collectionId = "", version = ""] = text(form, "collection").split("@");
+    try {
+      await moveRecord(context, collectionId, page.id, version, by(c, text(form, "note")));
+    } catch (error) {
+      if (!(error instanceof VersionConflictError) && !(error instanceof ValidationError) && !(error instanceof NotFoundError)) throw error;
+      return render(
+        c,
+        <Layout title="Not moved" section="pages">
+          <Banner kind="bad">
+            <strong>Not moved.</strong>{" "}
+            {error instanceof ValidationError ? error.errors.map((e) => e.message).join("; ") : "The collection changed or is gone since you opened this page."}{" "}
+            <a href={pageHref(page.id)}>Back to {page.title}</a>
+          </Banner>
+        </Layout>,
+        409,
+      );
+    }
+    return c.redirect(`${pageHref(page.id)}?saved=1`, 303);
   });
 
   const RowPage: FC<{

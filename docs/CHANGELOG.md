@@ -6,6 +6,17 @@ Entries link to the ADR when there is one. A change of direction that has no ADR
 
 ## 2026-09-13
 
+### A page shows its collections inside it, and the Collections page groups them by root
+
+The owner found the new layout confusing: "it's like now it is a referencing recursive link. my idea was that a new page could be created and promoted to root of both." The root page was called Peptides, the same as the table inside it, and the same two tables were listed three times on it: as links in its text, under "Links to", and under "Collections here".
+
+1. **A page shows the collections under it in the page itself,** below its text, each with its name, row count and fields, like a Notion database inside a page. The side rail no longer lists them.
+2. **"Put a collection here"** on every page moves a chosen collection under it: promoting a page to root of collections is done from the page.
+3. **The Collections page groups collections under their root page,** with its ancestors above, then the collections under no page. The owner asked for this too: "when opening the collections page, show the root and sub collections".
+4. **The owner's root page is now "Peptide database",** their choice, and its text no longer links to its own tables.
+
+Three console tests changed or added. No API change.
+
 ### Released: v0.1.3, and Azure runs it
 
 Collections in the page tree, relation fields as links, the console's head and the sync report fix, released on 6c092b0 with notes. Azure moved from a pinned build to `ghcr.io/vespassassina/cairn:0.1.3`; a sync with the laptop found the two still identical, 186 records.
