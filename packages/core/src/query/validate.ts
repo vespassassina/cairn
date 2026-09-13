@@ -45,11 +45,52 @@ function checkValue(field: FieldDef, value: FieldValue): string | null {
         ? `unknown options: ${unknown.join(", ")}. expected one of: ${field.options!.join(", ")}`
         : null;
     }
-    case "relation":
-      return typeof value === "string" && value.length > 0
-        ? null
-        : "expected a page id";
+    case "relation": {
+      const what = relationTarget(field) === "pages" ? "a page id" : "a row id";
+      if (field.multiple) {
+        if (!Array.isArray(value)) return `expected a list of ids, each ${what}`;
+        const bad = value.filter((id) => !ID.test(id));
+        return bad.length > 0 ? `not ids: ${bad.join(", ")}. expected ${what} in each` : null;
+      }
+      return typeof value === "string" && ID.test(value) ? null : `expected ${what}`;
+    }
   }
+}
+
+/** Page, collection and row ids: letters, digits, dashes and underscores. */
+const ID = /^[A-Za-z0-9_-]+$/;
+
+/** What a relation field links to: `"pages"`, or a collection id. */
+export function relationTarget(field: FieldDef): string {
+  return field.target ?? "pages";
+}
+
+/**
+ * Problems with a collection's schema, all at once. A relation's target must
+ * be pages, this collection, or a collection that exists (ADR-024).
+ */
+export function validateSchema(
+  collectionId: string,
+  fields: FieldDef[],
+  collectionExists: (id: string) => boolean,
+): FieldError[] {
+  const errors: FieldError[] = [];
+  const seen = new Set<string>();
+  for (const field of fields) {
+    if (seen.has(field.name)) errors.push({ field: field.name, message: "two fields share this name" });
+    seen.add(field.name);
+    if (field.type !== "relation") {
+      if (field.target !== undefined || field.multiple !== undefined) {
+        errors.push({ field: field.name, message: "target and multiple are only for relation fields" });
+      }
+      continue;
+    }
+    const target = relationTarget(field);
+    if (target !== "pages" && target !== collectionId && !collectionExists(target)) {
+      errors.push({ field: field.name, message: `target ${target} is neither "pages" nor a collection that exists` });
+    }
+  }
+  return errors;
 }
 
 function isEmpty(value: FieldValue | undefined): boolean {

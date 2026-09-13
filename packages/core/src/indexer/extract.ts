@@ -1,4 +1,6 @@
-import type { EdgeInput, Id, Page } from "../types.js";
+import { rowNodeId } from "../ids.js";
+import { relationTarget } from "../query/validate.js";
+import type { Collection, EdgeInput, Id, Page, Row } from "../types.js";
 
 /**
  * Link, mention and tag extraction. Pure functions over Markdown.
@@ -7,10 +9,13 @@ import type { EdgeInput, Id, Page } from "../types.js";
  * wrote. No model guesses at relationships in v1.
  */
 
-/** `[label](cairn:page-id)` and `[label](/pages/page-id)`. */
-const MARKDOWN_LINK = /\[([^\]\n]*)\]\((?:cairn:|\/pages\/)([A-Za-z0-9_-]+)\)/g;
-/** `[[page-id]]` or `[[page-id|label]]`. */
-const WIKI_LINK = /\[\[([A-Za-z0-9_-]+)(?:\|([^\]\n]*))?\]\]/g;
+/**
+ * `[label](cairn:id)` and `[label](/pages/id)`. The id is a page, a
+ * collection, or a row as `collection-id/row-id` (ADR-024).
+ */
+const MARKDOWN_LINK = /\[([^\]\n]*)\]\((?:cairn:|\/pages\/)([A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)?)\)/g;
+/** `[[id]]` or `[[id|label]]`, with the same ids. */
+const WIKI_LINK = /\[\[([A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)?)(?:\|([^\]\n]*))?\]\]/g;
 /** `@page-id`, for a mention rather than a link. */
 const MENTION = /(?:^|\s)@([A-Za-z0-9_-]+)/g;
 /** `#tag`, not a Markdown heading (headings are `#` followed by a space). */
@@ -68,4 +73,29 @@ export function extractReferences(page: Page): ExtractedReferences {
   for (const tag of tags) add(`tag:${tag}`, "tag", tag);
 
   return { edges, tags: [...tags] };
+}
+
+/**
+ * The links a row declares: one per value of each relation field, labelled
+ * with the field's name. A relation to pages points at the page id; one to a
+ * collection points at the row, as `collection-id/row-id` (ADR-024).
+ */
+export function extractRowReferences(collection: Collection, row: Row): EdgeInput[] {
+  const source = rowNodeId(collection.id, row.id);
+  const edges: EdgeInput[] = [];
+  const seen = new Set<string>();
+  for (const field of collection.fields) {
+    if (field.type !== "relation") continue;
+    const value = row.values[field.name];
+    const ids = Array.isArray(value) ? value : typeof value === "string" && value !== "" ? [value] : [];
+    const target = relationTarget(field);
+    for (const id of ids) {
+      const targetId = target === "pages" ? id : rowNodeId(target, id);
+      // One edge per target: the store keys edges on source, target and type.
+      if (targetId === source || seen.has(targetId)) continue;
+      seen.add(targetId);
+      edges.push({ sourceId: source, targetId, type: "relation", label: field.name });
+    }
+  }
+  return edges;
 }

@@ -21,7 +21,7 @@ Rules:
 
 > "what about crosslinking in the same collection? is it implemented? how does the scan and crosslink update works?"
 
-Landed in: the "proper head" changelog entry for the first. The second and third: not yet; the agent explained how links work today and asked the owner to choose between designs.
+Landed in: the "proper head" changelog entry for the first. For the second and third, the agent explained how links work, then asked three questions. The owner chose collections under a page (over collections inside collections, or links only), moving only the two collections under a new "Peptides" page, and row links built now. Landed in ADR-024.
 
 Also: "update claude.md", done in the owner's own global instructions, which now say Cairn runs on Azure; not in this repository.
 

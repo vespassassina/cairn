@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { createApp, createContext, type AppContext } from "@cairn/api";
+import { createApp, createContext, OWNER, type AppContext } from "@cairn/api";
 import { eventually } from "@cairn/core/testing";
 import { readFileSync } from "node:fs";
 import { run, VERSION, type Io } from "../src/main.js";
@@ -185,5 +185,28 @@ describe("cairn", () => {
     };
     expect(await cairn("overview")).toBe(1);
     expect(stderr).toContain("cannot reach Cairn");
+  });
+
+  it("moves a collection under a page and shows a row's links (ADR-024)", async () => {
+    const ws = context.workspaceId;
+    const home = await context.pages.create(ws, { title: "Peptides", body: "Hub." }, { actor: OWNER });
+    const peptides = await context.collections.create(ws, { name: "Peptides", fields: [{ name: "name", type: "text", required: true }] }, { actor: OWNER }, "col_peptides");
+    await context.collections.create(
+      ws,
+      { name: "Stacks", fields: [{ name: "title", type: "text", required: true }, { name: "components", type: "relation", target: "col_peptides", multiple: true }] },
+      { actor: OWNER },
+      "col_stacks",
+    );
+    await context.collections.upsertRow(ws, "col_peptides", { values: { name: "BPC-157" } }, { actor: OWNER }, { id: "row_bpc" });
+    expect(await cairn("upsert", "col_stacks", "--id", "row_wolverine", "--set", "title=Wolverine", "--set", 'components=["row_bpc"]', "--note", "The healing stack")).toBe(0);
+
+    expect(await cairn("move", "col_peptides", "--parent", home.id, "--version", peptides.version, "--note", "Group the tables")).toBe(0);
+    expect(stdout).toContain(`ok collection col_peptides now under ${home.id}`);
+    expect(await cairn("collections")).toBe(0);
+    expect(stdout).toContain(`under ${home.id}`);
+    expect(stdout).toContain("components:relation->col_peptides[]");
+
+    expect(await cairn("links", "col_peptides/row_bpc")).toBe(0);
+    expect(stdout).toContain("col_stacks/row_wolverine  relation components");
   });
 });

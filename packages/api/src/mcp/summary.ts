@@ -131,10 +131,17 @@ export async function workspaceSummary(context: AppContext, budget: number): Pro
 
   if (collections.length > 0) {
     const counts = await Promise.all(collections.map((c) => countRows(context, c.id)));
+    const titles = new Map(pages.map((page) => [page.id, page.title]));
+    // Where a collection sits in the tree (ADR-024), by its page's title,
+    // which is stored text and quoted like the rest.
+    const under = (parentId: string | null) => {
+      const title = parentId ? titles.get(parentId) : undefined;
+      return title === undefined ? "" : `, under ${quoteValue(title)}`;
+    };
     const lines = collections
       .map((collection, index) => ({ collection, rows: counts[index]! }))
       .sort((a, b) => a.collection.name.localeCompare(b.collection.name))
-      .map(({ collection, rows }) => `- ${quoteValue(collection.name)}: ${rows} rows`);
+      .map(({ collection, rows }) => `- ${quoteValue(collection.name)}: ${rows} rows${under(collection.parentId)}`);
     const heading = `Collections (${collections.length}):`;
     if (push(heading)) {
       for (const line of fitLines(lines, Math.floor(room() / 2), "collections")) push(line);

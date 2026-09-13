@@ -1,10 +1,14 @@
 import {
   CairnError,
   NotFoundError,
+  parseRowNodeId,
   ValidationError,
   VersionConflictError,
   type Collection,
   type Diff,
+  type Edge,
+  type FieldDef,
+  type FieldType,
   type Page,
   type Revision,
   type Row,
@@ -42,10 +46,49 @@ export function collectionJson(collection: Collection): Record<string, unknown> 
   return {
     id: collection.id,
     name: collection.name,
+    parent_id: collection.parentId,
     version: collection.version,
     updated_at: collection.updatedAt,
     fields: collection.fields,
   };
+}
+
+/** A field definition as a request sends it, with no undefined keys. */
+export interface FieldInput {
+  name: string;
+  type: FieldType;
+  required?: boolean | undefined;
+  options?: string[] | undefined;
+  target?: string | undefined;
+  multiple?: boolean | undefined;
+}
+
+export function toFieldDefs(fields: FieldInput[]): FieldDef[] {
+  return fields.map((field) => ({
+    name: field.name,
+    type: field.type,
+    ...(field.required === undefined ? {} : { required: field.required }),
+    ...(field.options === undefined ? {} : { options: field.options }),
+    ...(field.target === undefined ? {} : { target: field.target }),
+    ...(field.multiple === undefined ? {} : { multiple: field.multiple }),
+  }));
+}
+
+/**
+ * One end of a link, named for what it is (ADR-024): `page_id` for a page,
+ * `collection_id` for a collection, and both `collection_id` and `row_id`
+ * for a row. `collectionIds` tells a collection from a page, since a link to
+ * either is written `[[id]]`.
+ */
+export function linkJson(edge: Edge, end: "source" | "target", collectionIds: ReadonlySet<string>): Record<string, unknown> {
+  const id = end === "source" ? edge.sourceId : edge.targetId;
+  const row = parseRowNodeId(id);
+  const where = row
+    ? { collection_id: row.collectionId, row_id: row.rowId }
+    : collectionIds.has(id)
+      ? { collection_id: id }
+      : { page_id: id };
+  return { ...where, type: edge.type, label: edge.label };
 }
 
 export function revisionSummary(revision: Revision): Record<string, unknown> {
@@ -232,4 +275,37 @@ export function describeError(error: unknown, wording: ErrorWording): DescribedE
     status: 500,
     body: { error: "internal", message: error instanceof Error ? error.message : String(error) },
   };
+}
+
+/**
+ * Move a page or a collection under a page, or to the top with null
+ * (ADR-024). The id says which: pages are tried first. Needs the version the
+ * caller read, like any other write.
+ */
+export async function moveRecord(
+  context: AppContext,
+  id: string,
+  parentId: string | null,
+  version: string,
+  by: WriteContext,
+): Promise<{ kind: "page" | "collection"; id: string; parent_id: string | null; version: string }> {
+  const ws = context.workspaceId;
+  if (parentId === id) throw new ValidationError([{ field: "parent_id", message: "a record cannot be its own parent" }]);
+  if (parentId !== null && !(await context.store.getPage(ws, parentId))) {
+    throw new ValidationError([{ field: "parent_id", message: `no page ${parentId}; a parent must be a page` }]);
+  }
+  const page = await context.store.getPage(ws, id);
+  if (page) {
+    // A page under one of its own descendants would cut a loop out of the tree.
+    for (let at = parentId, depth = 0; at !== null && depth < 64; depth += 1) {
+      if (at === id) throw new ValidationError([{ field: "parent_id", message: "that page is inside this one" }]);
+      at = (await context.store.getPage(ws, at))?.parentId ?? null;
+    }
+    const moved = await context.pages.update(ws, id, { title: page.title, body: page.body, tags: page.tags, parentId }, version, by);
+    return { kind: "page", id, parent_id: moved.parentId, version: moved.version };
+  }
+  const collection = await context.store.getCollection(ws, id);
+  if (!collection) throw new NotFoundError("page or collection", id);
+  const moved = await context.collections.move(ws, id, parentId, version, by);
+  return { kind: "collection", id, parent_id: moved.parentId, version: moved.version };
 }

@@ -257,6 +257,54 @@ describe("pages", () => {
   });
 });
 
+describe("collections in the tree and rows as links (ADR-024)", () => {
+  it("creates a collection under a page, moves it, and reports links from rows", async () => {
+    const home = await call("/pages", { method: "POST", body: { title: "Peptides", body: "Hub.", change_note: "A home for the peptide tables" } });
+    const homeId = String(home.json["id"]);
+    const peptides = await call("/collections", {
+      method: "POST",
+      body: { name: "Peptides", parent_id: homeId, fields: [{ name: "name", type: "text", required: true }, { name: "page", type: "relation" }, { name: "related", type: "relation", target: "col_self_placeholder" }] },
+    });
+    expect(peptides.status).toBe(422);
+    expect(JSON.stringify(peptides.json)).toContain("related");
+
+    const created = await call("/collections", {
+      method: "POST",
+      body: { name: "Peptides", parent_id: homeId, fields: [{ name: "name", type: "text", required: true }, { name: "page", type: "relation" }] },
+    });
+    expect(created.status).toBe(201);
+    expect(created.json["parent_id"]).toBe(homeId);
+    const cid = String(created.json["id"]);
+
+    const row = await call(`/collections/${cid}/rows/row_bpc`, { method: "PUT", body: { values: { name: "BPC-157", page: homeId }, change_note: "Linked to its page" } });
+    expect(row.status).toBe(201);
+    const links = await call(`/collections/${cid}/rows/row_bpc/links`);
+    expect(links.json["outbound"]).toEqual([{ page_id: homeId, type: "relation", label: "page" }]);
+    const backlinks = await call(`/pages/${homeId}/backlinks`);
+    expect(backlinks.json["backlinks"]).toEqual([{ collection_id: cid, row_id: "row_bpc", type: "relation", label: "page" }]);
+
+    // A PUT that leaves out parent_id keeps the collection where it is.
+    const kept = await call(`/collections/${cid}`, {
+      method: "PUT",
+      headers: { "if-match": `"${String(created.json["version"])}"` },
+      body: { name: "Peptides", fields: [{ name: "name", type: "text", required: true }, { name: "page", type: "relation" }] },
+    });
+    expect(kept.json["parent_id"]).toBe(homeId);
+
+    const moved = await call("/move", { method: "POST", body: { id: cid, parent_id: null, version: kept.json["version"], change_note: "Back to the top" } });
+    expect(moved.status).toBe(200);
+    expect(moved.json).toMatchObject({ kind: "collection", parent_id: null });
+  });
+
+  it("will not move a page inside itself", async () => {
+    const outer = await call("/pages", { method: "POST", body: { title: "Outer", body: "o" } });
+    const inner = await call("/pages", { method: "POST", body: { title: "Inner", body: "i", parent_id: outer.json["id"] } });
+    const result = await call("/move", { method: "POST", body: { id: outer.json["id"], parent_id: inner.json["id"], version: outer.json["version"] } });
+    expect(result.status).toBe(422);
+    expect(result.text).toContain("inside this one");
+  });
+});
+
 describe("collections and rows", () => {
   async function createPrints() {
     const created = await call("/collections", {

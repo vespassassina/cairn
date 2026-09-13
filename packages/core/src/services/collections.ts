@@ -1,5 +1,5 @@
 import { NotFoundError, ValidationError } from "../errors.js";
-import { newCollectionId, newRowId, newVersion, revisionRecordId } from "../ids.js";
+import { newCollectionId, newRowId, newVersion, revisionRecordId, rowNodeId } from "../ids.js";
 import { diffLines, type Diff } from "../history/diff.js";
 import { readHistory, writeWithRevision } from "../history/revisions.js";
 import type { DocumentStore } from "../ports/document-store.js";
@@ -11,10 +11,12 @@ import {
   sortRows,
   type RowQuery,
 } from "../query/filter.js";
-import { validateRow } from "../query/validate.js";
+import { extractRowReferences } from "../indexer/extract.js";
+import { validateRow, validateSchema } from "../query/validate.js";
 import type {
   Collection,
   CollectionInput,
+  Edge,
   ExpectedVersion,
   Id,
   Paged,
@@ -72,13 +74,19 @@ export class CollectionService {
     context: WriteContext,
     id: Id = newCollectionId(),
   ): Promise<Collection> {
-    return this.store.putCollection(workspaceId, id, input, null, {
+    await this.checkSchema(workspaceId, id, input);
+    return this.store.putCollection(workspaceId, id, { ...input, parentId: input.parentId ?? null }, null, {
       version: newVersion(),
       actor: context.actor,
       at: new Date().toISOString(),
     });
   }
 
+  /**
+   * Replace a collection's name and schema, and move it when `parentId` is
+   * given (ADR-024). Changing a relation field re-derives the links of every
+   * row in the collection, since they come from the schema as well as the row.
+   */
   async update(
     workspaceId: WorkspaceId,
     id: Id,
@@ -86,11 +94,95 @@ export class CollectionService {
     expectedVersion: ExpectedVersion,
     context: WriteContext,
   ): Promise<Collection> {
-    return this.store.putCollection(workspaceId, id, input, expectedVersion, {
+    await this.checkSchema(workspaceId, id, input);
+    const before = await this.store.getCollection(workspaceId, id);
+    const parentId = input.parentId !== undefined ? input.parentId : (before?.parentId ?? null);
+    const collection = await this.store.putCollection(workspaceId, id, { ...input, parentId }, expectedVersion, {
       version: newVersion(),
       actor: context.actor,
       at: new Date().toISOString(),
     });
+    const relations = (c: Collection | null) => JSON.stringify((c?.fields ?? []).filter((f) => f.type === "relation"));
+    if (before && relations(before) !== relations(collection)) await this.relinkRows(collection);
+    return collection;
+  }
+
+  /** Move a collection under a page, or to the top with null. */
+  async move(
+    workspaceId: WorkspaceId,
+    id: Id,
+    parentId: Id | null,
+    expectedVersion: Version,
+    context: WriteContext,
+  ): Promise<Collection> {
+    const collection = await this.get(workspaceId, id);
+    return this.update(workspaceId, id, { name: collection.name, fields: collection.fields, parentId }, expectedVersion, context);
+  }
+
+  /** Collections directly under a page, or at the top for null. */
+  async children(workspaceId: WorkspaceId, parentId: Id | null): Promise<Collection[]> {
+    return (await this.list(workspaceId)).filter((collection) => collection.parentId === parentId);
+  }
+
+  /** Pages and rows linking to this row. Eventually consistent, like page backlinks. */
+  async rowBacklinks(workspaceId: WorkspaceId, collectionId: Id, id: Id): Promise<Edge[]> {
+    return this.store.getInboundEdges(workspaceId, rowNodeId(collectionId, id));
+  }
+
+  /** This row's own links, from its relation fields. */
+  async rowLinks(workspaceId: WorkspaceId, collectionId: Id, id: Id): Promise<Edge[]> {
+    return this.store.getOutboundEdges(workspaceId, rowNodeId(collectionId, id));
+  }
+
+  /** Pages linking to the collection itself, with `[[collection-id]]`. */
+  async backlinks(workspaceId: WorkspaceId, id: Id): Promise<Edge[]> {
+    return this.store.getInboundEdges(workspaceId, id);
+  }
+
+  /**
+   * Regenerates every row's links in the workspace (PRD P0.9), for reindex.
+   * Idempotent: `replaceEdgesForSource` writes the same edges each time.
+   */
+  async rebuildWorkspace(workspaceId: WorkspaceId): Promise<{ rows: number }> {
+    let rows = 0;
+    for (const collection of await this.list(workspaceId)) rows += await this.relinkRows(collection);
+    return { rows };
+  }
+
+  /**
+   * True when rows hold relation values but their links were never derived:
+   * rows written before relations became links (ADR-024). Looks at the first
+   * row with a relation value, so it stays cheap on every start.
+   */
+  async needsRelink(workspaceId: WorkspaceId): Promise<boolean> {
+    for (const collection of await this.list(workspaceId)) {
+      if (!collection.fields.some((field) => field.type === "relation")) continue;
+      const batch = await this.store.listRows(workspaceId, collection.id, { limit: 50, cursor: null });
+      const linked = batch.items.find((row) => extractRowReferences(collection, row).length > 0);
+      if (!linked) continue;
+      return (await this.store.getOutboundEdges(workspaceId, rowNodeId(collection.id, linked.id))).length === 0;
+    }
+    return false;
+  }
+
+  private async relinkRows(collection: Collection): Promise<number> {
+    let count = 0;
+    let cursor: string | null = null;
+    do {
+      const batch: Paged<Row> = await this.store.listRows(collection.workspaceId, collection.id, { limit: 500, cursor });
+      for (const row of batch.items) {
+        await this.store.replaceEdgesForSource(collection.workspaceId, rowNodeId(collection.id, row.id), extractRowReferences(collection, row));
+        count += 1;
+      }
+      cursor = batch.cursor;
+    } while (cursor !== null);
+    return count;
+  }
+
+  private async checkSchema(workspaceId: WorkspaceId, id: Id, input: CollectionInput): Promise<void> {
+    const existing = new Set((await this.list(workspaceId)).map((collection) => collection.id));
+    const errors = validateSchema(id, input.fields, (target) => existing.has(target));
+    if (errors.length > 0) throw new ValidationError(errors);
   }
 
   /**
@@ -114,7 +206,7 @@ export class CollectionService {
     const expectedVersion =
       options.expectedVersion !== undefined ? options.expectedVersion : null;
 
-    return writeWithRevision(
+    const row = await writeWithRevision(
       this.store,
       {
         workspaceId,
@@ -127,6 +219,10 @@ export class CollectionService {
       context,
       (meta) => this.store.putRow(workspaceId, collectionId, id, input, expectedVersion, meta),
     );
+    // Derived data after the row, as for pages: a crash in between is
+    // repaired by reindex (ADR-005 rules 2 and 3).
+    await this.store.replaceEdgesForSource(workspaceId, rowNodeId(collectionId, id), extractRowReferences(collection, row));
+    return row;
   }
 
   async getRow(
@@ -162,6 +258,7 @@ export class CollectionService {
       context,
       () => this.store.deleteRow(workspaceId, collectionId, id, expectedVersion),
     );
+    await this.store.replaceEdgesForSource(workspaceId, rowNodeId(collectionId, id), []);
   }
 
   // History (ADR-008).

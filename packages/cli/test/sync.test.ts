@@ -206,6 +206,32 @@ describe("cairn sync between two servers", () => {
     expect(await pageOrNull(b, "pg_bpc-157")).toBeNull();
   });
 
+  it("copies collections in the tree and linked rows, targets first (ADR-024)", async () => {
+    const ws = a.workspaceId;
+    await a.pages.create(ws, { title: "Peptides", body: "Hub." }, BY, "pg_home");
+    // Named so the linking collection sorts before its target.
+    await a.collections.create(ws, { name: "Targets", parentId: "pg_home", fields: [{ name: "name", type: "text", required: true }] }, BY, "col_z_targets");
+    await a.collections.create(
+      ws,
+      { name: "Links", parentId: "pg_home", fields: [{ name: "title", type: "text", required: true }, { name: "to", type: "relation", target: "col_z_targets", multiple: true }] },
+      BY,
+      "col_a_links",
+    );
+    await a.collections.upsertRow(ws, "col_z_targets", { values: { name: "BPC-157" } }, BY, { id: "row_bpc" });
+    await a.collections.upsertRow(ws, "col_a_links", { values: { title: "Stack", to: ["row_bpc"] } }, BY, { id: "row_stack" });
+
+    expect(await sync()).toBe(0);
+    expect(stderr).toBe("");
+    expect((await b.collections.get(b.workspaceId, "col_a_links")).parentId).toBe("pg_home");
+    expect((await b.collections.rowBacklinks(b.workspaceId, "col_z_targets", "row_bpc")).map((e) => e.sourceId)).toEqual(["col_a_links/row_stack"]);
+
+    // A move on one side reaches the other.
+    const links = await b.collections.get(b.workspaceId, "col_a_links");
+    await b.collections.move(b.workspaceId, "col_a_links", null, links.version, BY);
+    await sync();
+    expect((await a.collections.get(a.workspaceId, "col_a_links")).parentId).toBeNull();
+  });
+
   it("refuses the same server twice, and a bad interval", async () => {
     expect(await cairn("sync", A_URL, `${A_URL}/`)).toBe(2);
     expect(stderr).toContain("two different servers");

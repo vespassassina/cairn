@@ -6,6 +6,9 @@ import type { Child, FC } from "hono/jsx";
 import {
   diffLines,
   NotFoundError,
+  parseRowNodeId,
+  relationTarget,
+  rowNodeId,
   ValidationError,
   VersionConflictError,
   type Collection,
@@ -20,6 +23,7 @@ import {
   type Row,
 } from "@cairn/core";
 import { OWNER, type AppContext } from "../context.js";
+import { moveRecord } from "../operations.js";
 import { ASSET_VERSION, CONSOLE_CSS, CONSOLE_JS, documentTitle, FAVICON_SVG, HEAD_TAGS, ICON_180_PNG, ICON_512_PNG, MANIFEST } from "./assets.js";
 import { ActorPill, Banner, DiffView, Layout, When } from "./layout.js";
 import { createMarkdownRenderer, pageHref, type LinkResolver } from "./markdown.js";
@@ -112,9 +116,65 @@ async function allPages(context: AppContext): Promise<Page[]> {
   return pages;
 }
 
-function resolverFor(pages: Page[]): LinkResolver {
-  const titles = new Map(pages.map((page) => [page.id, page.title]));
-  return { title: (id) => titles.get(id) ?? null };
+const collectionHref = (id: string) => `/c/${encodeURIComponent(id)}`;
+const rowHref = (collectionId: string, rowId: string) => `${collectionHref(collectionId)}/r/${encodeURIComponent(rowId)}`;
+
+interface LinkedRow {
+  collection: Collection;
+  row: Row;
+}
+
+/**
+ * Names and console addresses for everything a link can point at: pages,
+ * collections, and the rows given (ADR-024). Pages win a clash of ids.
+ */
+function resolverFor(pages: Page[], collections: Collection[] = [], rows: LinkedRow[] = []): LinkResolver {
+  const titles = new Map<string, string>();
+  const hrefs = new Map<string, string>();
+  for (const page of pages) {
+    titles.set(page.id, page.title);
+    hrefs.set(page.id, pageHref(page.id));
+  }
+  for (const collection of collections) {
+    if (titles.has(collection.id)) continue;
+    titles.set(collection.id, collection.name);
+    hrefs.set(collection.id, collectionHref(collection.id));
+  }
+  for (const { collection, row } of rows) {
+    const id = rowNodeId(collection.id, row.id);
+    titles.set(id, `${collection.name}: ${rowLabel(row.values, collection, row.id)}`);
+    hrefs.set(id, rowHref(collection.id, row.id));
+  }
+  return { title: (id) => titles.get(id) ?? null, href: (id) => hrefs.get(id) ?? null };
+}
+
+/** The rows behind a set of link ends, for their names. Ids that are not rows are skipped. */
+async function rowsFor(context: AppContext, ids: string[], collections: Collection[]): Promise<LinkedRow[]> {
+  const byId = new Map(collections.map((collection) => [collection.id, collection]));
+  const found: LinkedRow[] = [];
+  for (const id of new Set(ids)) {
+    const parsed = parseRowNodeId(id);
+    const collection = parsed ? byId.get(parsed.collectionId) : undefined;
+    if (!parsed || !collection) continue;
+    const row = await context.store.getRow(context.workspaceId, collection.id, parsed.rowId);
+    if (row) found.push({ collection, row });
+  }
+  return found;
+}
+
+/** Every row of the collections a table's relation fields point at, for their names. */
+async function targetRows(context: AppContext, collection: Collection, collections: Collection[]): Promise<LinkedRow[]> {
+  const targets = new Set(
+    collection.fields.filter((field) => field.type === "relation" && relationTarget(field) !== "pages").map(relationTarget),
+  );
+  const rows: LinkedRow[] = [];
+  for (const target of targets) {
+    const targetCollection = collections.find((c) => c.id === target);
+    if (!targetCollection) continue;
+    const page = await context.collections.queryRows(context.workspaceId, target, { limit: 500 });
+    for (const row of page.items) rows.push({ collection: targetCollection, row });
+  }
+  return rows;
 }
 
 function ancestorsOf(pageId: string | null, byId: Map<string, Page>): Page[] {
@@ -145,7 +205,11 @@ function rowIdOf(revision: Revision): string {
 
 // Components.
 
-const Tree: FC<{ pages: Page[]; currentId?: string | undefined }> = ({ pages, currentId }) => {
+const Tree: FC<{ pages: Page[]; collections?: Collection[]; currentId?: string | undefined }> = ({
+  pages,
+  collections = [],
+  currentId,
+}) => {
   const byId = new Map(pages.map((page) => [page.id, page]));
   const children = new Map<string | null, Page[]>();
   for (const page of pages) {
@@ -155,8 +219,27 @@ const Tree: FC<{ pages: Page[]; currentId?: string | undefined }> = ({ pages, cu
     children.set(parent, list);
   }
   for (const list of children.values()) list.sort((a, b) => a.title.localeCompare(b.title));
-  const open = new Set(ancestorsOf(currentId ?? null, byId).map((page) => page.id));
+  // Collections sit in the tree under their page (ADR-024), after its child pages.
+  const tables = new Map<string | null, Collection[]>();
+  for (const collection of collections) {
+    const parent = collection.parentId && byId.has(collection.parentId) ? collection.parentId : null;
+    tables.set(parent, [...(tables.get(parent) ?? []), collection]);
+  }
+  for (const list of tables.values()) list.sort((a, b) => a.name.localeCompare(b.name));
+  const current = currentId ? collections.find((collection) => collection.id === currentId) : undefined;
+  const open = new Set(ancestorsOf(current?.parentId ?? currentId ?? null, byId).map((page) => page.id));
+  if (current?.parentId) open.add(current.parentId);
   if (currentId) open.add(currentId);
+
+  const tableItems = (parent: string | null): Child[] =>
+    (tables.get(parent) ?? []).map((collection) => (
+      <li>
+        <a href={collectionHref(collection.id)} aria-current={collection.id === currentId ? "page" : undefined}>
+          {collection.name}
+        </a>{" "}
+        <span class="ak-small">table</span>
+      </li>
+    ));
 
   const branch = (parent: string | null): Child => (
     <ul>
@@ -169,7 +252,7 @@ const Tree: FC<{ pages: Page[]; currentId?: string | undefined }> = ({ pages, cu
             {page.title}
           </a>
         );
-        return children.has(page.id) ? (
+        return children.has(page.id) || tables.has(page.id) ? (
           <li>
             <details open={open.has(page.id)}>
               <summary>{link}</summary>
@@ -180,6 +263,7 @@ const Tree: FC<{ pages: Page[]; currentId?: string | undefined }> = ({ pages, cu
           <li>{link}</li>
         );
       })}
+      {tableItems(parent)}
     </ul>
   );
 
@@ -203,14 +287,15 @@ const EdgeList: FC<{ edges: Edge[]; direction: "in" | "out"; titles: LinkResolve
       {pagesOnly.map((edge) => {
         const id = direction === "in" ? edge.sourceId : edge.targetId;
         const title = titles.title(id);
+        const how = edge.type === "relation" ? edge.label : edge.type === "link" ? null : edge.type;
         return (
           <li>
             {title === null ? (
               <span class="ak-soft">{id}</span>
             ) : (
-              <a href={pageHref(id)}>{title}</a>
+              <a href={titles.href?.(id) ?? pageHref(id)}>{title}</a>
             )}{" "}
-            {edge.type !== "link" ? <span class="ak-small">({edge.type})</span> : null}
+            {how ? <span class="ak-small">({how})</span> : null}
           </li>
         );
       })}
@@ -374,8 +459,14 @@ function fieldInput(field: FieldDef, value: FieldValue | undefined, error?: stri
           class="ak-input"
           type={field.type === "url" ? "url" : "text"}
           {...common}
-          value={typeof value === "string" ? value : ""}
-          placeholder={field.type === "relation" ? "page id" : undefined}
+          value={typeof value === "string" ? value : Array.isArray(value) ? value.join(", ") : ""}
+          placeholder={
+            field.type !== "relation"
+              ? undefined
+              : relationTarget(field) === "pages"
+                ? field.multiple ? "page ids, separated by commas" : "page id"
+                : field.multiple ? "row ids, separated by commas" : "row id"
+          }
         />
       );
   }
@@ -397,6 +488,9 @@ function readRowValues(
       values[field.name] = all.includes("true");
     } else if (field.type === "multi_select") {
       if (all.length > 0) values[field.name] = all;
+    } else if (field.type === "relation" && field.multiple) {
+      const ids = first.split(/[\s,]+/).filter((id) => id !== "");
+      if (ids.length > 0) values[field.name] = ids;
     } else if (first === "") {
       continue;
     } else if (field.type === "number") {
@@ -730,7 +824,7 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
             No pages yet. <a href="/new">Create one</a>, or ask Claude to.
           </div>
         ) : (
-          <Tree pages={pages} />
+          <Tree pages={pages} collections={await context.collections.list(ws)} />
         )}
       </Layout>,
     );
@@ -760,10 +854,13 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
       return notFound(c, `Page ${c.req.param("id")}`);
     }
     const pages = await allPages(context);
-    const titles = resolverFor(pages);
+    const collections = await context.collections.list(ws);
     const byId = new Map(pages.map((p) => [p.id, p]));
     const { outbound, inbound } = await context.pages.neighbours(ws, page.id);
+    const linkedRows = await rowsFor(context, [...outbound.map((e) => e.targetId), ...inbound.map((e) => e.sourceId)], collections);
+    const titles = resolverFor(pages, collections, linkedRows);
     const children = pages.filter((p) => p.parentId === page.id);
+    const tablesHere = collections.filter((collection) => collection.parentId === page.id);
     const flash = c.req.query("saved")
       ? "Saved."
       : c.req.query("restored")
@@ -776,7 +873,7 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
       c,
       <Layout title={page.title} section="pages">
         <div class="cairn-page">
-          <Tree pages={pages} currentId={page.id} />
+          <Tree pages={pages} collections={collections} currentId={page.id} />
           <div>
             {flash ? <Banner kind="ok">{flash}</Banner> : null}
             <ol class="ak-breadcrumb">
@@ -816,6 +913,18 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
             <EdgeList edges={inbound} direction="in" titles={titles} />
             <h3>Links to</h3>
             <EdgeList edges={outbound} direction="out" titles={titles} />
+            {tablesHere.length > 0 ? (
+              <>
+                <h3>Collections here</h3>
+                <ul>
+                  {tablesHere.map((collection) => (
+                    <li>
+                      <a href={collectionHref(collection.id)}>{collection.name}</a>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            ) : null}
             {children.length > 0 ? (
               <>
                 <h3>Child pages</h3>
@@ -1158,6 +1267,7 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
 
   app.get("/c", async (c) => {
     const collections = await context.collections.list(ws);
+    const pageTitles = resolverFor(await allPages(context));
     return render(
       c,
       <Layout title="Collections" section="collections">
@@ -1175,6 +1285,7 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
               <thead>
                 <tr>
                   <th>Name</th>
+                  <th>In</th>
                   <th>Fields</th>
                   <th>Updated</th>
                 </tr>
@@ -1184,6 +1295,13 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
                   <tr>
                     <td>
                       <a href={`/c/${encodeURIComponent(collection.id)}`}>{collection.name}</a>
+                    </td>
+                    <td>
+                      {collection.parentId && pageTitles.title(collection.parentId) !== null ? (
+                        <a href={pageHref(collection.parentId)}>{pageTitles.title(collection.parentId)}</a>
+                      ) : (
+                        <span class="ak-dash">–</span>
+                      )}
                     </td>
                     <td>{collection.fields.map((field) => field.name).join(", ")}</td>
                     <td>
@@ -1201,11 +1319,26 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
 
   const loadCollection = (c: Context) => context.store.getCollection(ws, c.req.param("cid") ?? "");
 
-  const cell = (field: FieldDef, value: FieldValue | undefined): Child => {
+  const cell = (field: FieldDef, value: FieldValue | undefined, links: LinkResolver): Child => {
     if (value === undefined || value === null || value === "") return <span class="ak-dash">–</span>;
     if (field.type === "checkbox") return value ? "yes" : "no";
+    if (field.type === "relation") {
+      const target = relationTarget(field);
+      const ids = Array.isArray(value) ? value : [String(value)];
+      return ids.map((id, i) => {
+        const node = target === "pages" ? id : rowNodeId(target, id);
+        const name = links.title(node);
+        return (
+          <>
+            {i > 0 ? ", " : null}
+            <a href={links.href?.(node) ?? pageHref(id)} class={name === null ? "cairn-missing" : undefined}>
+              {name === null ? id : target === "pages" ? name : name.slice(name.indexOf(": ") + 2)}
+            </a>
+          </>
+        );
+      });
+    }
     if (Array.isArray(value)) return value.join(", ");
-    if (field.type === "relation") return <a href={pageHref(String(value))}>{String(value)}</a>;
     return String(value);
   };
 
@@ -1214,14 +1347,33 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
     if (!collection) return notFound(c, `Collection ${c.req.param("cid")}`);
     const rows = await context.collections.queryRows(ws, collection.id, { limit: 500 });
     const base = `/c/${encodeURIComponent(collection.id)}`;
+    const pages = await allPages(context);
+    const collections = await context.collections.list(ws);
+    const links = resolverFor(pages, collections, await targetRows(context, collection, collections));
+    const byId = new Map(pages.map((p) => [p.id, p]));
+    const parent = collection.parentId ? byId.get(collection.parentId) : undefined;
+    const backlinks = await context.collections.backlinks(ws, collection.id);
+    const moved = c.req.query("moved");
     return render(
       c,
       <Layout title={collection.name} section="collections">
+        {moved ? <Banner kind="ok">{parent ? `Moved under ${parent.title}.` : "Moved to the top."}</Banner> : null}
         <header class="ak-pagehead">
           <div>
-            <p class="ak-eyebrow">
-              <a href="/c">Collections</a>
-            </p>
+            <ol class="ak-breadcrumb">
+              {parent ? (
+                [...ancestorsOf(parent.id, byId), parent].map((ancestor) => (
+                  <li>
+                    <a href={pageHref(ancestor.id)}>{ancestor.title}</a>
+                  </li>
+                ))
+              ) : (
+                <li>
+                  <a href="/c">Collections</a>
+                </li>
+              )}
+              <li aria-current="page">{collection.name}</li>
+            </ol>
             <h1>{collection.name}</h1>
             <p class="ak-small">
               {rows.items.length}
@@ -1270,12 +1422,12 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
                             : undefined
                         }
                       >
-                        {i === 0 ? (
+                        {i === 0 && field.type !== "relation" ? (
                           <a href={`${base}/r/${encodeURIComponent(row.id)}`}>
-                            {cell(field, row.values[field.name]) ?? row.id}
+                            {cell(field, row.values[field.name], links) ?? row.id}
                           </a>
                         ) : (
-                          cell(field, row.values[field.name])
+                          cell(field, row.values[field.name], links)
                         )}
                       </td>
                     ))}
@@ -1288,8 +1440,67 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
             </p>
           </div>
         )}
+        <div class="ak-split">
+          <section>
+            <h2>Linked from</h2>
+            <EdgeList edges={backlinks} direction="in" titles={links} />
+          </section>
+          <section>
+            <h2>Place in the tree</h2>
+            <form method="post" action={`${base}/move`} class="cairn-editor">
+              <input type="hidden" name="version" value={collection.version} />
+              <label for="parent">Under</label>
+              <select class="ak-select" id="parent" name="parent">
+                <option value="" selected={!collection.parentId}>
+                  The top, with no page
+                </option>
+                {[...pages]
+                  .sort((a, b) => a.title.localeCompare(b.title))
+                  .map((page) => (
+                    <option value={page.id} selected={page.id === collection.parentId}>
+                      {page.title}
+                    </option>
+                  ))}
+              </select>
+              <label for="move_note">Why (optional)</label>
+              <input class="ak-input" id="move_note" name="note" type="text" />
+              <div class="cairn-actions">
+                <button class="ak-btn" type="submit">
+                  Move
+                </button>
+                <span class="ak-small">Only its place changes; its rows stay as they are.</span>
+              </div>
+            </form>
+          </section>
+        </div>
       </Layout>,
     );
+  });
+
+  app.post("/c/:cid/move", async (c) => {
+    const collection = await loadCollection(c);
+    if (!collection) return notFound(c, `Collection ${c.req.param("cid")}`);
+    const form = await c.req.parseBody();
+    const parent = text(form, "parent").trim();
+    try {
+      await moveRecord(context, collection.id, parent === "" ? null : parent, text(form, "version"), by(c, text(form, "note")));
+    } catch (error) {
+      if (!(error instanceof VersionConflictError) && !(error instanceof ValidationError)) throw error;
+      return render(
+        c,
+        <Layout title="Not moved" section="collections">
+          <Banner kind="bad">
+            <strong>Not moved.</strong>{" "}
+            {error instanceof VersionConflictError
+              ? "The collection changed since you opened it."
+              : error.errors.map((e) => e.message).join("; ")}{" "}
+            <a href={collectionHref(collection.id)}>Back to {collection.name}</a>
+          </Banner>
+        </Layout>,
+        409,
+      );
+    }
+    return c.redirect(`${collectionHref(collection.id)}?moved=1`, 303);
   });
 
   const RowPage: FC<{
@@ -1302,7 +1513,8 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
     flash?: string | null | undefined;
     notice?: Child;
     version?: string | undefined;
-  }> = ({ collection, row, values, errors, note, history, flash, notice, version }) => {
+    links?: { outbound: Edge[]; inbound: Edge[]; resolver: LinkResolver } | undefined;
+  }> = ({ collection, row, values, errors, note, history, flash, notice, version, links }) => {
     const base = `/c/${encodeURIComponent(collection.id)}`;
     const title = row ? rowLabel(row.values, collection, row.id) : "New row";
     return (
@@ -1330,6 +1542,14 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
           />
           {row ? (
             <section>
+              {links ? (
+                <>
+                  <h2>Links</h2>
+                  <EdgeList edges={links.outbound} direction="out" titles={links.resolver} />
+                  <h2>Linked from</h2>
+                  <EdgeList edges={links.inbound} direction="in" titles={links.resolver} />
+                </>
+              ) : null}
               <h2>History</h2>
               <RevisionTimeline
                 revisions={history}
@@ -1396,6 +1616,13 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
       : c.req.query("restored")
         ? "Restored, as a new version."
         : null;
+    const [outbound, inbound, collections] = await Promise.all([
+      context.collections.rowLinks(ws, collection.id, row.id),
+      context.collections.rowBacklinks(ws, collection.id, row.id),
+      context.collections.list(ws),
+    ]);
+    const linked = await rowsFor(context, [...outbound.map((e) => e.targetId), ...inbound.map((e) => e.sourceId)], collections);
+    const resolver = resolverFor(await allPages(context), collections, linked);
     return render(
       c,
       <RowPage
@@ -1406,6 +1633,7 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
         note=""
         history={history}
         flash={flash}
+        links={{ outbound, inbound, resolver }}
       />,
     );
   });

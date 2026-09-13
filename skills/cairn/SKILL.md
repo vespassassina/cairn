@@ -61,6 +61,12 @@ cairn upsert <collection-id> --set title=Canopy --set grams=22 --note "why"
 
 A failed write names every bad field at once, so fix them all and retry once.
 
+Relation fields link rows. In `cairn collections`, `components:relation->col_x[]`
+means a list of row ids from `col_x`: set it with `--set 'components=["row_a","row_b"]'`.
+`cairn links <collection-id>/<row-id>` shows a row's links and what links to it, and
+`[[collection-id/row-id]]` links a page to a row. `cairn move <id> --parent <page-id>
+--version <v>` puts a page or collection under a page, or `--parent root` at the top.
+
 ## What others changed
 
 `cairn changes --since <time>` lists changes newest first. Its output ends with the

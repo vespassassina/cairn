@@ -6,6 +6,9 @@ import {
   collectionJson,
   describeError,
   editPage,
+  linkJson,
+  moveRecord,
+  toFieldDefs,
   EDIT_MODES,
   pageSummary,
   renderDiff,
@@ -93,9 +96,19 @@ const schemas = {
           type: z.enum(FIELD_TYPES),
           required: z.boolean().optional(),
           options: z.array(z.string()).optional(),
+          target: z.string().min(1).optional(),
+          multiple: z.boolean().optional(),
         }),
       )
       .min(1),
+    // The page it sits under. On PUT, leave it out to keep it where it is.
+    parent_id: z.string().min(1).nullable().optional(),
+  }),
+  move: z.object({
+    id: z.string().min(1),
+    parent_id: z.string().min(1).nullable(),
+    version: z.string().min(1),
+    change_note: CHANGE_NOTE,
   }),
   row: z.object({
     values: z.record(z.string(), z.unknown()),
@@ -359,18 +372,20 @@ export function restRoutes(context: AppContext, callerFor: CallerFor): Hono {
     return c.body(null, 204);
   });
 
+  const collectionIds = async () => new Set((await context.collections.list(ws)).map((collection) => collection.id));
+
   api.get("/pages/:id/backlinks", async (c) => {
     const edges = await context.pages.backlinks(ws, c.req.param("id"));
-    return c.json({
-      backlinks: edges.map((edge) => ({ page_id: edge.sourceId, type: edge.type, label: edge.label })),
-    });
+    const ids = await collectionIds();
+    return c.json({ backlinks: edges.map((edge) => linkJson(edge, "source", ids)) });
   });
 
   api.get("/pages/:id/neighbours", async (c) => {
     const { outbound, inbound } = await context.pages.neighbours(ws, c.req.param("id"));
+    const ids = await collectionIds();
     return c.json({
-      outbound: outbound.map((e) => ({ page_id: e.targetId, type: e.type, label: e.label })),
-      inbound: inbound.map((e) => ({ page_id: e.sourceId, type: e.type, label: e.label })),
+      outbound: outbound.map((e) => linkJson(e, "target", ids)),
+      inbound: inbound.map((e) => linkJson(e, "source", ids)),
     });
   });
 
@@ -405,15 +420,7 @@ export function restRoutes(context: AppContext, callerFor: CallerFor): Hono {
     const input = await parseBody(c, schemas.createCollection);
     const collection = await context.collections.create(
       ws,
-      {
-        name: input.name,
-        fields: input.fields.map((field) => ({
-          name: field.name,
-          type: field.type,
-          ...(field.required === undefined ? {} : { required: field.required }),
-          ...(field.options === undefined ? {} : { options: field.options }),
-        })),
-      },
+      { name: input.name, fields: toFieldDefs(input.fields), parentId: input.parent_id ?? null },
       by(c, undefined),
     );
     c.header("Location", `/api/v1/collections/${encodeURIComponent(collection.id)}`);
@@ -429,12 +436,8 @@ export function restRoutes(context: AppContext, callerFor: CallerFor): Hono {
       c.req.param("cid"),
       {
         name: input.name,
-        fields: input.fields.map((field) => ({
-          name: field.name,
-          type: field.type,
-          ...(field.required === undefined ? {} : { required: field.required }),
-          ...(field.options === undefined ? {} : { options: field.options }),
-        })),
+        fields: toFieldDefs(input.fields),
+        ...(input.parent_id === undefined ? {} : { parentId: input.parent_id }),
       },
       version,
       by(c, undefined),
@@ -517,6 +520,35 @@ export function restRoutes(context: AppContext, callerFor: CallerFor): Hono {
       by(c, input.change_note),
     );
     return c.body(null, 204);
+  });
+
+  // Move a page or a collection (ADR-024).
+  api.post("/move", async (c) => {
+    const input = await parseBody(c, schemas.move);
+    return c.json(await moveRecord(context, input.id, input.parent_id, input.version, by(c, input.change_note)));
+  });
+
+  // Links (ADR-024): a row's relation values, and what links to it.
+  api.get("/collections/:cid/rows/:rid/links", async (c) => {
+    const cid = c.req.param("cid");
+    const rid = c.req.param("rid");
+    await context.collections.getRow(ws, cid, rid);
+    const [outbound, inbound, ids] = await Promise.all([
+      context.collections.rowLinks(ws, cid, rid),
+      context.collections.rowBacklinks(ws, cid, rid),
+      collectionIds(),
+    ]);
+    return c.json({
+      outbound: outbound.map((e) => linkJson(e, "target", ids)),
+      inbound: inbound.map((e) => linkJson(e, "source", ids)),
+    });
+  });
+
+  api.get("/collections/:cid/backlinks", async (c) => {
+    await context.collections.get(ws, c.req.param("cid"));
+    const edges = await context.collections.backlinks(ws, c.req.param("cid"));
+    const ids = await collectionIds();
+    return c.json({ backlinks: edges.map((edge) => linkJson(edge, "source", ids)) });
   });
 
   api.get("/collections/:cid/rows/:rid/history", async (c) => {

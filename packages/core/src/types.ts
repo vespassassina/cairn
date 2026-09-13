@@ -111,6 +111,13 @@ export interface FieldDef {
   required?: boolean;
   /** For select and multi_select. */
   options?: string[];
+  /**
+   * For relation: what it links to. `"pages"`, the default, or a collection
+   * id, which may be this collection's own (ADR-024).
+   */
+  target?: string;
+  /** For relation: a list of links rather than one. */
+  multiple?: boolean;
 }
 
 export interface Collection {
@@ -118,6 +125,8 @@ export interface Collection {
   workspaceId: WorkspaceId;
   name: string;
   fields: FieldDef[];
+  /** The page it sits under in the tree, or null at the top (ADR-024). */
+  parentId: Id | null;
   createdAt: string;
   updatedAt: string;
   updatedBy: Actor;
@@ -127,6 +136,8 @@ export interface Collection {
 export interface CollectionInput {
   name: string;
   fields: FieldDef[];
+  /** Omitted on an update: stays where it is. Null: moves to the top. */
+  parentId?: Id | null;
 }
 
 export type FieldValue = string | number | boolean | string[] | null;

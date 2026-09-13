@@ -6,6 +6,22 @@ Entries link to the ADR when there is one. A change of direction that has no ADR
 
 ## 2026-09-13
 
+### Added: collections in the page tree, and relation fields as links (ADR-024)
+
+The owner asked for their two related collections to sit under one root, "by just adding a link", as a feature of Cairn, and whether rows could link to rows. They could not: collections were flat, and a relation field held one unchecked page id that no backlink ever saw.
+
+1. **A collection sits under a page,** or at the top. Moving it changes one field; no row moves. One `move` operation for pages and collections: `POST /api/v1/move`, the MCP tool `move`, `cairn move`, and a form on the console's collection page.
+2. **Relation fields name their target:** pages, or a collection, its own included, with `multiple` for a list. Every value becomes a link, so the page or row at the other end shows it as a backlink. Page text links to rows and collections with `[[collection-id/row-id]]` and `[[collection-id]]`.
+3. **Everywhere links are read:** REST and MCP backlinks and neighbours take rows and collections, and describe each end as a page, collection or row. `cairn links` takes `collection-id/row-id`. The console shows collections in the tree under their page, names linked rows in tables, and gives each row its links and what links to it.
+4. **Existing rows get their links on the next start,** once, since rows written before had none. `pnpm reindex` rebuilds them as well.
+5. **Export, import and sync carry a collection's parent,** and create a relation's target collection before the collection that points at it. Sync now writes pages before collections (ADR-024 amends ADR-023).
+
+The agent-facing text says the same: the workspace summary names the page each collection sits under, the MCP instructions say a relation links rows, and the skill explains relation fields, row links and `cairn move`. MCP now costs about 3,000 tokens a session against 2,725 before, measured with `pnpm context-cost`.
+
+Also fixed: the MCP instructions told agents to link pages with `[[Page title]]`, but only `[[page-id]]` makes a link, as the `create_page` tool, the console and the extractor all say. An agent following the instructions wrote dead links.
+
+20 new tests across the store, services, REST, MCP, console and CLI.
+
 ### The console's pages have a proper head, and the app is named Cairn
 
 The owner asked for "proper html tags including title which should read Cairn". Every console, sign-in and OAuth page now starts with the same head: viewport, a description, `application-name` and `apple-mobile-web-app-title` set to Cairn, a theme colour, the SVG icon, a 180 pixel PNG for home screens (which do not take SVG), and a web manifest named Cairn with 180 and 512 pixel icons. The home page's title is "Cairn"; other pages read "Pages · Cairn" and so on. The sign-in page had no viewport tag, so it rendered at desktop width on a phone. An address the console does not know answered with bare text; it is now a "Not found" page. Two new tests.

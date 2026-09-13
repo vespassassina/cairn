@@ -77,7 +77,11 @@ Three kinds of record, and the difference between them is the most important thi
 
 1. **Source of truth: pages and rows.** Written with optimistic concurrency. Never derived from anything.
 2. **History: revisions.** One immutable snapshot per write of a page or row, linked into a chain by the version each one replaced. Also source of truth: history cannot be rebuilt from anything else (ADR-008).
-3. **Derived: edges and chunks.** Computed from pages by pure functions, written with an idempotent replace per page, and rebuildable from scratch at any time (ADR-005).
+3. **Derived: edges and chunks.** Computed from pages, and edges also from rows, by pure functions, written with an idempotent replace per record, and rebuildable from scratch at any time (ADR-005).
+
+## The tree and the link graph
+
+Pages form a tree through `parent_id`, and collections sit in it too, under a page or at the top (ADR-024). The link graph is the edges table: one edge per link, mention, parent or tag in a page's text, and one per value of a row's relation fields. A node is a page id, a collection id, or a row as `collection-id/row-id`, so page text can link to all three (`[[id]]`), and a relation field links a row to pages or to the rows of any collection, its own included. Backlinks are read from the same table by target, so nothing is stored twice.
 
 ## The write path
 
@@ -85,7 +89,7 @@ In this order, because no transaction spans documents (ADR-005 rule 3, ADR-008 r
 
 1. Write the revision. Immutable, keyed by the new version, cannot conflict.
 2. Write the page or row, checking the expected version. On conflict, delete the revision from step 1 and return the current content.
-3. Replace the page's edges and chunks.
+3. Replace the page's edges and chunks, or the row's edges.
 
 A crash after step 1 leaves a revision off the chain, which is never shown and is swept by rebuild. A crash after step 2 leaves stale derived data, which rebuild regenerates. Nothing is ever half-written in a way a reader can see.
 

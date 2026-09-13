@@ -34,6 +34,8 @@ export interface ExportPage {
 export interface ExportCollection {
   id: string;
   name: string;
+  /** The page it sits under (ADR-024). Absent in exports made before it existed. */
+  parent_id?: string | null;
   fields: unknown[];
   rows: Array<{ id: string; values: Record<string, unknown> }>;
 }
@@ -173,5 +175,29 @@ export function orderForImport(pages: ExportPage[]): ExportPage[] {
     ordered.push(page);
   };
   for (const page of pages) visit(page, new Set());
+  return ordered;
+}
+
+/**
+ * Collections in an order that creates each one after the collections its
+ * relation fields point at, since a relation to a collection that does not
+ * exist yet is refused (ADR-024). A cycle keeps the order it was given.
+ */
+export function orderCollections<T extends { id: string; fields: unknown[] }>(collections: T[]): T[] {
+  const byId = new Map(collections.map((collection) => [collection.id, collection]));
+  const ordered: T[] = [];
+  const done = new Set<string>();
+  const visit = (collection: T, trail: Set<string>) => {
+    if (done.has(collection.id) || trail.has(collection.id)) return;
+    trail.add(collection.id);
+    for (const field of collection.fields as Array<{ type?: unknown; target?: unknown }>) {
+      if (field.type !== "relation" || typeof field.target !== "string") continue;
+      const target = byId.get(field.target);
+      if (target && target.id !== collection.id) visit(target, trail);
+    }
+    done.add(collection.id);
+    ordered.push(collection);
+  };
+  for (const collection of collections) visit(collection, new Set());
   return ordered;
 }

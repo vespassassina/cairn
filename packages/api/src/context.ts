@@ -68,12 +68,18 @@ export async function createContext(
       `search index upgraded: rebuilt ${result.pages} pages in ${Date.now() - started}ms\n`,
     );
   }
+  const collections = new CollectionService(store);
+  if (await collections.needsRelink(config.workspaceId)) {
+    // Rows written before relations became links (ADR-024).
+    const result = await collections.rebuildWorkspace(config.workspaceId);
+    process.stderr.write(`links derived for ${result.rows} rows\n`);
+  }
 
   return {
     store,
     search,
     pages,
-    collections: new CollectionService(store),
+    collections,
     auth,
     workspaceId: config.workspaceId,
   };

@@ -4,13 +4,17 @@ import type { Actor, Revision } from "@cairn/core";
 import { budgetList, budgetText, DEFAULT_TOKEN_BUDGET } from "../budget.js";
 import type { AppContext } from "../context.js";
 import {
+  collectionJson,
   describeError,
   editPage,
   EDIT_MODES,
+  linkJson,
+  moveRecord,
   pageSummary,
   renderDiff,
   revisionSummary,
   rowJson,
+  toFieldDefs,
 } from "../operations.js";
 
 export { replaceSection } from "../operations.js";
@@ -215,24 +219,39 @@ export function registerTools(server: McpServer, context: AppContext, actor: Act
     },
   );
 
+  const collectionIds = async () => new Set((await context.collections.list(ws)).map((collection) => collection.id));
+  const WHICH = {
+    page_id: z.string().optional(),
+    collection_id: z.string().optional().describe("With row_id, a row."),
+    row_id: z.string().optional(),
+  };
+  const needOne = () =>
+    failure({
+      error: "validation_failed",
+      message: "Pass page_id, or collection_id, or collection_id with row_id.",
+      fields: [{ field: "page_id", message: "or collection_id, with row_id for a row" }],
+    });
+
   server.registerTool(
     "get_backlinks",
     {
-      title: "Pages linking here",
+      title: "What links here",
       description:
-        "Pages that link to, mention or parent this page. Useful for finding context the user did not name. Updated within a few seconds of a write, not instantly.",
-      inputSchema: { page_id: z.string() },
+        "Pages and rows linking to, mentioning or parenting a page, collection or row. Useful for context the user did not name. Updated within seconds of a write.",
+      inputSchema: WHICH,
     },
-    async ({ page_id }): Promise<ToolResult> => {
+    async ({ page_id, collection_id, row_id }): Promise<ToolResult> => {
       try {
-        const edges = await context.pages.backlinks(ws, page_id);
-        return json({
-          backlinks: edges.map((edge) => ({
-            page_id: edge.sourceId,
-            type: edge.type,
-            label: edge.label,
-          })),
-        });
+        const edges = page_id
+          ? await context.pages.backlinks(ws, page_id)
+          : collection_id && row_id
+            ? await context.collections.rowBacklinks(ws, collection_id, row_id)
+            : collection_id
+              ? await context.collections.backlinks(ws, collection_id)
+              : null;
+        if (edges === null) return needOne();
+        const ids = await collectionIds();
+        return json({ backlinks: edges.map((edge) => linkJson(edge, "source", ids)) });
       } catch (error) {
         return toolError(error);
       }
@@ -242,18 +261,48 @@ export function registerTools(server: McpServer, context: AppContext, actor: Act
   server.registerTool(
     "get_neighbours",
     {
-      title: "One hop around a page",
+      title: "One hop around a page or row",
       description:
-        "Everything one hop from this page, in both directions: links, mentions, parent and tags. Call it repeatedly to walk further; the server does not expand the graph for you.",
-      inputSchema: { page_id: z.string() },
+        "Everything one hop from a page or row, both directions: links, mentions, parent, tags, relations. Call it again to walk further.",
+      inputSchema: { page_id: WHICH.page_id, collection_id: WHICH.collection_id, row_id: WHICH.row_id },
     },
-    async ({ page_id }): Promise<ToolResult> => {
+    async ({ page_id, collection_id, row_id }): Promise<ToolResult> => {
       try {
-        const { outbound, inbound } = await context.pages.neighbours(ws, page_id);
+        let outbound, inbound;
+        if (page_id) ({ outbound, inbound } = await context.pages.neighbours(ws, page_id));
+        else if (collection_id && row_id) {
+          [outbound, inbound] = await Promise.all([
+            context.collections.rowLinks(ws, collection_id, row_id),
+            context.collections.rowBacklinks(ws, collection_id, row_id),
+          ]);
+        } else return needOne();
+        const ids = await collectionIds();
         return json({
-          outbound: outbound.map((e) => ({ page_id: e.targetId, type: e.type, label: e.label })),
-          inbound: inbound.map((e) => ({ page_id: e.sourceId, type: e.type, label: e.label })),
+          outbound: outbound.map((e) => linkJson(e, "target", ids)),
+          inbound: inbound.map((e) => linkJson(e, "source", ids)),
         });
+      } catch (error) {
+        return toolError(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "move",
+    {
+      title: "Move a page or collection",
+      description:
+        "Put a page or collection under a page, or at the top with parent_id null. Only its place changes. Needs its current version.",
+      inputSchema: {
+        id: z.string(),
+        parent_id: z.string().nullable(),
+        version: z.string(),
+        change_note: CHANGE_NOTE,
+      },
+    },
+    async ({ id, parent_id, version, change_note }): Promise<ToolResult> => {
+      try {
+        return json(await moveRecord(context, id, parent_id, version, by(change_note)));
       } catch (error) {
         return toolError(error);
       }
@@ -271,14 +320,7 @@ export function registerTools(server: McpServer, context: AppContext, actor: Act
     async (): Promise<ToolResult> => {
       try {
         const collections = await context.collections.list(ws);
-        return json({
-          collections: collections.map((collection) => ({
-            id: collection.id,
-            name: collection.name,
-            version: collection.version,
-            fields: collection.fields,
-          })),
-        });
+        return json({ collections: collections.map(collectionJson) });
       } catch (error) {
         return toolError(error);
       }
@@ -291,9 +333,11 @@ export function registerTools(server: McpServer, context: AppContext, actor: Act
       title: "Create a collection",
       description:
         "Create a collection with a typed schema. Field types: text, number, date, select, multi_select, checkbox, url, relation. " +
-        "select and multi_select need an options list. Mark a field required only when a row is meaningless without it.",
+        "select and multi_select need an options list. A relation links to pages, or to a collection's rows with target (its own id allowed); multiple holds a list. " +
+        "Mark a field required only when a row is meaningless without it. parent_id: the page it sits under.",
       inputSchema: {
         name: z.string().min(1),
+        parent_id: z.string().optional(),
         fields: z
           .array(
             z.object({
@@ -310,26 +354,18 @@ export function registerTools(server: McpServer, context: AppContext, actor: Act
               ]),
               required: z.boolean().optional(),
               options: z.array(z.string()).optional(),
+              target: z.string().optional(),
+              multiple: z.boolean().optional(),
             }),
           )
           .min(1),
       },
     },
-    async ({ name, fields }): Promise<ToolResult> => {
+    async ({ name, fields, parent_id }): Promise<ToolResult> => {
       try {
-        // Drop the keys the caller left out rather than passing explicit
-        // undefined, which the domain types do not accept.
         const collection = await context.collections.create(
           ws,
-          {
-            name,
-            fields: fields.map((field) => ({
-              name: field.name,
-              type: field.type,
-              ...(field.required === undefined ? {} : { required: field.required }),
-              ...(field.options === undefined ? {} : { options: field.options }),
-            })),
-          },
+          { name, fields: toFieldDefs(fields), parentId: parent_id ?? null },
           by(undefined),
         );
         return json({ id: collection.id, name: collection.name, version: collection.version });
@@ -406,7 +442,7 @@ export function registerTools(server: McpServer, context: AppContext, actor: Act
       title: "Create or update a row",
       description:
         "Create a row, or update one by passing row_id and its version. Validation reports every bad field at once, so one retry can fix them all. " +
-        "Dates are ISO 8601 strings, multi_select takes a list of option names.",
+        "Dates are ISO 8601 strings, multi_select takes a list of option names, and a relation takes an id, or a list of ids when the field is multiple.",
       inputSchema: {
         collection_id: z.string(),
         values: z.record(z.string(), z.unknown()),

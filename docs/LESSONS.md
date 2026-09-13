@@ -13,6 +13,13 @@ Each entry answers four questions:
 
 ## 2026-09-13
 
+### The instructions taught a link syntax the code did not read
+
+1. **What happened.** The MCP server instructions told agents to link pages with `[[Page title]]`. The extractor only reads `[[page-id]]`, which the `create_page` tool description and the console both say. Found while answering the owner's question about how cross-linking works.
+2. **Cause.** The instructions were written in plain words for readability, and "Page title" read better than "page-id". Nothing compares the instructions with the tool descriptions, and a title like `BPC-157` even matches the id pattern, so the link was stored, pointing at nothing.
+3. **Fix.** The instructions now say `[[page-id]]`.
+4. **Lesson.** Anything the instructions tell an agent to type is an interface. Check it against the code that reads it, the same way as a tool schema, whenever either changes.
+
 ### A shell script change reached CI unlinted
 
 1. **What happened.** CI's shellcheck step failed on a new check in `deploy.sh`: `A && B || C`, flagged SC2015.

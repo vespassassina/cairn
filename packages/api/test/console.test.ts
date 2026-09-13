@@ -488,3 +488,60 @@ describe("collections", () => {
     expect(restored!.values["side_effects"]).toBe(4);
   });
 });
+
+describe("collections in the tree and rows as links (ADR-024)", () => {
+  beforeEach(async () => {
+    const ws = context.workspaceId;
+    await context.pages.create(ws, { title: "Peptides", body: "See [[col_stacks/row_wolverine]] and [[col_stacks]]." }, { actor: OWNER }, "pg_home");
+    await context.pages.create(ws, { title: "BPC-157", body: "Healing." }, { actor: OWNER }, "pg_bpc");
+    await context.collections.create(ws, { name: "Peptides", fields: [{ name: "name", type: "text", required: true }, { name: "page", type: "relation" }] }, { actor: OWNER }, "col_peptides");
+    await context.collections.create(
+      ws,
+      { name: "Stacks", parentId: "pg_home", fields: [{ name: "title", type: "text", required: true }, { name: "components", type: "relation", target: "col_peptides", multiple: true }] },
+      { actor: OWNER },
+      "col_stacks",
+    );
+    await context.collections.upsertRow(ws, "col_peptides", { values: { name: "BPC-157", page: "pg_bpc" } }, AGENT, { id: "row_bpc" });
+    await context.collections.upsertRow(ws, "col_stacks", { values: { title: "Wolverine", components: ["row_bpc"] } }, AGENT, { id: "row_wolverine" });
+  });
+
+  it("shows a collection under its page in the tree and the page's rail", async () => {
+    const { html } = await get("/p/pg_home");
+    expect(html).toContain('href="/c/col_stacks"');
+    expect(html).toContain("Collections here");
+    // The wiki links to a row and a collection resolve to them, named.
+    expect(html).toContain('href="/c/col_stacks/r/row_wolverine"');
+    expect(html).toContain("Stacks: Wolverine");
+  });
+
+  it("names linked rows in the table, and shows what links to a row", async () => {
+    const table = await get("/c/col_stacks");
+    expect(table.html).toContain('href="/c/col_peptides/r/row_bpc"');
+    expect(table.html).toContain(">BPC-157</a>");
+
+    const row = await get("/c/col_peptides/r/row_bpc");
+    expect(row.html).toContain("Linked from");
+    expect(row.html).toContain('href="/c/col_stacks/r/row_wolverine"');
+    expect(row.html).toContain("(components)");
+    expect(row.html).toContain('href="/p/pg_bpc"');
+
+    const page = await get("/p/pg_bpc");
+    expect(page.html).toContain("Peptides: BPC-157");
+  });
+
+  it("moves a collection from its page, keeping its rows", async () => {
+    const collection = await context.collections.get(context.workspaceId, "col_peptides");
+    const moved = await post("/c/col_peptides/move", { parent: "pg_home", version: collection.version, note: "Group the tables" });
+    expect(moved.status).toBe(303);
+    expect((await context.collections.get(context.workspaceId, "col_peptides")).parentId).toBe("pg_home");
+    expect((await get("/c/col_peptides?moved=1")).html).toContain("Moved under Peptides.");
+    expect((await context.collections.queryRows(context.workspaceId, "col_peptides")).items).toHaveLength(1);
+  });
+
+  it("reads a list of row ids from a relation field in the form", async () => {
+    const row = await context.collections.getRow(context.workspaceId, "col_stacks", "row_wolverine");
+    const saved = await post("/c/col_stacks/r/row_wolverine", { title: "Wolverine", components: "row_bpc, row_tb", version: row.version, note: "" });
+    expect(saved.status).toBe(303);
+    expect((await context.collections.getRow(context.workspaceId, "col_stacks", "row_wolverine")).values["components"]).toEqual(["row_bpc", "row_tb"]);
+  });
+});

@@ -8,6 +8,7 @@ import {
   FORMAT,
   FORMAT_VERSION,
   MANIFEST,
+  orderCollections,
   orderForImport,
   pageFile,
   parsePageFile,
@@ -58,7 +59,7 @@ Read
   cairn overview                          what Cairn holds: collections, top-level pages, tags
   cairn search <words...>                 search by keyword, and by meaning for English text
   cairn read <page-id>                    a page as Markdown, with its version
-  cairn links <page-id>                   pages one hop away, both directions
+  cairn links <page-id | collection-id/row-id>   what it links to and what links to it
   cairn history <page-id>                 who changed it, when and why
   cairn revision <page-id> <version>      one old version, with a diff
   cairn changes [--since T] [--agents|--people]   what changed, newest first
@@ -69,10 +70,12 @@ Write (every write is a revision the owner can review and undo)
   cairn replace-section <page-id> --section H --version V
   cairn write <page-id> --version V                     replace the whole body
   cairn delete <page-id> --version V
+  cairn move <page-or-collection-id> --parent PAGE|root --version V   change its place in the tree
   All writes take --note "why", shown to the owner.
 
 Collections
-  cairn collections                       names, ids and fields
+  cairn collections                       names, ids, fields and where each sits
+      relation fields link rows: field->collection-id, [] when a list
   cairn rows <collection-id> [--where "field op value"]... [--sort field[:desc]]
       ops: eq ne lt lte gt gte contains in exists
   cairn row <collection-id> <row-id>
@@ -388,10 +391,20 @@ export async function run(argv: string[], io: Io): Promise<number> {
       }
 
       case "links": {
-        const id = need(args[0], "page id");
-        const { json } = await client.request("GET", `/pages/${encodeURIComponent(id)}/neighbours`);
+        const id = need(args[0], "page id, or collection-id/row-id");
+        const slash = id.indexOf("/");
+        const path =
+          slash > 0
+            ? `/collections/${encodeURIComponent(id.slice(0, slash))}/rows/${encodeURIComponent(id.slice(slash + 1))}/links`
+            : `/pages/${encodeURIComponent(id)}/neighbours`;
+        const { json } = await client.request("GET", path);
         out(json, () => {
-          const line = (edge: Json) => `  ${String(edge["page_id"])}  ${String(edge["type"])}`;
+          const end = (edge: Json) =>
+            edge["row_id"] !== undefined
+              ? `${String(edge["collection_id"])}/${String(edge["row_id"])}`
+              : String(edge["page_id"] ?? edge["collection_id"]);
+          const how = (edge: Json) => (edge["type"] === "relation" ? `relation ${String(edge["label"])}` : String(edge["type"]));
+          const line = (edge: Json) => `  ${end(edge)}  ${how(edge)}`;
           const outbound = list(json?.["outbound"]).map(line);
           const inbound = list(json?.["inbound"]).map(line);
           return `links out:\n${outbound.join("\n") || "  none"}\nlinks in:\n${inbound.join("\n") || "  none"}\n`;
@@ -512,15 +525,26 @@ export async function run(argv: string[], io: Io): Promise<number> {
         return 0;
       }
 
+      case "move": {
+        const id = need(args[0], "the page or collection to move");
+        const parent = need(flags.parent, "--parent PAGE, or --parent root for the top");
+        const version = need(flags.version, "--version V, from cairn read or cairn collections --json");
+        const { json } = await client.request("POST", "/move", {
+          body: { id, parent_id: parent === "root" ? null : parent, version, ...(note ? { change_note: note } : {}) },
+        });
+        out(json, () => `ok ${String(json?.["kind"])} ${id} now ${json?.["parent_id"] ? `under ${String(json["parent_id"])}` : "at the top"}, version ${String(json?.["version"])}\n`);
+        return 0;
+      }
+
       case "collections": {
         const { json } = await client.request("GET", "/collections");
         out(json, () =>
           `${list(json?.["collections"])
             .map((c) => {
               const fields = list(c["fields"])
-                .map((f) => `${String(f["name"])}:${String(f["type"])}${f["required"] ? "*" : ""}`)
+                .map((f) => `${String(f["name"])}:${String(f["type"])}${f["target"] && f["target"] !== "pages" ? `->${String(f["target"])}` : ""}${f["multiple"] ? "[]" : ""}${f["required"] ? "*" : ""}`)
                 .join(", ");
-              return `${String(c["id"])}  ${String(c["name"])}  (${fields})`;
+              return `${String(c["id"])}  ${String(c["name"])}  (${fields})${c["parent_id"] ? `  under ${String(c["parent_id"])}` : ""}`;
             })
             .join("\n") || "no collections"}\n`,
         );
@@ -622,6 +646,8 @@ export async function run(argv: string[], io: Io): Promise<number> {
             collections.push({
               id: String(collection["id"]),
               name: String(collection["name"]),
+              // A root export leaves out pages above the root, so a parent there is dropped.
+              parent_id: typeof collection["parent_id"] === "string" && (!flags.root || pages.some((p) => p.id === collection["parent_id"])) ? collection["parent_id"] : null,
               fields: collection["fields"] as unknown[],
               rows,
             });
@@ -725,15 +751,26 @@ export async function run(argv: string[], io: Io): Promise<number> {
         const collectionFiles = (await readdir(join(folder, "collections")).catch(() => []))
           .filter((name) => name.endsWith(".json"))
           .sort();
+        const exported: ExportCollection[] = [];
         for (const name of collectionFiles) {
-          const collection = JSON.parse(await readFile(join(folder, "collections", name), "utf8")) as ExportCollection;
+          exported.push(JSON.parse(await readFile(join(folder, "collections", name), "utf8")) as ExportCollection);
+        }
+        for (const collection of orderCollections(exported)) {
           const path = `/collections/${encodeURIComponent(collection.id)}`;
-          const schema = { name: collection.name, fields: collection.fields };
+          // A parent that is neither in the export nor on this server: the top, as for pages.
+          let parentId = collection.parent_id ?? null;
+          if (parentId !== null && !inExport.has(parentId)) {
+            if (!parentExists.has(parentId)) {
+              parentExists.set(parentId, (await maybe(client, `/pages/${encodeURIComponent(parentId)}`)) !== null);
+            }
+            if (!parentExists.get(parentId)) parentId = null;
+          }
+          const schema = { name: collection.name, fields: collection.fields, parent_id: parentId };
           const current = await maybe(client, path);
           if (current === null) {
             collectionTally.created += 1;
             if (!dry) await client.request("PUT", path, { body: schema });
-          } else if (stable({ name: current.json?.["name"], fields: current.json?.["fields"] }) === stable(schema)) {
+          } else if (stable({ name: current.json?.["name"], fields: current.json?.["fields"], parent_id: current.json?.["parent_id"] ?? null }) === stable(schema)) {
             collectionTally.unchanged += 1;
           } else {
             collectionTally.updated += 1;

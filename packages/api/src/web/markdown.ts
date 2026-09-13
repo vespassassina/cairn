@@ -13,24 +13,27 @@ import MarkdownIt from "markdown-it";
  */
 
 export interface LinkResolver {
-  /** Title for a page id, or null if no such page exists. */
-  title(pageId: string): string | null;
+  /** A name for a page, collection or row id, or null if nothing has that id. */
+  title(id: string): string | null;
+  /** Where that record is in the console, or null if nothing has that id. */
+  href?(id: string): string | null;
 }
 
-const PAGE_ID = /^[A-Za-z0-9_-]+$/;
+/** A page or collection id, or a row as `collection-id/row-id` (ADR-024). */
+const TARGET_ID = /^[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)?$/;
 const SAFE_LINK = /^(https?:|mailto:|#|\/p\/|cairn:)/i;
 
 export function pageHref(pageId: string): string {
   return `/p/${encodeURIComponent(pageId)}`;
 }
 
-/** `cairn:id` and `/pages/id` are the two link forms pages use (indexer/extract). */
-function toConsoleHref(href: string): string {
-  const cairn = /^cairn:([A-Za-z0-9_-]+)$/.exec(href);
-  if (cairn) return pageHref(cairn[1]!);
-  const legacy = /^\/pages\/([A-Za-z0-9_-]+)$/.exec(href);
-  if (legacy) return pageHref(legacy[1]!);
-  return href;
+/**
+ * The record a Cairn link points at: `cairn:id`, `/pages/id` and `/p/id`,
+ * the forms pages use (indexer/extract), or null for any other link.
+ */
+function cairnTarget(href: string): string | null {
+  const match = /^(?:cairn:|\/pages\/|\/p\/)([A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)?)$/.exec(href);
+  return match ? decodeURIComponent(match[1]!) : null;
 }
 
 export function createMarkdownRenderer(): (body: string, links: LinkResolver) => string {
@@ -50,11 +53,11 @@ export function createMarkdownRenderer(): (body: string, links: LinkResolver) =>
 
     const inner = state.src.slice(start + 2, end);
     const [id, label] = inner.split("|", 2) as [string, string | undefined];
-    if (!PAGE_ID.test(id)) return false;
+    if (!TARGET_ID.test(id)) return false;
 
     if (!silent) {
       const open = state.push("link_open", "a", 1);
-      open.attrs = [["href", pageHref(id)]];
+      open.attrs = [["href", `cairn:${id}`]];
       const text = state.push("text", "", 0);
       text.content = label ?? "";
       text.meta = { wikiTitleFor: label ? null : id };
@@ -72,17 +75,15 @@ export function createMarkdownRenderer(): (body: string, links: LinkResolver) =>
   md.renderer.rules.link_open = (tokens, idx, options, env, self) => {
     const token = tokens[idx]!;
     const links = (env as { links: LinkResolver }).links;
-    const href = toConsoleHref(String(token.attrGet("href") ?? ""));
-    token.attrSet("href", href);
-
-    const internal = /^\/p\/(.+)$/.exec(href);
-    if (internal) {
-      const pageId = decodeURIComponent(internal[1]!);
-      if (links.title(pageId) === null) {
-        // A link to a page that does not exist, shown as such rather than
+    const href = String(token.attrGet("href") ?? "");
+    const target = cairnTarget(href);
+    if (target !== null) {
+      token.attrSet("href", links.href?.(target) ?? pageHref(target));
+      if (links.title(target) === null) {
+        // A link to something that does not exist, shown as such rather than
         // hidden: it is often exactly what the owner needs to notice.
         token.attrJoin("class", "cairn-missing");
-        token.attrSet("title", `No page ${pageId} yet`);
+        token.attrSet("title", `Nothing has the id ${target} yet`);
       }
     } else if (/^https?:/i.test(href)) {
       token.attrSet("rel", "noopener noreferrer nofollow");

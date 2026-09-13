@@ -1,7 +1,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { ApiError, type CairnClient } from "./client.js";
-import { orderForImport, type ExportPage } from "./export-format.js";
+import { orderCollections, orderForImport, type ExportPage } from "./export-format.js";
 
 /**
  * `cairn sync` (ADR-023): keep two Cairns the same.
@@ -117,7 +117,8 @@ export async function readSide(client: CairnClient): Promise<Snapshot> {
   for (const collection of list(json?.["collections"])) {
     const cid = String(collection["id"]);
     const name = String(collection["name"]);
-    add(await record("collection", cid, null, name, { name, fields: collection["fields"] }, String(collection["updated_at"]), String(collection["version"])));
+    const content = { name, fields: collection["fields"], parent_id: collection["parent_id"] ?? null };
+    add(await record("collection", cid, null, name, content, String(collection["updated_at"]), String(collection["version"])));
     let rowCursor: string | null = null;
     do {
       const page = await client.request(
@@ -183,7 +184,8 @@ export interface SyncReport {
   unchanged: number;
 }
 
-const WRITE_ORDER: Kind[] = ["collection", "page", "row"];
+// Pages first, so a collection's parent is there before it moves under it (ADR-024).
+const WRITE_ORDER: Kind[] = ["page", "collection", "row"];
 
 /**
  * Carries out a plan. Records that changed between the read and the write
@@ -266,6 +268,17 @@ export async function apply(
         for (const page of orderForImport(pages)) ordered.push(byId.get(`${side}:${page.id}`)!);
       }
       batch = ordered;
+    } else if (kind === "collection") {
+      // A relation's target collection before the collection that points at it.
+      const byKey = new Map(batch.map((action) => [`${action.to}:${action.source!.id}`, action]));
+      const ordered: SyncAction[] = [];
+      for (const side of ["a", "b"] as const) {
+        const items = batch
+          .filter((action) => action.to === side)
+          .map((action) => ({ id: action.source!.id, fields: (action.source!.content["fields"] as unknown[]) ?? [] }));
+        for (const item of orderCollections(items)) ordered.push(byKey.get(`${side}:${item.id}`)!);
+      }
+      batch = ordered;
     }
 
     for (const action of batch) {
@@ -273,8 +286,13 @@ export async function apply(
       const source = action.source!;
       const ifMatch = action.target?.version ?? null;
       if (kind === "collection") {
+        let parent = (source.content["parent_id"] as string | null) ?? null;
+        if (parent !== null && !willExist(action.to, parent)) {
+          report.warnings.push(`${source.label} (${source.id}) moved to top level on ${sides[action.to].url}, because its parent ${parent} is not there`);
+          parent = null;
+        }
         await write(action, () =>
-          client.request("PUT", `/collections/${encodeURIComponent(source.id)}`, { body: source.content, ifMatch }),
+          client.request("PUT", `/collections/${encodeURIComponent(source.id)}`, { body: { ...source.content, parent_id: parent }, ifMatch }),
         );
       } else if (kind === "page") {
         let parent = (source.content["parent_id"] as string | null) ?? null;

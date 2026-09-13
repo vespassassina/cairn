@@ -11,7 +11,7 @@ Three doors for agents, over one core:
 | Door | For | Context cost per session |
 |---|---|---|
 | `cairn` CLI and skill | agents with a shell: Claude Code, Codex | about 115 tokens until used |
-| MCP | claude.ai, Claude Desktop, Cowork | about 2,700 tokens |
+| MCP | claude.ai, Claude Desktop, Cowork | about 3,000 tokens |
 | REST at `/api/v1` | scripts, cron jobs, other agents | none |
 
 Characters measured with `pnpm context-cost` on a 96-page wiki, tokens estimated at four characters each.

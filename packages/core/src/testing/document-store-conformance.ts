@@ -332,6 +332,16 @@ export function runDocumentStoreConformance(
         });
       });
 
+      it("keeps a collection's place in the page tree (ADR-024)", async () => {
+        const top = await store.putCollection(WS, "col_top", schema, null, meta());
+        expect(top.parentId).toBeNull();
+        const placed = await store.putCollection(WS, "col_placed", { ...schema, parentId: "pg_home" }, null, meta());
+        expect((await store.getCollection(WS, "col_placed"))?.parentId).toBe("pg_home");
+        const moved = await store.putCollection(WS, "col_placed", { ...schema, parentId: null }, placed.version, meta());
+        expect(moved.parentId).toBeNull();
+        expect((await store.getCollection(WS, "col_placed"))?.parentId).toBeNull();
+      });
+
       it("enforces optimistic concurrency on collections", async () => {
         const collection = await store.putCollection(WS, "col_conflict", schema, null, meta());
         await store.putCollection(

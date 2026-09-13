@@ -130,7 +130,7 @@ Five rules govern the boundary (ADR-005).
 One logical store with three document families, partitioned by workspace.
 
 1. **Pages.** Title, parent, tags, BlockNote JSON blocks embedded in the document, version token. One point read per page.
-2. **Collections.** A schema document plus one document per row. Field types in v1: text, number, date, select, multi-select, checkbox, URL, page relation.
+2. **Collections.** A schema document plus one document per row. Field types in v1: text, number, date, select, multi-select, checkbox, URL, relation. A relation links to pages, or to the rows of a collection, its own included, and can hold a list (ADR-024). A collection sits under a page in the tree, or at the top.
 3. **Edges.** One document per link, partitioned by source page. A mirrored reverse edge partitioned by target so backlinks are a single-partition query. Edge types: link, mention, relation, parent, tag.
 
 **Chunks** live in a separate container from day one, even with embeddings off. Chunk at block and heading level. Each chunk stores page id, heading path, text, and when embeddings are enabled: vector, model name, model version and dimensions.

@@ -408,4 +408,103 @@ describe("PageService and CollectionService on sqlite", () => {
       expect(await collections.rowHistory(WS, "col_b", "row_same")).toHaveLength(1);
     });
   });
+
+  describe("collections in the tree, and rows as links (ADR-024)", () => {
+    const peptides = {
+      name: "Peptides",
+      fields: [
+        { name: "name", type: "text" as const, required: true },
+        { name: "page", type: "relation" as const },
+        { name: "related", type: "relation" as const, target: "col_peptides", multiple: true },
+      ],
+    };
+
+    beforeEach(async () => {
+      await pages.create(WS, { title: "BPC-157", body: "Healing." }, OWNER, "pg_bpc");
+      await collections.create(WS, peptides, OWNER, "col_peptides");
+      await collections.create(
+        WS,
+        { name: "Stacks", fields: [{ name: "title", type: "text", required: true }, { name: "components", type: "relation", target: "col_peptides", multiple: true }] },
+        OWNER,
+        "col_stacks",
+      );
+      await collections.upsertRow(WS, "col_peptides", { values: { name: "BPC-157", page: "pg_bpc", related: ["row_tb"] } }, OWNER, { id: "row_bpc" });
+      await collections.upsertRow(WS, "col_peptides", { values: { name: "TB-500", related: ["row_bpc"] } }, OWNER, { id: "row_tb" });
+      await collections.upsertRow(WS, "col_stacks", { values: { title: "Wolverine", components: ["row_bpc", "row_tb"] } }, OWNER, { id: "row_wolverine" });
+    });
+
+    it("moves a collection under a page and back, without touching its rows", async () => {
+      const home = await pages.create(WS, { title: "Peptides", body: "Everything about peptides." }, OWNER, "pg_peptides");
+      const collection = await collections.get(WS, "col_stacks");
+      const moved = await collections.move(WS, "col_stacks", home.id, collection.version, OWNER);
+      expect(moved.parentId).toBe("pg_peptides");
+      expect((await collections.children(WS, "pg_peptides")).map((c) => c.id)).toEqual(["col_stacks"]);
+      expect((await collections.queryRows(WS, "col_stacks")).items).toHaveLength(1);
+      // An update that does not mention the parent leaves it where it is.
+      const kept = await collections.update(WS, "col_stacks", { name: "Stacks", fields: moved.fields }, moved.version, OWNER);
+      expect(kept.parentId).toBe("pg_peptides");
+      const back = await collections.move(WS, "col_stacks", null, kept.version, OWNER);
+      expect(back.parentId).toBeNull();
+    });
+
+    it("turns relation values into links, with backlinks on pages and rows", async () => {
+      const toPage = await pages.backlinks(WS, "pg_bpc");
+      expect(toPage).toContainEqual(expect.objectContaining({ sourceId: "col_peptides/row_bpc", type: "relation", label: "page" }));
+
+      const toRow = await collections.rowBacklinks(WS, "col_peptides", "row_bpc");
+      expect(toRow.map((e) => e.sourceId).sort()).toEqual(["col_peptides/row_tb", "col_stacks/row_wolverine"]);
+      expect((await collections.rowLinks(WS, "col_stacks", "row_wolverine")).map((e) => e.targetId).sort()).toEqual([
+        "col_peptides/row_bpc",
+        "col_peptides/row_tb",
+      ]);
+    });
+
+    it("updates a row's links when it changes, and drops them when it is deleted", async () => {
+      const row = await collections.getRow(WS, "col_stacks", "row_wolverine");
+      const edited = await collections.upsertRow(WS, "col_stacks", { values: { title: "Wolverine", components: ["row_tb"] } }, OWNER, { id: row.id, expectedVersion: row.version });
+      expect((await collections.rowBacklinks(WS, "col_peptides", "row_bpc")).map((e) => e.sourceId)).toEqual(["col_peptides/row_tb"]);
+      await collections.deleteRow(WS, "col_stacks", "row_wolverine", edited.version, OWNER);
+      expect(await collections.rowBacklinks(WS, "col_peptides", "row_tb")).toEqual([
+        expect.objectContaining({ sourceId: "col_peptides/row_bpc" }),
+      ]);
+    });
+
+    it("re-derives every row's links when a relation field changes", async () => {
+      const stacks = await collections.get(WS, "col_stacks");
+      await collections.update(
+        WS,
+        "col_stacks",
+        { name: "Stacks", fields: [{ name: "title", type: "text", required: true }, { name: "components", type: "multi_select" }] },
+        stacks.version,
+        OWNER,
+      );
+      expect(await collections.rowLinks(WS, "col_stacks", "row_wolverine")).toEqual([]);
+    });
+
+    it("links a page to a row or a collection from its text", async () => {
+      await pages.create(WS, { title: "Notes", body: "See [[col_stacks/row_wolverine|the stack]] in [[col_stacks]]." }, OWNER, "pg_notes");
+      expect((await collections.rowBacklinks(WS, "col_stacks", "row_wolverine")).map((e) => e.sourceId)).toEqual(["pg_notes"]);
+      expect((await collections.backlinks(WS, "col_stacks")).map((e) => e.sourceId)).toEqual(["pg_notes"]);
+    });
+
+    it("refuses a relation to a collection that does not exist, and a malformed value", async () => {
+      await expect(
+        collections.create(WS, { name: "Bad", fields: [{ name: "x", type: "relation", target: "col_missing" }] }, OWNER),
+      ).rejects.toThrow(ValidationError);
+      await expect(
+        collections.upsertRow(WS, "col_stacks", { values: { title: "T", components: "row_bpc" } }, OWNER),
+      ).rejects.toThrow(ValidationError);
+    });
+
+    it("derives links for rows written before relations were links, once", async () => {
+      // Simulate old rows: drop their edges, as a database from before ADR-024 has none.
+      await store.replaceEdgesForSource(WS, "col_peptides/row_bpc", []);
+      await store.replaceEdgesForSource(WS, "col_peptides/row_tb", []);
+      await store.replaceEdgesForSource(WS, "col_stacks/row_wolverine", []);
+      expect(await collections.needsRelink(WS)).toBe(true);
+      expect((await collections.rebuildWorkspace(WS)).rows).toBe(3);
+      expect(await collections.needsRelink(WS)).toBe(false);
+      expect(await collections.rowBacklinks(WS, "col_peptides", "row_bpc")).toHaveLength(2);
+    });
+  });
 });

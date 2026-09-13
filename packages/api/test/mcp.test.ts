@@ -109,7 +109,7 @@ describe("transport and auth", () => {
     expect(names.has("search")).toBe(true);
   });
 
-  it("serves every tool from PRD section 8, plus history", async () => {
+  it("serves every tool from PRD section 8, plus history and move", async () => {
     const { body } = await rpc("tools/list");
     const names = (body.result.tools as Array<{ name: string }>).map((t) => t.name);
     expect(names.sort()).toEqual(
@@ -122,6 +122,7 @@ describe("transport and auth", () => {
         "get_page",
         "get_revision",
         "list_collections",
+        "move",
         "query_collection",
         "search",
         "update_page",
@@ -299,6 +300,62 @@ describe("page tools", () => {
       offset: first.data["next_offset"],
     });
     expect((second.data["body"] as string).length).toBeGreaterThan(0);
+  });
+});
+
+describe("collections in the tree and rows as links (ADR-024)", () => {
+  it("puts a collection under a page, links rows to rows, and finds the backlinks", async () => {
+    const home = await callTool("create_page", { title: "Peptides", body: "Everything about peptides." });
+    const homeId = home.data["id"] as string;
+    const peptides = await callTool("create_collection", {
+      name: "Peptides",
+      fields: [{ name: "name", type: "text", required: true }],
+    });
+    const peptidesId = peptides.data["id"] as string;
+    const stacks = await callTool("create_collection", {
+      name: "Stacks",
+      parent_id: homeId,
+      fields: [
+        { name: "title", type: "text", required: true },
+        { name: "components", type: "relation", target: peptidesId, multiple: true },
+      ],
+    });
+    const stacksId = stacks.data["id"] as string;
+
+    const bpc = await callTool("upsert_row", { collection_id: peptidesId, values: { name: "BPC-157" } });
+    const tb = await callTool("upsert_row", { collection_id: peptidesId, values: { name: "TB-500" } });
+    const wolverine = await callTool("upsert_row", {
+      collection_id: stacksId,
+      values: { title: "Wolverine", components: [bpc.data["id"], tb.data["id"]] },
+      change_note: "The healing stack",
+    });
+    expect(wolverine.isError).toBe(false);
+
+    const backlinks = await callTool("get_backlinks", { collection_id: peptidesId, row_id: bpc.data["id"] });
+    expect(backlinks.data["backlinks"]).toEqual([
+      { collection_id: stacksId, row_id: wolverine.data["id"], type: "relation", label: "components" },
+    ]);
+    const around = await callTool("get_neighbours", { collection_id: stacksId, row_id: wolverine.data["id"] });
+    expect((around.data["outbound"] as unknown[]).length).toBe(2);
+
+    const listed = await callTool("list_collections");
+    const placed = (listed.data["collections"] as Array<Record<string, unknown>>).find((c) => c["id"] === stacksId)!;
+    expect(placed["parent_id"]).toBe(homeId);
+
+    const moved = await callTool("move", { id: peptidesId, parent_id: homeId, version: peptides.data["version"], change_note: "Group under Peptides" });
+    expect(moved.data).toMatchObject({ kind: "collection", id: peptidesId, parent_id: homeId });
+  });
+
+  it("refuses a bad move, naming the field", async () => {
+    const page = await callTool("create_page", { title: "Alone", body: "x" });
+    const result = await callTool("move", { id: page.data["id"], parent_id: "pg_nowhere", version: page.data["version"] });
+    expect(result.isError).toBe(true);
+    expect(JSON.stringify(result.data)).toContain("parent_id");
+  });
+
+  it("asks for an id when get_backlinks has none", async () => {
+    const result = await callTool("get_backlinks", {});
+    expect(result.isError).toBe(true);
   });
 });
 

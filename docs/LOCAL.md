@@ -100,7 +100,7 @@ agent edit can always be undone.
 
 ## 5b. Or connect a coding agent with the CLI
 
-Agents with a shell, such as Claude Code, can use the `cairn` command instead of MCP. It costs about 115 tokens per session instead of about 2,700, because nothing loads until the agent runs it (ADR-013; `pnpm context-cost` measures it).
+Agents with a shell, such as Claude Code, can use the `cairn` command instead of MCP. It costs about 115 tokens per session instead of about 3,000, because nothing loads until the agent runs it (ADR-013; `pnpm context-cost` measures it).
 
 It runs on Windows, macOS and Linux, as a standalone executable or through npm. `docs/CLI.md` has the install steps for each OS, how to check a download, and how to install the skill that tells Claude Code when to use it. The short version on macOS or Linux, with Node:
 

@@ -75,6 +75,7 @@ CREATE TABLE IF NOT EXISTS collections (
   id           TEXT NOT NULL,
   name         TEXT NOT NULL,
   fields       TEXT NOT NULL,
+  parent_id    TEXT,
   created_at   TEXT NOT NULL,
   updated_at   TEXT NOT NULL,
   updated_by   TEXT NOT NULL DEFAULT '${LEGACY_ACTOR}',
@@ -135,6 +136,7 @@ interface CollectionRecord {
   id: string;
   name: string;
   fields: string;
+  parent_id: string | null;
   created_at: string;
   updated_at: string;
   updated_by: string;
@@ -231,6 +233,7 @@ function toCollection(record: CollectionRecord): Collection {
     workspaceId: record.workspace_id,
     name: record.name,
     fields: JSON.parse(record.fields) as Collection["fields"],
+    parentId: record.parent_id ?? null,
     createdAt: record.created_at,
     updatedAt: record.updated_at,
     updatedBy: JSON.parse(record.updated_by) as Actor,
@@ -302,6 +305,10 @@ export class SqliteDocumentStore implements DocumentStore {
         this.db.exec(
           `ALTER TABLE ${table} ADD COLUMN updated_by TEXT NOT NULL DEFAULT '${LEGACY_ACTOR}'`,
         );
+      }
+      // Collections gained a place in the page tree (ADR-024).
+      if (table === "collections" && !columns.some((column) => column.name === "parent_id")) {
+        this.db.exec("ALTER TABLE collections ADD COLUMN parent_id TEXT");
       }
     }
     this.db.exec(SCHEMA);
@@ -521,6 +528,7 @@ export class SqliteDocumentStore implements DocumentStore {
       workspaceId,
       name: input.name,
       fields: input.fields,
+      parentId: input.parentId ?? null,
       createdAt: existing?.createdAt ?? meta.at,
       updatedAt: meta.at,
       updatedBy: meta.actor,
@@ -530,12 +538,13 @@ export class SqliteDocumentStore implements DocumentStore {
     const applied = existing
       ? this.db
           .prepare(
-            `UPDATE collections SET name = ?, fields = ?, updated_at = ?, updated_by = ?, version = ?
+            `UPDATE collections SET name = ?, fields = ?, parent_id = ?, updated_at = ?, updated_by = ?, version = ?
              WHERE workspace_id = ? AND id = ? AND version = ?`,
           )
           .run(
             collection.name,
             JSON.stringify(collection.fields),
+            collection.parentId,
             collection.updatedAt,
             JSON.stringify(collection.updatedBy),
             collection.version,
@@ -546,14 +555,15 @@ export class SqliteDocumentStore implements DocumentStore {
       : this.db
           .prepare(
             `INSERT OR IGNORE INTO collections
-             (workspace_id, id, name, fields, created_at, updated_at, updated_by, version)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+             (workspace_id, id, name, fields, parent_id, created_at, updated_at, updated_by, version)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           )
           .run(
             workspaceId,
             id,
             collection.name,
             JSON.stringify(collection.fields),
+            collection.parentId,
             collection.createdAt,
             collection.updatedAt,
             JSON.stringify(collection.updatedBy),

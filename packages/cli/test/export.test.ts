@@ -229,4 +229,24 @@ describe("cairn export and import", () => {
     expect(await cairn(target, "import", folder)).toBe(2);
     expect(stderr).toContain("cairn-export.json");
   });
+
+  it("keeps a collection's place in the tree and its row links (ADR-024)", async () => {
+    const ws = source.workspaceId;
+    await source.collections.create(
+      ws,
+      { name: "Aa links", parentId: "pg_cat_healing", fields: [{ name: "title", type: "text", required: true }, { name: "to", type: "relation", target: "col_peptides", multiple: true }] },
+      BY,
+      "col_aa_links",
+    );
+    await source.collections.upsertRow(ws, "col_aa_links", { values: { title: "Stack", to: ["row_bpc"] } }, BY, { id: "row_stack" });
+
+    expect(await cairn(source, "export", folder)).toBe(0);
+    const exported = JSON.parse(await readFile(join(folder, "collections", "aa-links.json"), "utf8"));
+    expect(exported.parent_id).toBe("pg_cat_healing");
+
+    // aa-links.json sorts before peptides.json, the collection it points at.
+    expect(await cairn(target, "import", folder)).toBe(0);
+    expect((await target.collections.get(target.workspaceId, "col_aa_links")).parentId).toBe("pg_cat_healing");
+    expect((await target.collections.rowBacklinks(target.workspaceId, "col_peptides", "row_bpc")).map((e) => e.sourceId)).toEqual(["col_aa_links/row_stack"]);
+  });
 });
