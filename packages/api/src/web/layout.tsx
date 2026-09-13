@@ -21,6 +21,7 @@ export const Layout: FC<{
       <meta charset="utf-8" />
       <meta name="viewport" content="width=device-width, initial-scale=1" />
       <title>{`${title} · Cairn`}</title>
+      <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml" />
       <link rel="stylesheet" href={`/assets/console.css?v=${ASSET_VERSION}`} />
     </head>
     <body>

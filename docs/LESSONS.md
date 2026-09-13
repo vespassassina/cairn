@@ -13,6 +13,13 @@ Each entry answers four questions:
 
 ## 2026-09-13
 
+### An import failed with "database is locked" on the first slow machine
+
+1. **What happened.** Importing the wiki into Azure stopped after 84 pages with `internal: database is locked`.
+2. **Cause.** The document store and the search index each open their own connection to the same file, and neither set `busy_timeout`, so SQLite returned busy at once when the other held the write lock. The search index writes vectors in the background while pages are being written. On a laptop the writes were short enough never to collide; on 0.25 vCPU they did. The auth store had set the timeout from the start, so the pattern existed in the code and was simply not applied everywhere.
+3. **Fix.** `PRAGMA busy_timeout = 5000` on both connections, and `packages/adapter-sqlite/test/busy.test.ts`, which holds the lock from another process and fails without it.
+4. **Lesson.** Every connection to a shared SQLite file sets a busy timeout, and the test for concurrency uses a second process, not a second call in the same one. A setting applied in one adapter and not its siblings is worth a grep whenever one of them is fixed.
+
 ### The released image could not reach its replica, and CI could not have noticed
 
 1. **What happened.** On the first Azure deployment, the container never became healthy. The logs showed only "restore attempt 1 failed" as Container Apps killed it. Storage metrics showed no request from the container at all.

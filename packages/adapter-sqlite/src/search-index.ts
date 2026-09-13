@@ -193,6 +193,8 @@ export class SqliteSearchIndex implements SearchIndex {
     this.db = new DatabaseSync(options.location ?? ":memory:", {
       allowExtension: this.embedder !== null,
     });
+    // Shares the file with the document store, auth store and Litestream.
+    this.db.exec("PRAGMA busy_timeout = 5000");
   }
 
   async init(): Promise<void> {

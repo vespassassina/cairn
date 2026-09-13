@@ -6,6 +6,14 @@ Entries link to the ADR when there is one. A change of direction that has no ADR
 
 ## 2026-09-13
 
+### Fixed: writes failed with "database is locked" under load
+
+The first import into Azure stopped after 84 of 96 pages with "database is locked". Three connections share the database file (the document store, the search index and the auth store), and Litestream reads it beside them. Only the auth store set a busy timeout, so a write that met a lock held by another connection failed at once instead of waiting. On Azure's quarter of a CPU the background embedding writes vectors for longer, which made the collision likely; on a laptop it had not shown up. The document store and search index now wait up to 5 seconds for a lock. A new test holds the write lock from another process and checks that both still write.
+
+### Added: a tab icon for the console
+
+The owner asked for a favicon. A cairn of four stones in the console's accent blue, lighter when the browser is dark, served at `/assets/favicon.svg` and linked from the console, sign-in and consent pages. `/favicon.ico` redirects to it, since browsers ask for that path regardless.
+
 ### Fixed: the image could not reach its replica; Azure's default region is now Sweden Central
 
 The first real Azure deployment found two problems, neither visible to CI.

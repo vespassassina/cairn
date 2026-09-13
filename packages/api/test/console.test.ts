@@ -152,6 +152,21 @@ describe("sign-in and request safety", () => {
     expect(css).toContain("ak-theme-start");
     expect(css).toContain(".cairn-diff");
   });
+
+  it("serves the tab icon without sign-in, and links it from every page", async () => {
+    const icon = await app.fetch(new Request(`${ORIGIN}/assets/favicon.svg`));
+    expect(icon.status).toBe(200);
+    expect(icon.headers.get("content-type")).toBe("image/svg+xml");
+    expect(await icon.text()).toContain("<svg");
+
+    const ico = await app.fetch(new Request(`${ORIGIN}/favicon.ico`));
+    expect(ico.status).toBe(301);
+    expect(ico.headers.get("location")).toBe("/assets/favicon.svg");
+
+    const login = await app.fetch(new Request(`${ORIGIN}/login`));
+    expect(await login.text()).toContain('rel="icon" href="/assets/favicon.svg"');
+    expect((await get("/pages")).html).toContain('rel="icon" href="/assets/favicon.svg"');
+  });
 });
 
 describe("rendering untrusted page content", () => {

@@ -13,6 +13,18 @@ Rules:
 
 ## 2026-09-13
 
+### Move everything to Azure, and let two Cairns sync
+
+> "move everything to azure, migrate memory. add an automigration feature to allow 2 cairns to be synced. azure works perfectly"
+
+Landed in: the migration of the local wiki with `cairn export` and `cairn import`, and the "database is locked" fix it needed. The sync feature: not yet; it needs an ADR first (the roadmap's "Sync design on the revision log").
+
+### A favicon
+
+> "also add a favicon to cairn."
+
+Landed in: the "Added: a tab icon for the console" changelog entry.
+
 ### Deploy to Azure, in a new subscription, in Sweden Central
 
 A summary. Asked what was next, the owner said "deployment?", agreed to Azure first, created a new pay-as-you-go subscription in a new tenant for it, and said "go". When West Europe refused new customers, they chose Sweden Central from the regions that accepted the subscription.

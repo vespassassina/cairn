@@ -20,7 +20,7 @@ import {
   type Row,
 } from "@cairn/core";
 import { OWNER, type AppContext } from "../context.js";
-import { ASSET_VERSION, CONSOLE_CSS, CONSOLE_JS } from "./assets.js";
+import { ASSET_VERSION, CONSOLE_CSS, CONSOLE_JS, FAVICON_SVG } from "./assets.js";
 import { ActorPill, Banner, DiffView, Layout, When } from "./layout.js";
 import { createMarkdownRenderer, pageHref, type LinkResolver } from "./markdown.js";
 import { isSameOrigin, SESSION_COOKIE, sessionValue, timingSafeEqual } from "./session.js";
@@ -73,7 +73,7 @@ const SECURITY_HEADERS: Record<string, string> = {
   "x-frame-options": "DENY",
 };
 
-const PUBLIC_PATHS = [/^\/health$/, /^\/mcp/, /^\/api(\/|$)/, /^\/assets\//, /^\/login$/, /^\/oauth\//, /^\/\.well-known\//];
+const PUBLIC_PATHS = [/^\/health$/, /^\/mcp/, /^\/api(\/|$)/, /^\/assets\//, /^\/favicon\.ico$/, /^\/login$/, /^\/oauth\//, /^\/\.well-known\//];
 
 async function render(c: Context, element: Child, status: 200 | 400 | 404 | 409 = 200) {
   const body = await (element as Promise<string> | string);
@@ -488,6 +488,14 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
       "cache-control": "public, max-age=31536000, immutable",
     }),
   );
+  app.get("/assets/favicon.svg", (c) =>
+    c.body(FAVICON_SVG, 200, {
+      "content-type": "image/svg+xml",
+      "cache-control": "public, max-age=86400",
+    }),
+  );
+  // Browsers ask for /favicon.ico whatever the page says.
+  app.get("/favicon.ico", (c) => c.redirect("/assets/favicon.svg", 301));
 
   // Security headers on every console response, and sign-in on every console
   // route. MCP and /health have their own rules and are left alone.
@@ -522,6 +530,7 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
       <head>
         <meta charset="utf-8" />
         <title>Sign in · Cairn</title>
+        <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml" />
         <link rel="stylesheet" href={`/assets/console.css?v=${ASSET_VERSION}`} />
       </head>
       <body>

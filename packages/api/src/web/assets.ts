@@ -82,6 +82,20 @@ const CAIRN_CSS = `
 `;
 
 /** One stylesheet, so a page costs one request, cached by content digest. */
+/**
+ * The browser tab icon: a cairn, four stones stacked. An image rather than
+ * CSS, so it carries its colours: artifactkit's accent, lightened when the
+ * browser is dark so it stays visible on a dark tab bar.
+ */
+export const FAVICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+<style>path,ellipse{fill:#14496B}@media (prefers-color-scheme:dark){path,ellipse{fill:#6AA9D8}}</style>
+<ellipse cx="16" cy="25" rx="12" ry="4.5"/>
+<ellipse cx="15" cy="16" rx="8.5" ry="3.8"/>
+<ellipse cx="16.5" cy="8.6" rx="5.5" ry="3"/>
+<ellipse cx="15.8" cy="3.2" rx="3" ry="1.9"/>
+</svg>
+`;
+
 export const CONSOLE_CSS = [THEME_CSS, COMPONENTS_CSS, PRINT_CSS, CAIRN_CSS].join("\n");
 
 /**

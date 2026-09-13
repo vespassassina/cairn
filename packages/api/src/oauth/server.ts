@@ -323,7 +323,7 @@ export class OAuthServer {
 
     const page = (title: string, content: string) =>
       `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">` +
-      `<title>${escapeHtml(title)} · Cairn</title><link rel="stylesheet" href="/assets/console.css"></head>` +
+      `<title>${escapeHtml(title)} · Cairn</title><link rel="icon" href="/assets/favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="/assets/console.css"></head>` +
       `<body><main class="ak-page cairn-narrow"><h1>${escapeHtml(title)}</h1>${content}</main></body></html>`;
     const htmlResponse = (c: Context, status: 200 | 400 | 403, body: string) => {
       // No form-action: browsers apply it to the redirect back to the app, which

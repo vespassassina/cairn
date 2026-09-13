@@ -280,6 +280,9 @@ export class SqliteDocumentStore implements DocumentStore {
   constructor(options: SqliteDocumentStoreOptions = {}) {
     this.db = new DatabaseSync(options.location ?? ":memory:");
     this.db.exec("PRAGMA journal_mode = WAL");
+    // Other connections share the file (search index, auth store, Litestream):
+    // wait for a lock instead of failing with "database is locked".
+    this.db.exec("PRAGMA busy_timeout = 5000");
     this.db.exec("PRAGMA foreign_keys = ON");
   }
 
