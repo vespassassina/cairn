@@ -171,7 +171,17 @@ if [ "$deployed" != "true" ] && [ "$deployed" != "True" ]; then
   exit 0
 fi
 
-say "waiting for Cairn to answer (the first start can take a minute)"
+# The old revision keeps answering while the new one starts, so wait for
+# the new one to be ready before asking Cairn if it is up.
+say "waiting for the new version to start (the first start can take a minute)"
+for _ in $(seq 1 60); do
+  ready="$(az containerapp show --resource-group "$CAIRN_RG" --name "$CAIRN_NAME" \
+    --query "properties.latestReadyRevisionName == properties.latestRevisionName" --output tsv 2>/dev/null | tr -d '\r' || true)"
+  [ "$ready" = "true" ] && break
+  sleep 5
+done
+[ "$ready" = "true" ] || fail "the new version did not start. Look at its logs: az containerapp logs show -g $CAIRN_RG -n $CAIRN_NAME --type system"
+
 for _ in $(seq 1 40); do
   if curl -fsS "$url/health" >/dev/null 2>&1; then
     say ""

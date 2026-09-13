@@ -34,7 +34,7 @@ Status key: done, in progress, next, later, blocked.
 | Cosmos adapter | later, on a trigger | ADR-020: only if more than one instance, a slow cold restore, or the write-loss window matters |
 | Own-server deploy (Proxmox, NAS, Docker) | done | ADR-020. `deploy/docker/`, database on a mounted local volume. CI starts it with one; not yet run on Proxmox |
 | OAuth server | done | ADR-017. GitHub or any OpenID Connect provider, consent page, CLI login. 23 end-to-end tests. Proven with claude.ai after a deploy |
-| Azure deploy | in progress | ADR-018. Container Apps and Litestream, Bicep and script, image in CI. First real deployment running in Sweden Central since 2026-09-13; it found the image could not reach its replica (fixed for 0.1.1) |
+| Azure deploy | done | ADR-018. Running in Sweden Central since 2026-09-13, holding the owner's wiki. The first deployment found three bugs, all fixed. Cold start about 30 s, mostly the image pull |
 | Agent-first install guide | done | ADR-019. `docs/AGENT-INSTALL.md`, `AGENTS.md` |
 | Peptide wiki reseeded from the updated wiki | done | 96 pages, 79 peptides, 8 stacks, 2 collections |
 
@@ -53,7 +53,7 @@ Added after the project review of 2026-09-12. Done in this order, before the clo
 | Publish the CLI to npm | later | Needs the name decided |
 | Provenance: `sources` on every write | next | Where a fact came from, shown in the console |
 | Freshness: `verified_at` on pages | later | When a fact was last confirmed, separate from last edited |
-| Sync design on the revision log | later | An ADR only. Local and cloud as one workspace |
+| Sync between two Cairns | done | ADR-023. `cairn sync <a> <b> [--every 5m]`: content compared with the last sync, newest edit wins, the other kept in history. Checked between the owner's laptop and Azure |
 
 ## Launch checklist
 
@@ -64,7 +64,7 @@ Before publishing on GitHub and posting to Hacker News. From the review of 2026-
 | Eval set: 30 real queries with expected pages, and a recall@5 number | next | Blocks any claim about search |
 | Two weeks of daily use, against the PRD kill criterion | in progress | |
 | Export (P0.7) | done | ADR-016. Markdown and JSON, whole or by root, lossless round trip |
-| One cloud target deployed, with a month of real cost | next | ADR-018. Deploy, measure the cold start and the write-loss window (ADR-020), then watch the bill |
+| One cloud target deployed, with a month of real cost | in progress | ADR-018. Deployed 2026-09-13; the month of cost runs from then. Cold start measured, about 30 s. Still to measure: the write-loss window (ADR-020) |
 | First release tag, so the image and CLI builds are published | done | `v0.1.0` on 2026-09-13. Images `0.1.0`, `0.1` and `latest` pull anonymously, amd64 and arm64; five CLI executables and `SHA256SUMS` on the GitHub release |
 | OAuth, so claude.ai can connect | done | ADR-017. Needs one real connection to call it proven |
 | Licence decided | done | ADR-015, PolyForm Noncommercial 1.0.0 |
@@ -72,7 +72,7 @@ Before publishing on GitHub and posting to Hacker News. From the review of 2026-
 | How to ask for a commercial licence | next | A contact route in the README better than "ask through GitHub" |
 | Name decided | next | PRD Q5. The repository is `vespassassina/cairn`; check npm before publishing the CLI |
 | Repository public | done | https://github.com/vespassassina/cairn |
-| Online and offline model decided | later | The sync design above |
+| Online and offline model decided | done | ADR-023: a local Cairn and a cloud one, kept in step by `cairn sync` |
 | Search over-matching fixed | done | ADR-021. Questions with no answer now return nothing |
 | README leads with the tagline and a console screenshot | next | |
 | CI green on Linux, macOS and Windows | done | Tests, CLI build and smoke test pass on Linux x64, Linux Arm, macOS and Windows (run 34703011030) |

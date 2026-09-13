@@ -16,6 +16,19 @@ import {
   type Manifest,
 } from "./export-format.js";
 import { credentialsPath, login, logout, storedToken } from "./login.js";
+import {
+  apply,
+  loadState,
+  normaliseUrl,
+  parseInterval,
+  plan,
+  readSide,
+  saveState,
+  statePath,
+  type Side,
+  type SyncPlan,
+  type SyncReport,
+} from "./sync.js";
 
 /**
  * The `cairn` command (ADR-013 rule 5).
@@ -68,6 +81,8 @@ Collections
 Your data
   cairn export <folder> [--root PAGE] [--collections]   Markdown files and JSON, readable without Cairn
   cairn import <folder> [--dry-run]                     read an export back in, keeping ids; safe to repeat
+  cairn sync <url-a> <url-b> [--every 5m] [--dry-run]   keep two Cairns the same; the newer edit wins,
+                                                        the one it replaced stays in history
 
 Signing in (only for a server that uses OAuth; localhost needs none)
   cairn login                             sign in through your browser; tokens are kept for this server
@@ -107,6 +122,7 @@ const OPTIONS = {
   collections: { type: "boolean" },
   force: { type: "boolean" },
   "dry-run": { type: "boolean" },
+  every: { type: "string" },
 } as const;
 
 type Flags = ReturnType<typeof parse>["values"];
@@ -223,6 +239,44 @@ interface Tally {
 
 const tally = (): Tally => ({ created: 0, updated: 0, unchanged: 0 });
 const describe = (t: Tally) => `${t.created} created, ${t.updated} updated, ${t.unchanged} unchanged`;
+
+const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+
+function describeSyncPlan(syncPlan: SyncPlan, urls: Record<Side, string>): string {
+  if (syncPlan.actions.length === 0) {
+    return `dry run: ${urls.a} and ${urls.b} are already the same (${plural(Object.keys(syncPlan.base).length, "record")})\n`;
+  }
+  const lines = [`dry run, nothing written. ${plural(Object.keys(syncPlan.base).length, "record")} already the same, and:`];
+  for (const action of syncPlan.actions) {
+    const what = action.source ?? action.target!;
+    const verb = action.op === "delete" ? "delete from" : "write to";
+    const why = action.conflict ? " (changed on both; the newer edit wins)" : "";
+    lines.push(`  ${verb} ${urls[action.to]}: ${what.kind} ${what.label}${why}`);
+  }
+  return `${lines.join("\n")}\n`;
+}
+
+function describeSyncReport(report: SyncReport, urls: Record<Side, string>): string {
+  const lines = [`synced ${urls.a} and ${urls.b}`];
+  for (const side of ["a", "b"] as const) {
+    const w = report.written[side];
+    const parts = [
+      w.pages ? plural(w.pages, "page") : "",
+      w.collections ? plural(w.collections, "collection") : "",
+      w.rows ? plural(w.rows, "row") : "",
+    ].filter(Boolean);
+    const wrote = parts.length ? `${parts.join(", ")} written` : "";
+    const deleted = w.deleted ? `${w.deleted} deleted` : "";
+    lines.push(`  to ${urls[side]}: ${[wrote, deleted].filter(Boolean).join("; ") || "nothing to change"}`);
+  }
+  for (const conflict of report.conflicts) {
+    lines.push(`  conflict: ${conflict.label} changed on both; kept the newer edit, from ${conflict.kept_from}. The other is in its history`);
+  }
+  for (const warning of report.warnings) lines.push(`  warning: ${warning}`);
+  for (const skipped of report.skipped) lines.push(`  skipped: ${skipped}`);
+  lines.push(`  ${plural(report.unchanged, "record")} already the same`);
+  return `${lines.join("\n")}\n`;
+}
 
 function written(json: Json | null): string {
   return `ok ${String(json?.["id"])} version ${String(json?.["version"])}\n`;
@@ -728,6 +782,70 @@ export async function run(argv: string[], io: Io): Promise<number> {
             .join("\n") + "\n",
         );
         return 0;
+      }
+
+      case "sync": {
+        const urls: Record<Side, string> = {
+          a: normaliseUrl(need(args[0], "the first server's address")),
+          b: normaliseUrl(need(args[1], "the second server's address")),
+        };
+        if (urls.a === urls.b) throw new UsageError("cairn sync needs two different servers");
+        let every: number | null = null;
+        if (flags.every !== undefined) {
+          try {
+            every = parseInterval(flags.every);
+          } catch (error) {
+            throw new UsageError(error instanceof Error ? error.message : String(error));
+          }
+        }
+        const dry = flags["dry-run"] === true;
+        if (dry && every !== null) throw new UsageError("--dry-run runs once; leave out --every");
+
+        const clientFor = async (url: string) =>
+          new CairnClient({
+            baseUrl: url,
+            token: (await storedToken(url, loginIo).catch(() => null)) ?? undefined,
+            userAgent: `cairn-cli/${VERSION} sync${agent ? ` (${agent})` : ""}`,
+            fetch: io.fetch,
+          });
+
+        const once = async () => {
+          const [clientA, clientB] = await Promise.all([clientFor(urls.a), clientFor(urls.b)]);
+          const [snapshotA, snapshotB] = await Promise.all([readSide(clientA), readSide(clientB)]);
+          const path = await statePath(credentialsPath(io.env), urls.a, urls.b);
+          const state = await loadState(path, urls.a, urls.b);
+          const syncPlan = plan(snapshotA, snapshotB, state.base);
+          if (dry) {
+            out({ dry_run: true, actions: syncPlan.actions.map((x) => ({ key: x.key, op: x.op, to: urls[x.to], conflict: x.conflict })) }, () =>
+              describeSyncPlan(syncPlan, urls),
+            );
+            return;
+          }
+          const { report, base } = await apply(
+            syncPlan,
+            {
+              a: { url: urls.a, client: clientA, snapshot: snapshotA },
+              b: { url: urls.b, client: clientB, snapshot: snapshotB },
+            },
+            state.base,
+          );
+          await saveState(path, { servers: [urls.a, urls.b], last_sync: new Date().toISOString(), base });
+          out(report as unknown as Json, () => describeSyncReport(report, urls));
+        };
+
+        if (every === null) {
+          await once();
+          return 0;
+        }
+        for (;;) {
+          try {
+            await once();
+          } catch (error) {
+            const reason = error instanceof ApiError ? `${error.code}: ${error.message}` : error instanceof Error ? error.message : String(error);
+            io.stderr(`${new Date().toISOString()} sync failed: ${reason}. Trying again in ${flags.every}\n`);
+          }
+          await new Promise((resolve) => setTimeout(resolve, every));
+        }
       }
 
       default:

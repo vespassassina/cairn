@@ -182,6 +182,24 @@ cairn import <folder>                   read an export back in, keeping ids; saf
 
 The format is in ADR-016. On Windows, give folders as you normally would, such as `cairn export C:\Users\you\cairn-backup`.
 
+## Keep two Cairns the same: sync
+
+`cairn sync` keeps two Cairns in step: your laptop and Azure, or your own server and Azure (ADR-023).
+
+```
+cairn sync http://localhost:8787 https://your-address --dry-run   what a sync would change
+cairn sync http://localhost:8787 https://your-address             sync once
+cairn sync http://localhost:8787 https://your-address --every 5m  keep syncing, every 5 minutes
+```
+
+1. **Sign in to both first.** `cairn login` with `CAIRN_URL` set to each server that uses OAuth; localhost needs no sign-in. Sync uses those sign-ins, not `CAIRN_TOKEN`.
+2. **What it copies:** every page, collection and row, both ways. A change on one side goes to the other, and so does a deletion.
+3. **When both sides changed the same record,** the newer edit wins on both, and the edit it replaced stays in that record's history, where the console can restore it. The report lists each one as a conflict.
+4. **Moving to a new Cairn** is one sync into an empty one. Ids and links are kept, as with an import.
+5. **It remembers the last sync** in a small file per pair of servers, next to the CLI's sign-ins. Deleting it loses nothing: the next run compares everything again and changes only what differs, with one catch. A record deleted on one side since the last sync comes back from the other, because without the file sync cannot tell a deletion from a record the other side never had.
+6. **Collections are never deleted by sync;** it warns instead.
+7. **`--every`** keeps it running, at least 30 seconds apart, on a machine that stays on. A failed run is reported and tried again next time. Each run reads everything from both sides, which for a personal wiki takes about a second, plus the cold start when a Cairn on Azure was asleep.
+
 ## Point it at your server
 
 By default `cairn` talks to `http://localhost:8787`, which is where `pnpm dev` runs Cairn. For another server, set `CAIRN_URL`, and `CAIRN_TOKEN` if that server needs one.

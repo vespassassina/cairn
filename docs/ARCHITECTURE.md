@@ -62,6 +62,8 @@ Local: nothing (ADR-010). Anywhere else, OAuth (ADR-017):
 
 `cairn export` reads pages through `GET /api/v1/export/pages`, parents first, and collections through the rows endpoints, and writes Markdown and JSON (ADR-016). `cairn import` reads that folder and writes through `PUT` at the same ids, comparing first so a repeat changes nothing. Derived data is rebuilt by the writes, as always.
 
+`cairn sync <a> <b>` (ADR-023) is a client of two servers. It reads every page, collection and row from both, compares each record's content hash with the one both sides agreed on at the last sync, kept in a state file beside the CLI's credentials, and writes the side that changed to the other through the same `PUT` and `DELETE` endpoints, with `If-Match`. When both changed, the newer `updated_at` wins and the replaced version stays in that side's history. No server knows it is being synced.
+
 ## Deployment
 
 1. **Local:** `pnpm dev`, tsx running the TypeScript directly.

@@ -6,6 +6,26 @@ Entries link to the ADR when there is one. A change of direction that has no ADR
 
 ## 2026-09-13
 
+### Added: `cairn sync`, to keep two Cairns the same (ADR-023)
+
+The owner asked for "an automigration feature to allow 2 cairns to be synced", after moving their wiki to Azure. `cairn sync <a> <b>` reads every page, collection and row from both servers, compares each with the content both sides agreed on at the last sync, and copies whichever side changed to the other, deletions included. When both changed a record, the newer edit wins on both sides and the replaced one stays in that record's history; the report names each conflict. `--every 5m` keeps it running, and `--dry-run` shows the plan.
+
+The owner chose both rules: the newest edit wins with the other kept, and sync runs in the `cairn` command rather than inside a server. The state is a small file per pair of servers beside the CLI's sign-ins. Migrating to an empty Cairn is the first sync.
+
+Rows and collections now carry `updated_at` in the REST API, which the conflict rule needs, and MCP row results carry it too through the shared `rowJson`.
+
+14 tests drive two real Cairns through the command: migration, edits and creations both ways, deletions, a conflict with the loser in history, an edit beating a deletion, two Cairns already the same settling without writes, and a dry run. Checked for real with the compiled macOS executable between the owner's laptop and Azure: 185 records (96 pages, 2 collections, 87 rows) already the same, found in 0.6 seconds when Azure was awake and 35 seconds when it had to start.
+
+### The owner's wiki moved to Azure
+
+Exported from the laptop (96 pages, 2 collections, 87 rows), imported into Azure, and exported back: every file identical apart from the version and update fields an import sets. Searching all 96 titles on both gave the same top 10 pages for 89 and the same first result for 87; the rest differed by one page at the edge of the top 10, from near-ties that break differently between the laptop and Linux. Claude Code's `cairn` MCP server now points at Azure. The laptop's database stays as it was, and a copy was kept.
+
+### Checked: Azure's cold start and restore
+
+The first request after Cairn had scaled to zero took 35 seconds. The container logs split it: 19 seconds to pull the 340 MB image, which Container Apps does not keep once scaled to zero, 6 to create the container, and 3 to restore the database and start listening. The database came back complete each time. ADR-018's "a few seconds" was the restore alone; the Azure guide now gives the whole number. A smaller image, or one replica kept warm at a cost, would shorten it; neither is done.
+
+Two deployment gaps found on the way. Running `deploy.sh` again with the same moving tag (`edge`, `latest`) does not start a new version, because Container Apps only does so when the image name changes; the guide now says to name a version. And the script's health check was answered by the old version while the new one was still starting, so it reported success too early; it now waits for the new version to be ready.
+
 ### Fixed: writes failed with "database is locked" under load
 
 The first import into Azure stopped after 84 of 96 pages with "database is locked". Three connections share the database file (the document store, the search index and the auth store), and Litestream reads it beside them. Only the auth store set a busy timeout, so a write that met a lock held by another connection failed at once instead of waiting. On Azure's quarter of a CPU the background embedding writes vectors for longer, which made the collision likely; on a laptop it had not shown up. The document store and search index now wait up to 5 seconds for a lock. A new test holds the write lock from another process and checks that both still write.

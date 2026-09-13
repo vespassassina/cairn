@@ -76,6 +76,8 @@ deploy/azure/deploy.sh
 
 `cairn export <folder>` writes every page as a Markdown file, in folders that mirror your page tree, and every collection as JSON. It needs no Cairn to read. `cairn import <folder>` reads it back into any Cairn, keeping ids and links, and running it twice changes nothing. Export everything, or one page and everything under it with `--root` (ADR-016).
 
+`cairn sync <a> <b>` keeps two Cairns the same, such as your laptop and a cloud copy: changes and deletions go both ways, and when both sides changed a page, the newer edit wins and the other stays in its history (ADR-023). Add `--every 5m` to keep them in step.
+
 ## What exists
 
 1. `packages/core`. Domain logic, the adapter interfaces (documents, search,
@@ -91,9 +93,9 @@ deploy/azure/deploy.sh
    API and changes feed (ADR-013), the review console, the OAuth server
    (ADR-017), and the `import:markdown`, `reindex`, `eval` and `context-cost`
    commands.
-5. `packages/cli`. The `cairn` command, with export and import (ADR-016) and
-   `cairn login`, and `skills/cairn`, the skill that teaches a coding agent to
-   use it.
+5. `packages/cli`. The `cairn` command, with export and import (ADR-016),
+   sync between two Cairns (ADR-023) and `cairn login`, and `skills/cairn`,
+   the skill that teaches a coding agent to use it.
 6. `Dockerfile`, `docker/`, `deploy/docker/` and `deploy/azure/`. The server
    image, with the model inside, and the deployments (ADR-018, ADR-020).
 

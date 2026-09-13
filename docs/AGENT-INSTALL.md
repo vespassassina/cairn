@@ -111,7 +111,7 @@ Human guide: `docs/DEPLOY-AZURE.md`. Say first: this creates a resource group, a
 9. **Connect their Claude,** with the steps in `docs/DEPLOY-AZURE.md` section 4:
    1. Claude on the web or Desktop: they add a custom connector with `<address>/mcp`.
    2. Claude Code: `claude mcp add --transport http --scope user cairn <address>/mcp`, then `/mcp` in a new session to sign in. Or the CLI: `CAIRN_URL=<address> cairn login`, which opens their browser; the skill as in 3a.
-10. **Moving a local Cairn up**, if they have one: `cairn export <folder>` against the local server, then `CAIRN_URL=<address> cairn import <folder>` after `cairn login`.
+10. **Moving a local Cairn up**, if they have one. Ask whether they want to keep the local one in step. If yes: `cairn sync http://localhost:8787 <address>` after `cairn login`, and offer `--every 5m` (ADR-023). If not: `cairn export <folder>` against the local server, then `CAIRN_URL=<address> cairn import <folder>`. Either way, show them `--dry-run` first.
 11. **Prove it end to end,** with their permission: create a page with `cairn create` or through Claude, and have them find it in the console's recent changes.
 
 ## 4. Hand over

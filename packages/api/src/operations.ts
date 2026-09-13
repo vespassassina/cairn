@@ -3,6 +3,7 @@ import {
   NotFoundError,
   ValidationError,
   VersionConflictError,
+  type Collection,
   type Diff,
   type Page,
   type Revision,
@@ -34,7 +35,17 @@ export function pageSummary(page: Page): Record<string, unknown> {
 }
 
 export function rowJson(row: Row): Record<string, unknown> {
-  return { id: row.id, values: row.values, version: row.version };
+  return { id: row.id, values: row.values, version: row.version, updated_at: row.updatedAt };
+}
+
+export function collectionJson(collection: Collection): Record<string, unknown> {
+  return {
+    id: collection.id,
+    name: collection.name,
+    version: collection.version,
+    updated_at: collection.updatedAt,
+    fields: collection.fields,
+  };
 }
 
 export function revisionSummary(revision: Revision): Record<string, unknown> {

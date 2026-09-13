@@ -3,6 +3,7 @@ import { z } from "zod";
 import { NotFoundError, type Actor, type Page, type Paged, type Revision } from "@cairn/core";
 import type { AppContext } from "../context.js";
 import {
+  collectionJson,
   describeError,
   editPage,
   EDIT_MODES,
@@ -396,12 +397,7 @@ export function restRoutes(context: AppContext, callerFor: CallerFor): Hono {
   api.get("/collections", async (c) => {
     const collections = await context.collections.list(ws);
     return c.json({
-      collections: collections.map((collection) => ({
-        id: collection.id,
-        name: collection.name,
-        version: collection.version,
-        fields: collection.fields,
-      })),
+      collections: collections.map(collectionJson),
     });
   });
 
@@ -421,10 +417,7 @@ export function restRoutes(context: AppContext, callerFor: CallerFor): Hono {
       by(c, undefined),
     );
     c.header("Location", `/api/v1/collections/${encodeURIComponent(collection.id)}`);
-    return c.json(
-      { id: collection.id, name: collection.name, version: collection.version, fields: collection.fields },
-      201,
-    );
+    return c.json(collectionJson(collection), 201);
   });
 
   // Create a collection at a given id, or change its schema with If-Match.
@@ -447,21 +440,13 @@ export function restRoutes(context: AppContext, callerFor: CallerFor): Hono {
       by(c, undefined),
     );
     c.header("ETag", etag(collection.version));
-    return c.json(
-      { id: collection.id, name: collection.name, version: collection.version, fields: collection.fields },
-      version === null ? 201 : 200,
-    );
+    return c.json(collectionJson(collection), version === null ? 201 : 200);
   });
 
   api.get("/collections/:cid", async (c) => {
     const collection = await context.collections.get(ws, c.req.param("cid"));
     c.header("ETag", etag(collection.version));
-    return c.json({
-      id: collection.id,
-      name: collection.name,
-      version: collection.version,
-      fields: collection.fields,
-    });
+    return c.json(collectionJson(collection));
   });
 
   api.get("/collections/:cid/rows", async (c) => {

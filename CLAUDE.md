@@ -60,7 +60,7 @@ packages/
   adapter-cosmos/   (optional, only on an ADR-020 trigger)
   adapter-dynamo/   (optional, same)
   api/           Hono app: MCP, REST at /api/v1, review console
-  cli/           the `cairn` command, a thin HTTP client (ADR-013)
+  cli/           the `cairn` command, a thin HTTP client (ADR-013), with sync between two Cairns (ADR-023)
   web/           (Phase 2)
 deploy/
   docker/        compose file for your own server, database on a mounted volume (ADR-020)

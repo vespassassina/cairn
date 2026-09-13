@@ -13,6 +13,13 @@ Each entry answers four questions:
 
 ## 2026-09-13
 
+### A redeploy reported success while the old version was still running
+
+1. **What happened.** After a fix, `deploy.sh` with `CAIRN_IMAGE=...:edge` said Cairn was running, but the fix was not live: the new favicon returned 404. The agent was about to re-run the import against the old code.
+2. **Cause.** Two things. Container Apps creates a new revision only when the template changes, and the image name `...:edge` had not, so nothing new was pulled. And when a new revision did start, the script's health check was answered by the old one.
+3. **Fix.** The image was pinned by digest to force the change. `deploy.sh` now waits until the latest revision is the ready one before checking health, and the guide says to deploy a version, not a moving tag.
+4. **Lesson.** After a deploy, check that the new code is what answers, with something only the new code has, before relying on it. A health check proves something is up, not which version.
+
 ### An import failed with "database is locked" on the first slow machine
 
 1. **What happened.** Importing the wiki into Azure stopped after 84 pages with `internal: database is locked`.

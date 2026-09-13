@@ -16,7 +16,7 @@ Search matches meaning as well as keywords, with a small English model inside th
 
 Trade-offs, all fine for personal use and recorded in ADR-018:
 
-1. A cold start takes a few seconds while the container starts and restores the database.
+1. A cold start takes about 30 seconds: measured on the first deployment, 19 seconds to pull the image, 6 to create the container and 3 to restore the database and start. It happens on the first request after Cairn has been idle, and later requests are fast.
 2. Changes in the last second before a container stops can be lost.
 3. One region, no failover.
 
@@ -119,6 +119,13 @@ CAIRN_URL=https://your-address cairn import ~/cairn-backup
 
 The import keeps every page's id, so links still work. Running it again changes nothing.
 
+To keep your local Cairn as well, and the two in step, use sync instead (ADR-023, `docs/CLI.md`). The first run copies everything across, like an import:
+
+```
+CAIRN_URL=https://your-address cairn login
+cairn sync http://localhost:8787 https://your-address
+```
+
 ## Day to day
 
 **Update to a new version.** Releases are published as images. Run the script again with the version you want:
@@ -126,6 +133,8 @@ The import keeps every page's id, so links still work. Running it again changes 
 ```
 CAIRN_IMAGE=ghcr.io/vespassassina/cairn:0.2.0 deploy/azure/deploy.sh
 ```
+
+Name a version, not `latest` or `edge`. Container Apps starts a new version only when the image name changes, so running the script again with the same moving tag leaves the old image running.
 
 **Watch the logs:**
 
@@ -175,6 +184,8 @@ Entra ID does not say whether an email address is verified, so list people by su
 7. **The app restarts with "out of memory" in the logs.** The embedding model needs about 300 MB. Run the script again with `CAIRN_EMBEDDINGS=off` for keyword search only.
 8. **Anything else:** `az containerapp logs show -g cairn -n cairn --follow`, and the notes in `docs/LESSONS.md`.
 
-## What is not tested yet
+## What has been tested
 
-The template compiles, the scripts pass shellcheck, and the image is built and started in CI on every push. A full deployment from this guide has not been run yet. The first one will be recorded in `docs/CHANGELOG.md`, and this line removed.
+The first full deployment from this guide ran on 2026-09-13, in Sweden Central on a new pay-as-you-go subscription, and is recorded in `docs/CHANGELOG.md`: both passes, GitHub sign-in in the console and from the CLI, a 96-page wiki moved up with export and import and checked identical, the database restored from storage after scaling to zero, and sync with a local Cairn. It found three bugs, all fixed: missing certificates for Litestream, "database is locked" under load, and West Europe refusing new subscriptions.
+
+Not measured yet: how many writes a stopped container can lose, and a month of real cost.

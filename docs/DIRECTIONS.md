@@ -17,7 +17,7 @@ Rules:
 
 > "move everything to azure, migrate memory. add an automigration feature to allow 2 cairns to be synced. azure works perfectly"
 
-Landed in: the migration of the local wiki with `cairn export` and `cairn import`, and the "database is locked" fix it needed. The sync feature: not yet; it needs an ADR first (the roadmap's "Sync design on the revision log").
+Landed in: the migration of the local wiki with `cairn export` and `cairn import`, and the "database is locked" fix it needed; Claude Code's `cairn` server now points at Azure. Sync: ADR-023 and `cairn sync`. Asked how conflicts should resolve, the owner chose "newest wins, loser kept" in history; asked where sync should run, they chose the `cairn` command over a server syncing by itself.
 
 ### A favicon
 
