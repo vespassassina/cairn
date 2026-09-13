@@ -99,7 +99,9 @@ SAVED
 case "$CAIRN_IDLE_MINUTES" in
   '' | *[!0-9]*) fail "CAIRN_IDLE_MINUTES must be a whole number of minutes, from 1 to 1440" ;;
 esac
-[ "$CAIRN_IDLE_MINUTES" -ge 1 ] && [ "$CAIRN_IDLE_MINUTES" -le 1440 ] || fail "CAIRN_IDLE_MINUTES must be from 1 to 1440"
+if [ "$CAIRN_IDLE_MINUTES" -lt 1 ] || [ "$CAIRN_IDLE_MINUTES" -gt 1440 ]; then
+  fail "CAIRN_IDLE_MINUTES must be from 1 to 1440"
+fi
 case "$CAIRN_ALWAYS_ON" in
   true | false) ;;
   *) fail "CAIRN_ALWAYS_ON must be true or false" ;;

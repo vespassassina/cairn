@@ -10,7 +10,7 @@ Entries link to the ADR when there is one. A change of direction that has no ADR
 
 The owner asked how to fix the 30-second cold start. Three changes:
 
-1. **The amd64 image drops NVIDIA libraries it never used.** On Linux x64, onnxruntime-node's install script downloads the CUDA and TensorRT libraries, and they went into the image: 342 MB compressed for amd64 against 137 MB for arm64, which gets no GPU download. Cairn runs its model on the CPU. The build sets `ONNXRUNTIME_NODE_INSTALL=skip`, and CI fails if either library is in the image. Pulling that image was 19 of the 30 seconds.
+1. **The amd64 image drops NVIDIA libraries it never used.** On Linux x64, onnxruntime-node's install script downloads the CUDA and TensorRT libraries, and they went into the image: 342 MB compressed for amd64 against 137 MB for arm64, which gets no GPU download. Cairn runs its model on the CPU. The build sets `ONNXRUNTIME_NODE_INSTALL=skip`, and CI fails if either library is in the image. Pulling that image was 19 of the 30 seconds. After: 144 MB for amd64.
 2. **`CAIRN_IDLE_MINUTES`, default 30:** how long Cairn stays up after the last request before scaling to zero. Container Apps' default was 5 minutes, so a pause in a working session meant another cold start. The waiting time comes out of the free grant.
 3. **`CAIRN_ALWAYS_ON=true`:** one copy always running, so no cold starts at all, billed at Azure's lower idle rate while unused, which a month of goes beyond the free grant. Off by default.
 

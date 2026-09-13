@@ -13,6 +13,13 @@ Each entry answers four questions:
 
 ## 2026-09-13
 
+### A shell script change reached CI unlinted
+
+1. **What happened.** CI's shellcheck step failed on a new check in `deploy.sh`: `A && B || C`, flagged SC2015.
+2. **Cause.** shellcheck is not installed on the machine the agent works on, so `bash -n` was the only local check, and it only tests syntax.
+3. **Fix.** Rewritten as an `if`.
+4. **Lesson.** `bash -n` is not a lint. Before pushing a shell change, run shellcheck, or say that it was not run and let CI be the check.
+
 ### The amd64 image was two and a half times the arm64 one, and nobody looked
 
 1. **What happened.** Cold starts on Azure took 30 seconds, 19 of them pulling a 342 MB image. The arm64 build of the same commit was 137 MB.
