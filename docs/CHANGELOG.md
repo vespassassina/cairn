@@ -14,6 +14,8 @@ The owner asked how to fix the 30-second cold start. Three changes:
 2. **`CAIRN_IDLE_MINUTES`, default 30:** how long Cairn stays up after the last request before scaling to zero. Container Apps' default was 5 minutes, so a pause in a working session meant another cold start. The waiting time comes out of the free grant.
 3. **`CAIRN_ALWAYS_ON=true`:** one copy always running, so no cold starts at all, billed at Azure's lower idle rate while unused, which a month of goes beyond the free grant. Off by default.
 
+Measured after, with the idle time briefly set to one minute to force a cold start: 26.5 seconds from request to answer, against 35 before. The pull fell from 19 seconds to 3.9. The rest is Azure's and the container's: about 7 seconds before the pull starts, 11 to create the container, 3 to restore the database and start, and a second or two for the startup probe. Only `CAIRN_ALWAYS_ON` removes those. At Sweden Central's published rates (vCPU $0.000024 a second busy and $0.000003 idle, memory $0.000003 a GiB-second), one copy of Cairn's size running all month and mostly idle comes to about $4 beyond the free grant, and $14 if something keeps it busy all the time, such as a sync every few minutes without `CAIRN_ALWAYS_ON`.
+
 The template moves to the 2025-01-01 Container Apps API, which accepts `cooldownPeriod`; `az deployment group validate` passed with it. The Azure guide explains the settings, and warns that `cairn sync --every` more often than the idle time keeps Cairn awake at the full rate.
 
 ### Added: `cairn sync`, to keep two Cairns the same (ADR-023)
