@@ -20,6 +20,8 @@ Step 1 renamed them in the web app; agents still read "collection" for a table, 
 
 Four tests added: the old REST paths, the old CLI command, a version 1 export, and sync state from before. 344 tests pass, 1 skipped.
 
+Deployed to Azure by image digest the same evening. `cairn sync` between the laptop and Azure then read the state saved before the rename and found nothing to change, 186 records the same.
+
 ### The peptide wiki is one collection
 
 Following ADR-026, on the Azure Cairn, through the REST API, with an export taken first as a backup: the root page "Peptide database" (`pg_peptides`) was renamed "Peptides" and given a front page saying what the wiki holds and what its two tables are, and the nine other top-level pages (the category pages and the Stacks page) were moved under it. Every id stayed and nothing was deleted. The console's home now shows one collection, Peptides, with 96 pages and 2 tables, and the laptop's copy was brought level with `cairn sync`.
