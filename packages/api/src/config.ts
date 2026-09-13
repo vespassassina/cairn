@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
 /**
@@ -36,6 +37,19 @@ export interface Config {
   configFile: string | null;
   /** OAuth sign-in (ADR-017), or null when not configured. */
   oauth: OAuthConfig | null;
+  /** Semantic search with a model inside the process (ADR-022). */
+  embeddings: EmbeddingsConfig;
+}
+
+export interface EmbeddingsConfig {
+  /** `local` runs bge-small-en-v1.5 in the process; `off` is keyword search only. */
+  provider: "local" | "off";
+  /** Where model files are kept. */
+  modelDir: string;
+  /** False where the model ships with the install, as in the container image. */
+  allowDownload: boolean;
+  /** How far a vector match must stand above its neighbours. Null for the default. */
+  margin: number | null;
 }
 
 export type ProviderConfig =
@@ -57,6 +71,11 @@ export interface ConfigFile {
   database?: string;
   port?: number;
   workspace?: string;
+  embeddings?: {
+    provider?: "local" | "off";
+    modelDir?: string;
+    margin?: number;
+  };
   auth?: {
     /** Default true. Set false to require the token even on localhost. */
     trustLocal?: boolean;
@@ -236,6 +255,7 @@ export function loadConfig(
   // wherever the server happened to be started from.
   const base = configPath ? dirname(configPath) : process.cwd();
   const database = env["CAIRN_DB"] ?? resolve(base, file.database ?? "cairn.sqlite");
+  const embeddings = loadEmbeddings(env, file, base);
 
   return {
     database,
@@ -247,5 +267,27 @@ export function loadConfig(
     localHosts,
     configFile: configPath,
     oauth,
+    embeddings,
+  };
+}
+
+function loadEmbeddings(env: NodeJS.ProcessEnv, file: ConfigFile, base: string): EmbeddingsConfig {
+  const provider = (env["CAIRN_EMBEDDINGS"] ?? file.embeddings?.provider ?? "local").trim().toLowerCase();
+  if (provider !== "local" && provider !== "off") {
+    throw new ConfigError(`CAIRN_EMBEDDINGS must be local or off, got ${provider}`);
+  }
+  const modelDir = env["CAIRN_MODELS"]
+    ?? (file.embeddings?.modelDir ? resolve(base, file.embeddings.modelDir) : join(homedir(), ".cache", "cairn", "models"));
+  const margin = env["CAIRN_VECTOR_MARGIN"] !== undefined
+    ? Number(env["CAIRN_VECTOR_MARGIN"])
+    : (file.embeddings?.margin ?? null);
+  if (margin !== null && !(margin >= 0 && margin <= 1)) {
+    throw new ConfigError(`CAIRN_VECTOR_MARGIN must be a number from 0 to 1, got ${margin}`);
+  }
+  return {
+    provider,
+    modelDir,
+    allowDownload: parseBoolean(env["CAIRN_MODEL_DOWNLOAD"]) ?? true,
+    margin,
   };
 }

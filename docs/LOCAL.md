@@ -63,6 +63,17 @@ curl http://localhost:8787/health
 
 It listens on 127.0.0.1 and ::1, so `localhost` works whichever one a client picks.
 
+### Search by meaning (English only)
+
+Search matches keywords and, for English text, meaning, so "something to help me fall asleep" finds a page that only says "sleep" (ADR-022). It uses a small model, bge-small-en-v1.5, that runs inside Cairn:
+
+1. **The first start downloads it,** 34 MB, to `~/.cache/cairn/models`. After that nothing leaves your machine. Offline on the first start, search stays keyword only until a start with a connection.
+2. **It embeds your pages in the background:** seconds for a hundred pages. Keyword search works meanwhile. `curl http://localhost:8787/health` shows `semantic_search`: `ready`, and how many chunks are `pending`.
+3. **English only.** Pages in other languages still get keyword search, which is not affected.
+4. **It needs about 300 MB of memory.** To turn it off: `CAIRN_EMBEDDINGS=off pnpm dev`, or `"embeddings": { "provider": "off" }` in `cairn.config.json`.
+
+The vectors live in the same SQLite file, in tables the stock `sqlite3` tool cannot open without the sqlite-vec extension. Backups and copies of the file are unaffected.
+
 If it says port 8787 is already in use, Cairn is probably running already, perhaps started by an agent or another terminal. Open the health URL above to check, or find the process with `lsof -nP -iTCP:8787 -sTCP:LISTEN`. To use another port, set `port` in `cairn.config.json`.
 
 ## 5. Connect Claude Code
@@ -155,6 +166,6 @@ To reach Cairn from other machines, run it with sign-in on your own server (`doc
 
 ## What is not here yet
 
-AWS, the web editor, embeddings, attachments, and exporting history. None of
+AWS, the web editor, a multilingual embedding model, attachments, and exporting history. None of
 them is needed to answer the question this PoC exists for: do you actually
 reach for this from Claude four days a week (PRD section 10).

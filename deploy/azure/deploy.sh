@@ -21,6 +21,8 @@
 #   CAIRN_ALLOWED_USERS        who may sign in, such as github:yourlogin
 #   CAIRN_SERVICE_TOKEN        optional, for scripts that cannot sign in
 #   CAIRN_AUTH_SECRET_PREVIOUS the old signing secret, during a rotation
+#   CAIRN_EMBEDDINGS           local (default): search by meaning too, English
+#                              only; off: keyword search only, less memory
 #
 # The signing secret is generated on the first run and kept, with the other
 # secrets you give it, in deploy/azure/.cairn-deploy.env: readable only by
@@ -62,6 +64,7 @@ fi
 : "${CAIRN_ALLOWED_USERS:=}"
 : "${CAIRN_SERVICE_TOKEN:=}"
 : "${CAIRN_AUTH_SECRET_PREVIOUS:=}"
+: "${CAIRN_EMBEDDINGS:=local}"
 if [ -z "${CAIRN_AUTH_SECRET:-}" ]; then
   CAIRN_AUTH_SECRET="$(openssl rand -hex 32)"
   say "generated a signing secret, kept in $secrets_file"
@@ -82,6 +85,7 @@ CAIRN_ALLOWED_USERS='$CAIRN_ALLOWED_USERS'
 CAIRN_AUTH_SECRET='$CAIRN_AUTH_SECRET'
 CAIRN_SERVICE_TOKEN='$CAIRN_SERVICE_TOKEN'
 CAIRN_AUTH_SECRET_PREVIOUS='$CAIRN_AUTH_SECRET_PREVIOUS'
+CAIRN_EMBEDDINGS='$CAIRN_EMBEDDINGS'
 SAVED
 
 if [ -n "$CAIRN_OAUTH_CLIENT_ID" ]; then
@@ -123,7 +127,8 @@ trap 'rm -f "$params"' EXIT
   printf '"authSecret":{"value":%s},' "$(json_string "$CAIRN_AUTH_SECRET")"
   printf '"allowedUsers":{"value":%s},' "$(json_string "$CAIRN_ALLOWED_USERS")"
   printf '"serviceToken":{"value":%s},' "$(json_string "$CAIRN_SERVICE_TOKEN")"
-  printf '"authSecretPrevious":{"value":%s}' "$(json_string "$CAIRN_AUTH_SECRET_PREVIOUS")"
+  printf '"authSecretPrevious":{"value":%s},' "$(json_string "$CAIRN_AUTH_SECRET_PREVIOUS")"
+  printf '"embeddings":{"value":%s}' "$(json_string "$CAIRN_EMBEDDINGS")"
   printf '}}'
 } > "$params"
 

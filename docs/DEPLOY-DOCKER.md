@@ -76,6 +76,8 @@ The first prints `"status":"ok"`. The second prints `401`: Cairn refuses anyone 
 
 It starts again by itself after a reboot (`restart: unless-stopped`).
 
+**Search by meaning, English only.** The image includes a small English embedding model (bge-small-en-v1.5), so search matches meaning as well as keywords; text in other languages gets keyword search (ADR-022). It never downloads anything. After the first start it embeds your pages in the background, and `/health` shows `semantic_search` as `ready` when it can be used. It takes about 300 MB of memory; to run keyword search only, add `CAIRN_EMBEDDINGS=off` to `.env`.
+
 ## 5. Connect Claude and the CLI
 
 The same as on Azure: `docs/DEPLOY-AZURE.md`, section 4, with your HTTPS address.

@@ -4,7 +4,44 @@ What changed, and why. Newest first. One entry per meaningful change: code, desi
 
 Entries link to the ADR when there is one. A change of direction that has no ADR yet still gets an entry here.
 
+## 2026-09-13
+
+### Added: search by meaning, with sqlite-vec and a small English model in the container (ADR-022)
+
+Search now matches meaning as well as keywords, for English text. "Something to help me fall asleep" finds DSIP, whose page only says "sleep"; "anything for wrinkles" finds Matrixyl.
+
+1. **Vectors in SQLite** through the sqlite-vec extension, in tables created only when embeddings are on.
+2. **bge-small-en-v1.5** (34 MB, English only) runs in the server process through transformers.js, behind a new `Embedder` port and the `adapter-embeddings-local` package. On by default; `CAIRN_EMBEDDINGS=off` turns it off.
+3. **Background embedding.** Writes never wait for the model. Chunks are embedded after each write, and caught up by a hash comparison when the model loads, so nothing is embedded twice.
+4. **Hybrid search** fuses the keyword ranking with the nearest vectors (reciprocal rank fusion). A vector match counts only when it stands at least 0.065 above the similarity of its neighbourhood, which, unlike a fixed threshold, separates conversational questions with an answer from on-topic questions without one.
+5. **Degrades to keyword search** when the extension or model cannot load or fails, and `/health` reports `semantic_search` with the reason.
+6. **The image ships the model and the native packages** for its own platform only (about 110 MB more), and never downloads at runtime. CI now checks that semantic search reaches `ready`, runs a hybrid search, and logs the container's memory.
+7. **Azure:** a template parameter and `CAIRN_EMBEDDINGS` in `deploy.sh`. The container size stays at 0.25 vCPU and 0.5 GiB.
+
+Measured, SQLite FTS5 plus sqlite-vec, 96-page wiki, 18 queries with an answer and 9 without: recall@5 0.83 keyword, 1.00 hybrid; no-answer queries returning nothing, 9 of 9 in both. Memory 347 MB with the model loaded and every chunk embedded, after cutting the model's batch to one text per call (it was 1.3 GB at 32).
+
+Also: seven eval queries (h01 to h04 with answers, n07 to n09 without), eight hybrid conformance tests with a fake synonym embedder, SQLite tests for restarts and model changes, a real-model test behind `CAIRN_TEST_MODEL=1`, and the search wording in the tool description, instructions, skill and CLI help. MCP context stays at about 2,725 tokens.
+
+Why: the owner asked for vector search in SQLite with an in-container model. Keyword search could not bridge different words for the same thing.
+
+### Changed: commits go straight to main
+
+No branches or pull requests from now on (owner direction). `CLAUDE.md` has a Workflow section.
+
 ## 2026-09-12
+
+### Fixed: search returned pages for questions Cairn has no answer to (ADR-021)
+
+Search matched any one word of a query, so every question returned something. Now a page must hold most of the query's words, filler words in English, Italian and Dutch are ignored, words are stemmed ("peptides" finds "peptide"), and each matching page's best chunk comes before a second chunk of any page. The rules live in core and in the search conformance suite, for every backend.
+
+Before and after, SQLite FTS5, keyword mode, 96-page peptide wiki: recall@5 1.00 and 1.00 on 14 queries; no-answer queries returning nothing, 0 of 6 and 6 of 6.
+
+Also:
+
+1. The eval scores questions with no answer (`expected: none`), with six new queries n01 to n06.
+2. An existing search index is recreated with the stemmer at the first start and rebuilt from the pages (`needsRebuild` on the port). 96 pages took 61 ms.
+3. The search tool description, the server instructions, the skill and `cairn --help` say a page must hold most of the words, and to use two or three distinctive ones. MCP context went from about 2,716 to 2,726 tokens; the README's "about 2,700" stands.
+4. 18 new tests: the term rules, five conformance tests for the match rule, stemming and the index upgrade in SQLite, the upgrade at startup, and no-answer scoring.
 
 ### Decision: one container everywhere, and your own server as a target (ADR-020)
 

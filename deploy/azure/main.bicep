@@ -54,6 +54,13 @@ param authSecretPrevious string = ''
 @description('Who may sign in, comma-separated: github:yourlogin, email:you@example.com, or oidc:<subject>.')
 param allowedUsers string = ''
 
+@description('Search by meaning as well as keywords, with a small English model inside the container (ADR-022). off saves about 300 MB of memory.')
+@allowed([
+  'local'
+  'off'
+])
+param embeddings string = 'local'
+
 @description('Optional service token, at least 32 characters, for scripts that cannot sign in.')
 @secure()
 param serviceToken string = ''
@@ -110,6 +117,7 @@ var baseEnv = [
   { name: 'CAIRN_AUTH_SECRET', secretRef: 'auth-secret' }
   { name: 'CAIRN_ALLOWED_USERS', value: allowedUsers }
   { name: 'CAIRN_REPLICA_URL', value: 'abs://${storage.name}@${blobContainerName}/cairn.sqlite' }
+  { name: 'CAIRN_EMBEDDINGS', value: embeddings }
 ]
 var oidcEnv = authProvider == 'oidc' ? [ { name: 'CAIRN_OIDC_ISSUER', value: oidcIssuer } ] : []
 var tokenEnv = empty(serviceToken) ? [] : [ { name: 'CAIRN_TOKEN', secretRef: 'service-token' } ]
@@ -144,6 +152,8 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = if (deployApp) {
         {
           name: 'cairn'
           image: image
+          // 0.5 GiB holds the server and the embedding model: 347 MB measured
+          // with every chunk of a 96-page wiki embedded (ADR-022).
           resources: {
             cpu: json('0.25')
             memory: '0.5Gi'

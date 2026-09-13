@@ -11,7 +11,35 @@ Rules:
 3. Every entry says where it landed: an ADR, a doc, a commit, or "not yet".
 4. A later direction that reverses an earlier one does not edit it. Add the new one and point back.
 
+## 2026-09-13
+
+### No pull requests: commit to main
+
+> "for the repo, disable PRs and just keep committing."
+
+Landed in: the Workflow section of `CLAUDE.md`. PR #1 still needs merging, and the repository setting that turns pull requests off still needs switching; both are the owner's to do in GitHub, because the agent's attempt to merge was blocked by its permissions.
+
+### Vector search in SQLite, with a small model in the container, English only
+
+> "add vector search to sqlite. there is an extension. plus in container embedding with small model"
+
+> "add notes that this works only for english"
+
+Asked which model, the owner chose bge-small-en-v1.5 (English only, 34 MB) over multilingual-e5-small (118 MB) and all-MiniLM-L6-v2, and approved the downloads (the npm packages and the model). Landed in: ADR-022, the `Embedder` port, `packages/adapter-embeddings-local`, sqlite-vec in the SQLite adapter, hybrid search, the image, and "English only" in the README, PRD, ADR, guides and agent guide.
+
+### Fuzzy search asked about, not requested
+
+> "for the search, are you implementing fuzzy? bm25?"
+
+A question. Answered: BM25 yes, fuzzy no; typo correction was offered and not taken up. No change.
+
 ## 2026-09-12
+
+### Next open point: search over-matching
+
+> "next open point", then "next"
+
+After the agent listed the open points and offered to take search over-matching while the others waited for the owner. Landed in: ADR-021, the search changes, and no-answer queries in the eval.
 
 ### One container, as small as possible, and Proxmox with local storage
 

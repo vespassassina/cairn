@@ -1,6 +1,7 @@
 import {
   runAuthStoreConformance,
   runDocumentStoreConformance,
+  runHybridSearchConformance,
   runPushdownConformance,
   runSearchIndexConformance,
 } from "@cairn/core/testing";
@@ -13,6 +14,10 @@ runDocumentStoreConformance("sqlite", {
 
 runSearchIndexConformance("sqlite fts5", {
   create: async () => new SqliteSearchIndex(),
+});
+
+runHybridSearchConformance("sqlite fts5 + sqlite-vec", {
+  create: async (embedder) => new SqliteSearchIndex({ embedder, minSimilarity: 0.5 }),
 });
 
 runPushdownConformance("sqlite", {

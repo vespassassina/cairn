@@ -209,6 +209,23 @@ describe("configuration", () => {
   it("refuses to listen beyond loopback without OAuth", () => {
     expect(() => loadConfig({ CAIRN_HOST: "0.0.0.0" }, null)).toThrow(/without OAuth/);
   });
+
+  it("runs the local embedding model by default, and can be turned off (ADR-022)", () => {
+    const on = loadConfig({}, null).embeddings;
+    expect(on).toMatchObject({ provider: "local", allowDownload: true, margin: null });
+    expect(on.modelDir).toMatch(/cairn[\\/]models$/);
+
+    const off = loadConfig(
+      { CAIRN_EMBEDDINGS: "off", CAIRN_MODELS: "/app/models", CAIRN_MODEL_DOWNLOAD: "false", CAIRN_VECTOR_MARGIN: "0.08" },
+      null,
+    ).embeddings;
+    expect(off).toEqual({ provider: "off", modelDir: "/app/models", allowDownload: false, margin: 0.08 });
+  });
+
+  it("rejects an unknown embeddings setting and an impossible margin", () => {
+    expect(() => loadConfig({ CAIRN_EMBEDDINGS: "openai" }, null)).toThrow(/local or off/);
+    expect(() => loadConfig({ CAIRN_VECTOR_MARGIN: "high" }, null)).toThrow(/from 0 to 1/);
+  });
 });
 
 describe("public mode with OAuth (ADR-017)", () => {

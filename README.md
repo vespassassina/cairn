@@ -2,7 +2,9 @@
 
 **A wiki and tables your agents can write to, with every change reviewable.**
 
-Source-available and self-hosted: free for any non-commercial use. Agents write pages and table rows directly, with no approval step, and every write is a revision you can review in a small console and undo. Runs as one SQLite file on your machine, and is being built to run on the Azure or AWS free tier.
+Source-available and self-hosted: free for any non-commercial use. Agents write pages and table rows directly, with no approval step, and every write is a revision you can review in a small console and undo. One container and one SQLite file, on your machine, your own server or Azure's free grants.
+
+Search finds pages by keyword and by meaning, with a small model that runs inside Cairn: no API key, and nothing leaves your server. Search by meaning works for English only; other languages get keyword search (ADR-021, ADR-022).
 
 Three doors for agents, over one core:
 
@@ -14,7 +16,7 @@ Three doors for agents, over one core:
 
 Characters measured with `pnpm context-cost` on a 96-page wiki, tokens estimated at four characters each.
 
-Status: early, and working. It runs on your machine, with the console, MCP, REST and the CLI, and deploys to Azure with sign-in through GitHub or any OpenID Connect provider. See `docs/ROADMAP.md`.
+Status: early, and working. It runs on your machine, with the console, MCP, REST and the CLI, and deploys to your own server or Azure with sign-in through GitHub or any OpenID Connect provider. See `docs/ROADMAP.md`.
 
 Source: https://github.com/vespassassina/cairn
 
@@ -80,19 +82,23 @@ deploy/azure/deploy.sh
    auth records), and the conformance suites every adapter runs. No cloud
    dependencies.
 2. `packages/adapter-sqlite`. The reference adapter, on Node's built-in
-   `node:sqlite`. FTS5 gives keyword search with no native dependency.
-3. `packages/api`. The Hono app: MCP over stateless streamable HTTP, the REST
+   `node:sqlite`: FTS5 for keyword search, and the sqlite-vec extension for
+   search by meaning (ADR-022).
+3. `packages/adapter-embeddings-local`. A small embedding model,
+   bge-small-en-v1.5, running inside Cairn. **English only**: text in other
+   languages gets keyword search.
+4. `packages/api`. The Hono app: MCP over stateless streamable HTTP, the REST
    API and changes feed (ADR-013), the review console, the OAuth server
    (ADR-017), and the `import:markdown`, `reindex`, `eval` and `context-cost`
    commands.
-4. `packages/cli`. The `cairn` command, with export and import (ADR-016) and
+5. `packages/cli`. The `cairn` command, with export and import (ADR-016) and
    `cairn login`, and `skills/cairn`, the skill that teaches a coding agent to
    use it.
-5. `Dockerfile`, `docker/` and `deploy/azure/`. The server image and the Azure
-   deployment (ADR-018).
+6. `Dockerfile`, `docker/`, `deploy/docker/` and `deploy/azure/`. The server
+   image, with the model inside, and the deployments (ADR-018, ADR-020).
 
-Not yet: AWS, the web editor, embeddings,
-attachments, and exporting history.
+Not yet: AWS, the web editor, search by meaning in languages other than
+English, attachments, and exporting history.
 
 ## Licence
 

@@ -133,6 +133,8 @@ export function createApp(options: AppOptions): Hono {
         vectors: options.context.search.capabilities.vectors,
         row_query_pushdown: options.context.store.capabilities.rowQueryPushdown,
       },
+      // ADR-022: whether search can use meaning yet, and how much is left to embed.
+      semantic_search: options.context.search.status(),
     }),
   );
 

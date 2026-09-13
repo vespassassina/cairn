@@ -40,7 +40,8 @@ function skillDescription(skill: string): string {
 
 async function main(): Promise<void> {
   const config = loadConfig();
-  const context = await createContext(config);
+  // A short-lived command: the server embeds new chunks when it next starts (ADR-022).
+  const context = await createContext({ ...config, embeddings: { ...config.embeddings, provider: "off" } });
   const app = createApp({ context, token: null, trust: { enabled: true, hosts: ["localhost"] } });
 
   const init = await rpc(app, "initialize", {

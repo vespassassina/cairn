@@ -53,7 +53,9 @@ Human guide: `docs/LOCAL.md`.
 
 1. **Bring content in, if they have some.** A Markdown folder: `pnpm import:markdown <folder>`. A Cairn export: do it after step 2, with `cairn import <folder>`.
 2. **Start the server.** `pnpm dev` runs it in the foreground. Explain that Cairn is only available while this runs. Start it in the background for this session, and tell the person how to start it themselves next time.
-3. **Check it:** `curl -s http://localhost:8787/health` must print `"status":"ok"`.
+
+   Say first: the first start downloads a 34 MB embedding model from Hugging Face into `~/.cache/cairn/models`, for search by meaning, which works for English text only (ADR-022). If they would rather not, start it with `CAIRN_EMBEDDINGS=off` for keyword search only.
+3. **Check it:** `curl -s http://localhost:8787/health` must print `"status":"ok"`. Its `semantic_search` field says `ready` once the model has loaded, `failed` with a reason if it could not (keyword search still works), or `off`.
 4. **Connect their Claude.**
    1. **Claude Code: use the CLI and skill** (about 115 tokens per session, against about 2,700 for MCP). Steps in `docs/CLI.md`: `pnpm build:cli host`, put the executable on the PATH, copy `skills/cairn` to `~/.claude/skills/`. Check with `cairn overview`.
    2. **Or MCP:** `claude mcp add --transport http --scope user cairn http://localhost:8787/mcp`, then a new session.

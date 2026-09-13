@@ -41,8 +41,28 @@ export interface SearchIndexCapabilities {
   readonly vectors: boolean;
 }
 
+/**
+ * Where semantic search stands (ADR-022). `off`: no embedder configured.
+ * `loading`: the model is loading, keyword mode meanwhile. `ready`: hybrid
+ * search is available, with `pending` chunks still waiting for a vector.
+ * `failed`: the model could not load or run; keyword mode, with the reason.
+ */
+export interface SearchIndexStatus {
+  vectors: "off" | "loading" | "ready" | "failed";
+  model: string | null;
+  pending: number;
+  detail: string | null;
+}
+
 export interface SearchIndex {
   readonly capabilities: SearchIndexCapabilities;
+
+  /**
+   * True after `init` when the index had to be recreated, for example because
+   * its tokenizer changed, and is now empty. The caller rebuilds derived data
+   * from the pages (ADR-005 rule 2, ADR-021). False on a fresh or current index.
+   */
+  readonly needsRebuild: boolean;
 
   init(): Promise<void>;
   close(): Promise<void>;
@@ -56,6 +76,15 @@ export interface SearchIndex {
     pageId: Id,
     chunks: ChunkInput[],
   ): Promise<void>;
+
+  status(): SearchIndexStatus;
+
+  /**
+   * Resolves once background work queued so far is done: the model loaded,
+   * and every chunk written so far has its vector. Immediate without vectors.
+   * For the eval and tests; requests never wait for it.
+   */
+  settled(): Promise<void>;
 
   /** Removes a page from the index. Same as replacing with an empty list. */
   deleteChunksForPage(workspaceId: WorkspaceId, pageId: Id): Promise<void>;

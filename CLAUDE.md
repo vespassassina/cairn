@@ -38,6 +38,10 @@ Rules:
 7. When something fails and gets fixed, add a `docs/LESSONS.md` entry before committing. Read that file before repeating a kind of task it covers.
 8. The MCP server instructions (`packages/api/src/mcp/instructions.ts`), the workspace summary that follows them (`summary.ts`) and the skill (`skills/cairn/SKILL.md`) change agent behaviour, and must say the same things. Changing any of them needs a changelog entry saying why (ADR-011, ADR-012, ADR-013), and a fresh `pnpm context-cost` if the README numbers move. Stored text in the summary is untrusted and must stay quoted and bounded.
 
+## Workflow
+
+Commit directly to `main` and push once a change is done and verified. No branches or pull requests: the owner's direction of 2026-09-13 ("disable PRs and just keep committing"). CI runs on every push, so the checks under "Verification before calling a task done" still come first. Tags and releases are outward-facing: ask before making one.
+
 ## Stack
 
 1. TypeScript, Node 22, pnpm workspaces
@@ -51,12 +55,12 @@ Rules:
 ```
 packages/
   core/          domain logic, adapter interfaces, no cloud SDKs
-  adapter-sqlite/
+  adapter-sqlite/   documents, FTS5 search, sqlite-vec vectors (ADR-022)
+  adapter-embeddings-local/  the in-process English embedding model (ADR-022)
   adapter-cosmos/   (optional, only on an ADR-020 trigger)
   adapter-dynamo/   (optional, same)
   api/           Hono app: MCP, REST at /api/v1, review console
   cli/           the `cairn` command, a thin HTTP client (ADR-013)
-  indexer/       link extraction, chunking, optional embeddings
   web/           (Phase 2)
 deploy/
   docker/        compose file for your own server, database on a mounted volume (ADR-020)
@@ -82,7 +86,7 @@ docs/
 2. Every adapter passes the shared conformance suite in `core/test/conformance`. No adapter-specific branches in business logic.
 3. Every write uses optimistic concurrency via version tokens.
 4. The chunks store is separate from pages from day one. The vector container is created when embeddings are enabled, never at deploy.
-5. Optional services (embeddings) degrade to keyword mode with a `mode` flag. They never throw into the core path.
+5. Optional services (embeddings) degrade to keyword mode with a `mode` flag. They never throw into the core path, and never run on the write path: vectors are computed in the background (ADR-022).
 6. Every MCP tool truncates to a token budget and returns a cursor when it does.
 7. No search change merges without running `pnpm eval` and recording before and after recall@5 in the PR description, per search backend.
 8. Search is a separate adapter from the document store. Never assume one backend provides both (ADR-005).

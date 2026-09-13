@@ -6,9 +6,8 @@ import { createContext } from "../context.js";
 import { oauthFromConfig } from "../oauth/setup.js";
 
 /**
- * The Node entry point. The only file that knows about a listening socket.
- * Lambda and Azure Functions get their own file beside this one, and neither
- * touches a route (ADR-006).
+ * The Node entry point. The only file that knows about a listening socket
+ * (ADR-006). Cairn runs as one container on Node everywhere (ADR-020).
  */
 
 /**
@@ -83,6 +82,11 @@ async function main(): Promise<void> {
       `  auth      ${auth}\n` +
       `  database  ${config.database}\n` +
       `  workspace ${config.workspaceId}\n` +
+      `  search    ${
+        config.embeddings.provider === "local"
+          ? `keyword, plus meaning for English text once the model loads (${config.embeddings.modelDir})`
+          : "keyword only (CAIRN_EMBEDDINGS=off)"
+      }\n` +
       `  config    ${config.configFile ?? "none (defaults)"}\n`,
   );
 }

@@ -1,6 +1,7 @@
 import { CollectionService, PageService } from "@cairn/core";
 import type { Actor, AuthStore, DocumentStore, SearchIndex } from "@cairn/core";
 import { SqliteAuthStore, SqliteDocumentStore, SqliteSearchIndex } from "@cairn/adapter-sqlite";
+import { LocalEmbedder } from "@cairn/adapter-embeddings-local";
 import type { Config } from "./config.js";
 
 /**
@@ -32,20 +33,46 @@ export function ownerVia(tool: string): Actor {
 }
 
 export async function createContext(
-  config: Pick<Config, "database" | "workspaceId">,
+  config: Pick<Config, "database" | "workspaceId"> & Partial<Pick<Config, "embeddings">>,
 ): Promise<AppContext> {
   // Both adapters open the same file. WAL mode lets them share it.
   const store = new SqliteDocumentStore({ location: config.database });
-  const search = new SqliteSearchIndex({ location: config.database });
+  // Semantic search is opt-in per caller: tests and short-lived commands pass
+  // no embeddings config and never load the model (ADR-022).
+  const embeddings = config.embeddings;
+  const search = new SqliteSearchIndex({
+    location: config.database,
+    ...(embeddings?.provider === "local"
+      ? {
+          embedder: new LocalEmbedder({ cacheDir: embeddings.modelDir, allowDownload: embeddings.allowDownload }),
+          ...(embeddings.margin !== null ? { margin: embeddings.margin } : {}),
+          onVectorError: (error: unknown) =>
+            process.stderr.write(
+              `semantic search is off, keyword search carries on: ${error instanceof Error ? error.message : String(error)}\n`,
+            ),
+        }
+      : {}),
+  });
   const auth = new SqliteAuthStore({ location: config.database });
   await store.init();
   await search.init();
   await auth.init();
 
+  const pages = new PageService(store, search);
+  if (search.needsRebuild) {
+    // The search index changed format and was emptied. Chunks are derived
+    // from pages, so rebuild them before serving (ADR-021).
+    const started = Date.now();
+    const result = await pages.rebuildWorkspace(config.workspaceId);
+    process.stderr.write(
+      `search index upgraded: rebuilt ${result.pages} pages in ${Date.now() - started}ms\n`,
+    );
+  }
+
   return {
     store,
     search,
-    pages: new PageService(store, search),
+    pages,
     collections: new CollectionService(store),
     auth,
     workspaceId: config.workspaceId,

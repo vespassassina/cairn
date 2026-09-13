@@ -90,3 +90,72 @@ queries:
     notes: "product name only in a stack title"
 
   # q17 to q30: for the owner, from real searches
+
+  # n01 to n06: questions the peptide wiki has no answer to, added by the agent
+  # on 2026-09-12 (ADR-021). `expected: none` means the right result is no
+  # pages. Several share one or two words with the wiki on purpose, checked
+  # against the index: "first" and "adhesion" are both on pg_vesugen, and
+  # "insulin" and "pump" on pg_igf-1-lr3.
+  - id: n01
+    query: "sourdough starter feeding schedule"
+    expected: none
+    lang: en
+  - id: n02
+    query: "kubernetes ingress certificate renewal"
+    expected: none
+    lang: en
+  - id: n03
+    query: "Italian tax deadline for freelancers"
+    expected: none
+    lang: en
+  - id: n04
+    query: "how to fix a leaking kitchen tap"
+    expected: none
+    lang: en
+  - id: n05
+    query: "3D printer first layer adhesion"
+    expected: none
+    lang: en
+  - id: n06
+    query: "insulin pump battery replacement"
+    expected: none
+    lang: en
+
+  # h01 to h04: conversational questions with an answer, added by the agent on
+  # 2026-09-13 (ADR-022). Keyword search cannot answer them, because the pages
+  # use other words; semantic search should. The vector margin was chosen
+  # while looking at these same queries, so they show what hybrid search adds
+  # rather than prove it generalises.
+  - id: h01
+    query: "something to help me fall asleep"
+    expected: [pg_dsip]
+    lang: en
+    notes: "the page says sleep, never asleep or fall"
+  - id: h02
+    query: "anything for wrinkles"
+    expected: [pg_matrixyl, pg_leuphasyl, pg_snap-8, pg_ghk-cu]
+    lang: en
+  - id: h03
+    query: "boost my memory and focus"
+    expected: [pg_cerebrolysin, pg_semax, pg_selank, pg_cat_nootropics-cognitive, pg_p21, pg_fgl-l, pg_pe-22-28]
+    lang: en
+  - id: h04
+    query: "I want to lose weight"
+    expected: [pg_cat_fat-loss, pg_semaglutide, pg_tirzepatide, pg_retatrutide, pg_cagrilintide, pg_liraglutide, pg_mazdutide, pg_survodutide, pg_aod-9604, pg_5-amino-1mq, pg_adipotide, pg_tesamorelin]
+    lang: en
+
+  # n07 to n09: more questions with no answer. n09 is on the wiki's own topic,
+  # which is the hard case for semantic search.
+  - id: n07
+    query: "what is the weather tomorrow"
+    expected: none
+    lang: en
+  - id: n08
+    query: "recipe for lasagna"
+    expected: none
+    lang: en
+  - id: n09
+    query: "peptide reconstitution bacteriostatic water"
+    expected: none
+    lang: en
+    notes: "checked: no page mentions reconstitution or bacteriostatic water"

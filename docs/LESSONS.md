@@ -11,7 +11,58 @@ Each entry answers four questions:
 3. **Fix.** What changed, with the commit or file.
 4. **Lesson.** What to do differently next time. This is the part worth reading.
 
+## 2026-09-13
+
+### The first memory measurement missed the worst case by a factor of four
+
+1. **What happened.** The server with the embedding model measured 407 MB, comfortably inside Azure's 0.5 GiB. The bundled server started on a database with no vectors peaked at 1.3 GB and stayed there.
+2. **Cause.** The first measurement was of a server with nothing to embed: the vectors had been copied with the database. The real peak comes from embedding, where ONNX Runtime pads every text in a batch to the longest, and the batch was 32.
+3. **Fix.** One text per model call: 312 MB at peak for the whole wiki, and faster. The bundled server holds 347 MB with every chunk embedded. CI logs the container's memory.
+4. **Lesson.** Measure the worst case, not the resting state: start from empty so the heavy work actually runs. Measure the build that ships (the bundle), not the development runner.
+
+### A test script failed silently, twice, behind a filter
+
+1. **What happened.** A loop comparing memory settings printed nothing useful: the first run hit the database the test server had locked, and the second passed `$cfg` as one argument.
+2. **Cause.** The output was piped through `grep`, which hid the errors, and zsh does not split an unquoted variable into words, as an earlier entry here already says.
+3. **Fix.** Opened the database read-only, ran each case with explicit arguments, and looked at the full output of one run first.
+4. **Lesson.** Never filter the output of a script's first run. The zsh entry below applies to loops over argument lists too.
+
+### Downloads were attempted before asking
+
+1. **What happened.** Looking up the sqlite-vec and transformers.js packages on the npm registry was blocked by the agent's permissions.
+2. **Cause.** Fetching packages and a model is a download, which needs the owner's consent with names, sources and sizes, and the agent had not asked yet.
+3. **Fix.** Asked once, with the model choice and every download listed with its size, then went ahead.
+4. **Lesson.** When a task needs new packages or model files, ask up front with sizes and sources, together with any other decision the owner has to make.
+
+### The stock sqlite3 tool cannot open a database's vector table
+
+1. **What happened.** `DROP TABLE chunk_vectors` in the `sqlite3` command-line tool failed with "no such module: vec0".
+2. **Cause.** A `vec0` table needs the sqlite-vec extension loaded, which the stock tool does not do.
+3. **Fix.** Documented in `docs/LOCAL.md` and ADR-022. Backups at the file level are unaffected.
+4. **Lesson.** An extension's tables are invisible to tools without it. Say so wherever people are told they can inspect the file.
+
+### The file tool turned an escape into a character again
+
+1. **What happened.** `\u2026` in a template string was written as a literal ellipsis.
+2. **Cause.** The same tool behaviour as the earlier entries.
+3. **Fix.** Found by the check that the file is plain ASCII, and put back as an escape.
+4. **Lesson.** Keep checking new files for non-ASCII characters straight after writing them.
+
 ## 2026-09-12
+
+### The eval could not see the search bug it was meant to catch
+
+1. **What happened.** Search returned unrelated pages for questions with no answer, visible in any demo, while the eval reported recall@5 of 1.00.
+2. **Cause.** Recall only asks whether the right page is among the results, so returning something for every query never costs anything. The queries with no answer had no expected pages and were left unscored.
+3. **Fix.** `expected: none` marks a query with no answer, scored as right only when nothing comes back (ADR-021). Six were added, some sharing words with the wiki on purpose.
+4. **Lesson.** A metric that only rewards finding things will approve a search that finds everything. Measure the opposite failure too, and write the eval query that shows a bug before fixing it.
+
+### Two plausible search fixes each broke a real query, found only by spot checks
+
+1. **What happened.** Requiring most of a query's words lost "tanning peptide" (the page says "peptides"). The patch for that, not requiring words common across the wiki, then lost the sleep peptides for "peptides that help with sleep", because "help" became required.
+2. **Cause.** No stemming, so word forms did not match; and the patch treated a rare vague word as more important than a common precise one. Separately, one page's chunks could fill all five result slots.
+3. **Fix.** Porter stemming, the common-word rule removed, and one chunk per page before any second chunk (ADR-021).
+4. **Lesson.** The eval was written by the same agent as the fix and passed every variant. Queries phrased another way, run before calling it done, found each regression. Keep a set of spot checks outside the eval, and remove a rule when a better fix makes it unnecessary.
 
 ### shellcheck ran for the first time in CI, and failed on a literal `$schema`
 

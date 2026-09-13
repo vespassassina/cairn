@@ -138,7 +138,8 @@ async function main(): Promise<void> {
   }
 
   const config = loadConfig();
-  const context = await createContext(config);
+  // A short-lived command: the server embeds new chunks when it next starts (ADR-022).
+  const context = await createContext({ ...config, embeddings: { ...config.embeddings, provider: "off" } });
   try {
     const result = await importFolder(context, folder, {
       onProgress: (message) => process.stdout.write(`${message}\n`),

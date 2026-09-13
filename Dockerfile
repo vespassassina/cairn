@@ -1,7 +1,8 @@
 # syntax=docker/dockerfile:1
 #
-# The Cairn server image (ADR-018, ADR-020): the bundled server, Node's
-# built-in SQLite, and Litestream. The database is in /data: a mounted local
+# The Cairn server image (ADR-018, ADR-020, ADR-022): the bundled server,
+# Node's built-in SQLite with the sqlite-vec extension, a small English
+# embedding model, and Litestream. The database is in /data: a mounted local
 # volume on your own server, or restored from and streamed to a replica.
 # Built for linux/amd64 and linux/arm64 by CI and published to ghcr.io.
 
@@ -14,6 +15,17 @@ COPY examples ./examples
 COPY scripts ./scripts
 RUN pnpm install --frozen-lockfile
 RUN pnpm build:server
+
+# The two dependencies with native code, for this platform only, and the
+# model, so the image never downloads anything at runtime (ADR-022).
+# transformers.js has the web runtime bundled in, so onnxruntime-web is not
+# needed, and ONNX Runtime ships binaries for every platform: keep this one.
+WORKDIR /src/dist/server
+RUN npm install --omit=dev --no-audit --no-fund \
+  && rm -rf node_modules/onnxruntime-web \
+  && arch="$(node -p process.arch)" \
+  && find node_modules/onnxruntime-node/bin -mindepth 3 -maxdepth 3 -type d ! -path "*/linux/${arch}" -exec rm -rf {} + \
+  && node fetch-model.mjs /src/dist/server/models
 
 FROM debian:bookworm-slim AS litestream
 ARG TARGETARCH
@@ -40,7 +52,10 @@ FROM node:24-slim
 ENV NODE_ENV=production \
     CAIRN_HOST=0.0.0.0 \
     CAIRN_PORT=8787 \
-    CAIRN_DB=/data/cairn.sqlite
+    CAIRN_DB=/data/cairn.sqlite \
+    CAIRN_EMBEDDINGS=local \
+    CAIRN_MODELS=/app/models \
+    CAIRN_MODEL_DOWNLOAD=false
 WORKDIR /app
 COPY --from=build /src/dist/server/ ./
 COPY --from=litestream /usr/local/bin/litestream /usr/local/bin/litestream

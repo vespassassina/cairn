@@ -14,7 +14,7 @@ A source-available, self-hosted document and collection store where agents are t
 
 It runs as one small container: on your own server, or within the free grants of a cloud (Azure today, AWS later). SQLite holds the data; Cosmos DB or DynamoDB can take over by configuration if one instance is ever not enough (ADR-020).
 
-Search is keyword-first (BM25) plus an explicit link graph, with Claude doing the multi-hop reasoning. Embeddings are opt-in: bring your own OpenAI-compatible endpoint.
+Search is keyword (BM25) plus meaning, merged, with an explicit link graph and Claude doing the multi-hop reasoning. The meaning part uses a small English model inside the container, so it works only for English text (ADR-022).
 
 Kill criterion: if I'm not reaching for it from Claude at least 4 days a week after two weeks of MCP-only use, stop before building the UI.
 
@@ -48,7 +48,7 @@ What no one combines: typed tables next to the wiki, a revision for every write 
 
 1. **A Notion clone.** No board, calendar or timeline views, no formulas, no rollups in v1. They are months of work and not what makes this useful.
 2. **Real-time collaborative editing.** Single editor at a time. Designed so Yjs can be added later (see P2).
-3. **Built-in embeddings.** No model ships in the cloud path. Users who want vectors bring an endpoint.
+3. **Large or hosted embedding models.** A small English model ships in the container (ADR-022, which reversed this non-goal); anything bigger is not a goal.
 4. **GraphRAG entity extraction.** Expensive to index and noisy on small corpora. Revisit above 50,000 chunks or with multi-user teams.
 5. **Mobile apps.** The web UI should work on mobile browsers. Native apps are out of scope.
 6. **Corporate use.** Personal project. Not for customer or employer data.
@@ -74,14 +74,14 @@ What no one combines: typed tables next to the wiki, a revision for every write 
 ### Owner
 
 1. As the owner, I want to deploy to my Azure free tier with one command so that I can try it without a budget conversation with myself.
-2. As the owner, I want to point the app at an embeddings endpoint (Azure OpenAI, OpenAI, Ollama) so that I get semantic search only if I decide it's worth it.
+2. As the owner, I want semantic search without an external service or key, and to be able to turn it off. (Was: point the app at an embeddings endpoint. Changed by ADR-022.)
 3. As the owner, I want to see which search mode each result came from so that I can judge whether embeddings help.
 4. As the owner, I want to export my whole workspace to Markdown and JSON so that I'm never locked into my own software.
 
 ### Edge cases
 
-1. As Claude, when the embeddings endpoint times out, I get keyword results with a `mode: "keyword"` flag, not an error.
-2. As the owner, when I change embedding model, existing search keeps working on the old index until the new backfill completes.
+1. As Claude, when the embedding model is not loaded or fails, I get keyword results with a `mode: "keyword"` flag, not an error.
+2. As the owner, when I change embedding model, search keeps working: keyword search in full, and hybrid search over the chunks embedded so far (ADR-022).
 3. As Claude, when I update a page someone else changed since I read it, I get a version conflict with the current content so that I can merge and retry.
 
 ## 6. Product principles
@@ -98,7 +98,7 @@ What no one combines: typed tables next to the wiki, a revision for every write 
 
 1. **API and MCP server:** TypeScript with Hono, on Node, in one container (ADR-020). Azure Functions and AWS Lambda were targets until ADR-020 dropped them.
 2. **Frontend:** React with BlockNote (ProseMirror based). Hosted on Azure Static Web Apps free plan or S3 plus CloudFront.
-3. **Indexer:** extracts links, mentions and tags and writes chunks. Runs inline on write in P0, because it is cheap and removes a moving part. Becomes queue-triggered in P1 for embeddings, which are slow and external. A full rebuild command regenerates all derived data from pages (ADR-005).
+3. **Indexer:** extracts links, mentions and tags and writes chunks. Runs inline on write in P0, because it is cheap and removes a moving part. Embeddings are slower, so they are computed in the background in the same process, never on the write path (ADR-022). A full rebuild command regenerates all derived data from pages (ADR-005).
 
 The MCP server runs in stateless streamable HTTP mode, which suits a container that scales to zero. See ADR-006.
 
@@ -138,17 +138,19 @@ One logical store with three document families, partitioned by workspace.
 ### Search pipeline
 
 1. **Keyword mode (default).** BM25 over chunks. Results grouped by page with heading path and snippet.
-2. **Hybrid mode (opt-in).** BM25 plus vector distance fused with RRF in one query. Weights configurable.
+2. **Hybrid mode (default when the model is loaded).** The keyword ranking and the nearest vectors fused with reciprocal rank fusion; a vector match counts only when it stands out from its neighbours (ADR-022).
 3. **Graph expansion.** Optional one-hop expansion over edges from the top results, then rerank. Used by the web UI. Claude gets the raw tools and traverses itself.
-4. **Fallback.** Embeddings endpoint unreachable within 1.5 s means keyword mode, flagged in the response.
+4. **Fallback.** Model not loaded, or failing, means keyword mode, flagged in the response.
 
-### Embeddings (bring your own)
+### Embeddings (a small model inside the container, ADR-022)
 
-1. Target the OpenAI-compatible `/v1/embeddings` API. Covers Azure OpenAI, OpenAI, Ollama, LM Studio and Hugging Face TEI.
-2. Config: base URL, API key (stored in the secrets adapter), model name.
-3. **The vector container is not created at deploy time.** On enable: call the endpoint with a test string, read the dimensions, create the container with that vector policy, start a backfill.
-4. Changing model creates a new container, backfills it, swaps the pointer, then drops the old one.
-5. The setup screen states plainly that page text is sent to the configured endpoint.
+The design until 2026-09-13 was a bring-your-own OpenAI-compatible endpoint (ADR-003). ADR-022 replaced it as the default:
+
+1. **bge-small-en-v1.5**, 34 MB, 384 dimensions, run by transformers.js and ONNX Runtime in the server process. **English only**: text in other languages gets keyword search.
+2. Vectors in SQLite through **sqlite-vec**, in tables created only when embeddings are on.
+3. Chunks are embedded in the background after each write and caught up when the model loads; no text leaves the machine.
+4. Changing model drops the old vectors and embeds everything again.
+5. `CAIRN_EMBEDDINGS=off` turns it off. A bring-your-own endpoint could come back behind the same `Embedder` port.
 
 ### Auth
 
@@ -236,7 +238,7 @@ Status 2026-09-12: Azure uses Container Apps and Blob Storage instead of Functio
 ### P1: fast follow
 
 1. **Web editor** with BlockNote, page tree, backlinks panel, collection table view.
-2. **Bring-your-own embeddings** with hybrid search and fallback as described in section 7.
+2. **Embeddings** with hybrid search and fallback as described in section 7. Done 2026-09-13 with a model inside the container (ADR-022).
 3. **AWS:** the same container on an AWS container service, with a deploy script. DynamoDB and S3 adapters only on an ADR-020 trigger.
 4. **Attachments** up to 25 MB per file, stored via the blob adapter.
 5. **Local MCP server** packaged as a Claude Desktop extension (`.mcpb`), pointing at the remote API.
@@ -315,7 +317,7 @@ Gate: usage and recall targets from section 10 met for two weeks. If not, stop o
 
 **Phase 2: editor (3 to 4 weeks).** BlockNote frontend, page tree, backlinks panel, collection table, export UI.
 
-**Phase 3: options (open-ended).** Bring-your-own embeddings, AWS adapters, Desktop extension, import.
+**Phase 3: options (open-ended).** A multilingual or bring-your-own embedding model, AWS adapters, Desktop extension, import.
 
 ## 15. Decisions log
 
@@ -323,7 +325,7 @@ Record decisions in `docs/decisions/` as short ADRs. Already decided in design d
 
 1. ADR-001: MCP server is the primary interface. Web UI is secondary.
 2. ADR-002: Graph is modelled as edge documents in the document store. No Gremlin API.
-3. ADR-003: Embeddings are opt-in via a bring-your-own OpenAI-compatible endpoint. No bundled model in the cloud path.
+3. ADR-003: Embeddings are opt-in via a bring-your-own OpenAI-compatible endpoint. No bundled model in the cloud path. Superseded as the default by ADR-022.
 4. ADR-004: Chunks live in their own container. Vector container is created at enable time, not deploy time.
 5. ADR-005: Adapter boundary. Search is its own adapter, derived data is rebuildable, no cross-document transactions, consistency stated per operation, collection filtering in core with optional pushdown.
 6. ADR-006: Hono plus stateless MCP transport, written to the lowest common denominator of the platforms.

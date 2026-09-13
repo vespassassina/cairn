@@ -43,7 +43,7 @@ const HELP = `cairn ${VERSION}: a wiki and tables your agents can write to, with
 
 Read
   cairn overview                          what Cairn holds: collections, top-level pages, tags
-  cairn search <words...>                 keyword search; try distinctive words, then synonyms
+  cairn search <words...>                 search by keyword, and by meaning for English text
   cairn read <page-id>                    a page as Markdown, with its version
   cairn links <page-id>                   pages one hop away, both directions
   cairn history <page-id>                 who changed it, when and why

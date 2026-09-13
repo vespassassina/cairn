@@ -77,6 +77,8 @@ jobs:
           load: true
           tags: cairn:test
       - name: smoke test the image
+        env:
+          SERVICE_TOKEN: ci-service-token-0123456789abcdef0123
         run: |
           {
             echo CAIRN_PUBLIC_URL=https://cairn.example.com
@@ -85,6 +87,7 @@ jobs:
             echo CAIRN_OAUTH_CLIENT_ID=ci
             echo CAIRN_OAUTH_CLIENT_SECRET=ci
             echo CAIRN_ALLOWED_USERS=github:ci
+            echo "CAIRN_TOKEN=$SERVICE_TOKEN"
           } > "$RUNNER_TEMP/ci.env"
           docker run --rm --entrypoint litestream cairn:test version
           docker run -d --name cairn -p 8787:8787 --env-file "$RUNNER_TEMP/ci.env" cairn:test
@@ -92,6 +95,21 @@ jobs:
           curl -fsS localhost:8787/health
           test "$(curl -s -o /dev/null -w '%{http_code}' -X POST localhost:8787/mcp)" = 401
           curl -fsS localhost:8787/.well-known/oauth-authorization-server
+          # Semantic search (ADR-022): the model ships in the image and loads.
+          for _ in $(seq 1 60); do
+            curl -fsS localhost:8787/health | grep -q '"vectors":"ready"' && break; sleep 2
+          done
+          curl -fsS localhost:8787/health | tee "$RUNNER_TEMP/health.json"
+          grep -q '"vectors":"ready"' "$RUNNER_TEMP/health.json"
+          curl -fsS -X POST localhost:8787/api/v1/pages -H "authorization: Bearer $SERVICE_TOKEN" \
+            -H "content-type: application/json" -H "user-agent: ci" \
+            -d '{"title":"DSIP","body":"DSIP is a neuropeptide studied for deep sleep.","change_note":"smoke test"}'
+          for _ in $(seq 1 30); do
+            curl -fsS localhost:8787/health | grep -q '"pending":0' && break; sleep 1
+          done
+          curl -fsS "localhost:8787/api/v1/search?q=DSIP%20sleep" -H "authorization: Bearer $SERVICE_TOKEN" | tee "$RUNNER_TEMP/search.json"
+          grep -q '"mode":"hybrid"' "$RUNNER_TEMP/search.json"
+          docker stats --no-stream --format 'memory in use: {{.MemUsage}}' cairn
           docker logs cairn
       - name: smoke test with a mounted folder (ADR-020)
         run: |

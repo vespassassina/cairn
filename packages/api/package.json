@@ -22,6 +22,7 @@
     "context-cost": "tsx src/cli/context-cost.ts"
   },
   "dependencies": {
+    "@cairn/adapter-embeddings-local": "workspace:*",
     "@cairn/adapter-sqlite": "workspace:*",
     "@cairn/core": "workspace:*",
     "@hono/node-server": "^2.1.1",

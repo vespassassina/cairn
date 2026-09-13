@@ -63,6 +63,15 @@ async function createBuildLog() {
   });
 }
 
+describe("health", () => {
+  it("says whether semantic search is on (ADR-022)", async () => {
+    const response = await app.fetch(new Request("http://localhost/health"));
+    const json = (await response.json()) as Record<string, unknown>;
+    expect(response.status).toBe(200);
+    expect(json["semantic_search"]).toEqual({ vectors: "off", model: null, pending: 0, detail: null });
+  });
+});
+
 describe("auth", () => {
   it("refuses a request with no token when local trust is off", async () => {
     const { status, json } = await call("/pages", { token: null });

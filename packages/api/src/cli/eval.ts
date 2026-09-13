@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { ConfigError, loadConfig, userPath } from "../config.js";
+import type { SearchMode } from "@cairn/core";
 import { closeContext, createContext, type AppContext } from "../context.js";
 
 /**
@@ -11,12 +12,18 @@ import { closeContext, createContext, type AppContext } from "../context.js";
  * differs between Cosmos, FTS5 and a JavaScript index (ADR-005).
  *
  * No search change merges without a before and after number (hard rule 7).
+ *
+ * A query marked `expected: none` has no answer in the workspace. It is scored
+ * separately, as "no answer": right when search returns nothing. Recall alone
+ * rewards returning something for everything (ADR-021).
  */
 
 export interface EvalQuery {
   id: string;
   query: string;
   expected: string[];
+  /** True for `expected: none`: the right result is no pages at all. */
+  absent?: boolean;
   lang?: string;
   notes?: string;
 }
@@ -25,6 +32,7 @@ export interface QueryResult {
   id: string;
   query: string;
   hit: boolean;
+  absent: boolean;
   /** 1-based rank of the first expected page, or null if it never appeared. */
   rank: number | null;
   returned: string[];
@@ -37,6 +45,9 @@ export interface EvalReport {
   scored: number;
   unscored: number;
   recall: number;
+  /** Queries with no answer, and how many of them returned nothing. */
+  absent: number;
+  absentEmpty: number;
   results: QueryResult[];
 }
 
@@ -82,6 +93,7 @@ export function parseQueries(yaml: string): EvalQuery[] {
       const [, key, value] = field;
       inExpected = key === "expected";
       if (key === "expected") {
+        current.absent = value!.trim() === "none";
         current.expected = value!.trim().startsWith("[")
           ? parseInlineList(value!)
           : [];
@@ -109,16 +121,20 @@ export async function runEval(
   context: AppContext,
   queries: EvalQuery[],
   k = 5,
+  requested: SearchMode = "keyword",
 ): Promise<EvalReport> {
   const results: QueryResult[] = [];
   let scored = 0;
   let hits = 0;
+  let absent = 0;
+  let absentEmpty = 0;
   let mode = "keyword";
 
   for (const query of queries) {
     const result = await context.search.search(context.workspaceId, {
       query: query.query,
       limit: k,
+      mode: requested,
     });
     mode = result.mode;
 
@@ -128,11 +144,18 @@ export async function runEval(
       if (!pages.includes(hit.pageId)) pages.push(hit.pageId);
     }
 
+    if (query.absent) {
+      absent += 1;
+      if (pages.length === 0) absentEmpty += 1;
+      results.push({ id: query.id, query: query.query, hit: pages.length === 0, absent: true, rank: null, returned: pages });
+      continue;
+    }
+
     // A query with no expected pages yet cannot be scored. It is reported
     // separately rather than counted as a miss, which would flatter or punish
     // the number for no reason.
     if (query.expected.length === 0) {
-      results.push({ id: query.id, query: query.query, hit: false, rank: null, returned: pages });
+      results.push({ id: query.id, query: query.query, hit: false, absent: false, rank: null, returned: pages });
       continue;
     }
 
@@ -144,6 +167,7 @@ export async function runEval(
       id: query.id,
       query: query.query,
       hit,
+      absent: false,
       rank: rank === -1 ? null : rank + 1,
       returned: pages,
     });
@@ -154,8 +178,10 @@ export async function runEval(
     mode,
     k,
     scored,
-    unscored: queries.length - scored,
+    unscored: queries.length - scored - absent,
     recall: scored === 0 ? 0 : hits / scored,
+    absent,
+    absentEmpty,
     results,
   };
 }
@@ -168,10 +194,15 @@ export function formatReport(report: EvalReport): string {
   lines.push(
     `recall@${report.k}   ${report.scored === 0 ? "n/a" : report.recall.toFixed(2)}`,
   );
+  if (report.absent > 0) {
+    lines.push(`no answer  ${report.absentEmpty} of ${report.absent} returned nothing, as they should`);
+  }
   lines.push("");
 
   for (const result of report.results) {
-    const status = result.rank === null ? (result.hit ? "?" : "-") : result.hit ? "hit" : "miss";
+    const status = result.absent
+      ? result.hit ? "empty" : "noise"
+      : result.rank === null ? (result.hit ? "?" : "-") : result.hit ? "hit" : "miss";
     const rank = result.rank ? ` (rank ${result.rank})` : "";
     lines.push(`${status.padEnd(5)} ${result.id}  ${result.query}${rank}`);
     if (!result.hit) {
@@ -198,8 +229,15 @@ async function main(): Promise<void> {
   const context = await createContext(config);
   try {
     const queries = parseQueries(await readFile(path, "utf8"));
-    const report = await runEval(context, queries);
-    process.stdout.write(`${formatReport(report)}\n`);
+    // Every chunk needs its vector before hybrid search is measured.
+    await context.search.settled();
+    process.stdout.write(`${formatReport(await runEval(context, queries, 5, "keyword"))}\n`);
+    const status = context.search.status();
+    if (status.vectors === "ready") {
+      process.stdout.write(`\n${formatReport(await runEval(context, queries, 5, "hybrid"))}\n`);
+    } else {
+      process.stdout.write(`\nhybrid     not measured: semantic search is ${status.vectors}${status.detail ? ` (${status.detail})` : ""}\n`);
+    }
   } finally {
     await closeContext(context);
   }

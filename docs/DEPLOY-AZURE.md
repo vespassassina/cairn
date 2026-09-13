@@ -12,6 +12,8 @@ It takes about fifteen minutes. If you would rather have your coding agent do it
 
 Expect nothing to a few cents a month for one person. This will be confirmed with a month of real billing (PRD Q7).
 
+Search matches meaning as well as keywords, with a small English model inside the container: **English only**, text in other languages gets keyword search (ADR-022). It fits the container's 0.5 GiB: 347 MB measured with a 96-page wiki embedded. To turn it off, run the script with `CAIRN_EMBEDDINGS=off`.
+
 Trade-offs, all fine for personal use and recorded in ADR-018:
 
 1. A cold start takes a few seconds while the container starts and restores the database.
@@ -168,7 +170,8 @@ Entra ID does not say whether an email address is verified, so list people by su
 2. **GitHub says the redirect URI is not associated with the application.** The callback URL in the GitHub OAuth app must match the one the script printed, exactly.
 3. **The app does not start, and the logs say the image cannot be pulled.** The image must be public. On GitHub: your profile, Packages, cairn, Package settings, Change visibility, Public. Until the first release, use `CAIRN_IMAGE=ghcr.io/vespassassina/cairn:edge`.
 4. **The logs show restore attempts failing right after the first deploy.** Azure takes a minute or two to give the app access to storage. The container retries for two minutes, and Container Apps restarts it after that.
-5. **Anything else:** `az containerapp logs show -g cairn -n cairn --follow`, and the notes in `docs/LESSONS.md`.
+5. **The app restarts with "out of memory" in the logs.** The embedding model needs about 300 MB. Run the script again with `CAIRN_EMBEDDINGS=off` for keyword search only.
+6. **Anything else:** `az containerapp logs show -g cairn -n cairn --follow`, and the notes in `docs/LESSONS.md`.
 
 ## What is not tested yet
 

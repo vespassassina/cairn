@@ -98,6 +98,49 @@ export function runSearchIndexConformance(
       expect(result.cursor).toBeNull();
     });
 
+    // The match rule every backend shares (core search/terms.ts, ADR-021).
+
+    it("returns nothing when no page holds most of the query's words", async () => {
+      // pg_print holds "adhesion", pg_esc holds "BLHeli", nothing holds "sourdough".
+      const result = await index.search(WS, { query: "adhesion BLHeli sourdough" });
+      expect(result.hits).toEqual([]);
+    });
+
+    it("needs every word of a two-word query", async () => {
+      const result = await index.search(WS, { query: "adhesion firmware" });
+      expect(result.hits).toEqual([]);
+    });
+
+    it("counts words found in different sections of the same page", async () => {
+      // "adhesion" is under Failures, "brim" under Fixes.
+      await eventually(async () => {
+        const result = await index.search(WS, { query: "adhesion brim" });
+        expect(result.hits.map((h) => h.pageId)).toContain("pg_print");
+      });
+    });
+
+    it("does not let filler words decide a match", async () => {
+      await eventually(async () => {
+        const result = await index.search(WS, { query: "which firmware did I flash on the" });
+        expect(result.hits.map((h) => h.pageId)).toEqual(["pg_esc"]);
+      });
+    });
+
+    it("shows each matching page before a second chunk of any page", async () => {
+      await index.replaceChunksForPage(WS, "pg_many", [
+        chunk("pg_many", 0, "cooling duct cooling duct fan shroud"),
+        chunk("pg_many", 1, "cooling duct again, cooling duct print"),
+        chunk("pg_many", 2, "more cooling duct notes, cooling duct"),
+      ]);
+      await index.replaceChunksForPage(WS, "pg_one", [
+        chunk("pg_one", 0, "a single cooling duct remark"),
+      ]);
+      await eventually(async () => {
+        const result = await index.search(WS, { query: "cooling duct", limit: 2 });
+        expect(new Set(result.hits.map((h) => h.pageId))).toEqual(new Set(["pg_many", "pg_one"]));
+      });
+    });
+
     it("scopes results to one workspace", async () => {
       const result = await index.search("ws_elsewhere", { query: "adhesion" });
       expect(result.hits).toEqual([]);

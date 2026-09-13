@@ -70,10 +70,9 @@ export function registerTools(server: McpServer, context: AppContext, actor: Act
     {
       title: "Search pages",
       description:
-        "Keyword search over page content. Returns page ids, heading paths and snippets, not whole pages: read a page with get_page once you know which one you want. " +
-        "Results come back in keyword mode unless embeddings are enabled, so a query that reads like a sentence will do worse than its distinctive words. " +
-        "If the results look thin, try again with synonyms, related terms or a single unusual word before concluding nothing exists. " +
-        "Check the `mode` field to see which path ran.",
+        "Search page content by keyword and, when `mode` is hybrid, by meaning for English text. Returns page ids, heading paths and snippets, not whole pages: read a page with get_page once you know which one you want. " +
+        "A keyword match needs most of your words on the page, in any form (tendon, tendons); filler words are ignored. A match by meaning needs none of them. " +
+        "No results means nothing close: try other words, or a single unusual one, before concluding nothing exists.",
       inputSchema: {
         query: z.string().min(1).describe("Words to search for."),
         limit: z.number().int().min(1).max(50).optional(),

@@ -9,7 +9,8 @@ import { closeContext, createContext } from "../context.js";
  */
 async function main(): Promise<void> {
   const config = loadConfig();
-  const context = await createContext(config);
+  // A short-lived command: the server embeds new chunks when it next starts (ADR-022).
+  const context = await createContext({ ...config, embeddings: { ...config.embeddings, provider: "off" } });
   try {
     const started = Date.now();
     const result = await context.pages.rebuildWorkspace(config.workspaceId);

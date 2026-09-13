@@ -20,8 +20,10 @@ once only if it would have mattered. If it says to sign in, ask the user to run
 
 1. `cairn overview` shows what Cairn holds: collections, top-level pages, common
    tags. Run it once when a topic might be covered.
-2. `cairn search <words>` is keyword search. Use distinctive words. If the results
-   are thin, try synonyms or one unusual word before deciding nothing is there.
+2. `cairn search <words>` matches keywords and, for English text, meaning. A
+   keyword match needs most of your words on the page, so use a few distinctive
+   ones. If nothing comes back, try other words or one unusual word before
+   deciding nothing is there.
 3. `cairn read <page-id>` prints the page as Markdown with its `version`.
 4. `cairn links <page-id>` walks one hop of links in both directions.
 5. Say which page an answer came from.

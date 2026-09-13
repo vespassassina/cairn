@@ -10,8 +10,8 @@ A decision that changes is not edited away. Add a new ADR that supersedes it, an
 |---|---|---|---|
 | [001](ADR-001.md) | MCP server is the primary interface | accepted, refined by 013 | 2026-09-10 |
 | [002](ADR-002.md) | Graph as edge documents, no Gremlin | accepted | 2026-09-10 |
-| [003](ADR-003.md) | Bring-your-own embeddings endpoint | accepted | 2026-09-10 |
-| [004](ADR-004.md) | Separate chunks store, vector container created on enable | accepted | 2026-09-10 |
+| [003](ADR-003.md) | Bring-your-own embeddings endpoint | superseded as the default by 022 | 2026-09-10 |
+| [004](ADR-004.md) | Separate chunks store, vector container created on enable | accepted, model change amended by 022 | 2026-09-10 |
 | [005](ADR-005.md) | Adapter boundary: search separate, derived data rebuildable, no cross-document transactions | accepted | 2026-09-11 |
 | [006](ADR-006.md) | Hono plus stateless MCP transport, lowest common denominator | accepted, runtime targets superseded by 020 | 2026-09-11 |
 | [007](ADR-007.md) | Auth is one small OAuth server in front of any OIDC provider | accepted, amended by 017 | 2026-09-11 |
@@ -28,6 +28,8 @@ A decision that changes is not edited away. Add a new ADR that supersedes it, an
 | [018](ADR-018.md) | The first Azure deployment: Container Apps with Litestream | accepted, decision 6 superseded by 020 | 2026-09-12 |
 | [019](ADR-019.md) | Installation is written for an agent to follow, with the person at the checkpoints | accepted | 2026-09-12 |
 | [020](ADR-020.md) | One container everywhere, as small as it can be, with SQLite on a mounted volume or a replica | accepted, supersedes parts of 006 and 018 | 2026-09-12 |
+| [021](ADR-021.md) | Keyword search returns pages that hold most of the query's words, stemmed | accepted | 2026-09-12 |
+| [022](ADR-022.md) | Vector search in SQLite with sqlite-vec, and a small English model inside the container | accepted, supersedes 003 as the default | 2026-09-13 |
 
 ## Writing one
 
