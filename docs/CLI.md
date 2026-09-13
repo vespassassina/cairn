@@ -198,7 +198,7 @@ cairn sync http://localhost:8787 https://your-address --every 5m  keep syncing, 
 4. **Moving to a new Cairn** is one sync into an empty one. Ids and links are kept, as with an import.
 5. **It remembers the last sync** in a small file per pair of servers, next to the CLI's sign-ins. Deleting it loses nothing: the next run compares everything again and changes only what differs, with one catch. A record deleted on one side since the last sync comes back from the other, because without the file sync cannot tell a deletion from a record the other side never had.
 6. **Collections are never deleted by sync;** it warns instead.
-7. **`--every`** keeps it running, at least 30 seconds apart, on a machine that stays on. A failed run is reported and tried again next time. Each run reads everything from both sides, which for a personal wiki takes about a second, plus the cold start when a Cairn on Azure was asleep.
+7. **`--every`** keeps it running, at least 30 seconds apart, on a machine that stays on. A failed run is reported and tried again next time. Each run reads everything from both sides, which for a personal wiki takes about a second, plus the cold start when a Cairn on Azure was asleep. Syncing more often than a Cairn on Azure's idle time keeps it awake, which costs more (`docs/DEPLOY-AZURE.md`, "Cold starts").
 
 ## Point it at your server
 

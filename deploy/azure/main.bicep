@@ -61,6 +61,14 @@ param allowedUsers string = ''
 ])
 param embeddings string = 'local'
 
+@description('Minutes without a request before Cairn stops, to start again on the next one (a cold start of about 15 to 30 seconds). Longer means fewer cold starts, and more of the free grant spent waiting.')
+@minValue(1)
+@maxValue(1440)
+param idleMinutes int = 30
+
+@description('Keep one copy running at all times: no cold starts, billed at the lower idle rate while unused, which goes beyond the free grant.')
+param alwaysOn bool = false
+
 @description('Optional service token, at least 32 characters, for scripts that cannot sign in.')
 @secure()
 param serviceToken string = ''
@@ -130,7 +138,7 @@ var baseSecrets = [
 var tokenSecrets = empty(serviceToken) ? [] : [ { name: 'service-token', value: serviceToken } ]
 var previousSecrets = empty(authSecretPrevious) ? [] : [ { name: 'auth-secret-previous', value: authSecretPrevious } ]
 
-resource app 'Microsoft.App/containerApps@2024-03-01' = if (deployApp) {
+resource app 'Microsoft.App/containerApps@2025-01-01' = if (deployApp) {
   name: name
   location: location
   identity: {
@@ -187,10 +195,12 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = if (deployApp) {
         }
       ]
       // SQLite has one writer, and Litestream one replicator: never more
-      // than one replica. Zero when idle, so an unused Cairn costs nothing.
+      // than one replica. Zero when idle, so an unused Cairn costs nothing,
+      // unless alwaysOn trades a small bill for no cold starts.
       scale: {
-        minReplicas: 0
+        minReplicas: alwaysOn ? 1 : 0
         maxReplicas: 1
+        cooldownPeriod: idleMinutes * 60
         rules: [
           {
             name: 'http'

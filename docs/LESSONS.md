@@ -13,6 +13,13 @@ Each entry answers four questions:
 
 ## 2026-09-13
 
+### The amd64 image was two and a half times the arm64 one, and nobody looked
+
+1. **What happened.** Cold starts on Azure took 30 seconds, 19 of them pulling a 342 MB image. The arm64 build of the same commit was 137 MB.
+2. **Cause.** onnxruntime-node's install script downloads NVIDIA CUDA and TensorRT libraries on Linux x64 only, from NuGet, at install time. Pruning the other platforms' folders kept the x64 one, with the GPU libraries inside. CI built and ran the image but never reported its size, and the arm64 image, which has no GPU download, hid nothing.
+3. **Fix.** `ONNXRUNTIME_NODE_INSTALL=skip` in the build stage; CI fails if a CUDA or TensorRT library is in the image, and prints its size.
+4. **Lesson.** Check the image size per architecture whenever a dependency with native code is added, and read what its install script downloads: a postinstall step can add hundreds of megabytes that no lockfile shows.
+
 ### A redeploy reported success while the old version was still running
 
 1. **What happened.** After a fix, `deploy.sh` with `CAIRN_IMAGE=...:edge` said Cairn was running, but the fix was not live: the new favicon returned 404. The agent was about to re-run the import against the old code.

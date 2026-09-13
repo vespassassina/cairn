@@ -23,6 +23,10 @@
 #   CAIRN_AUTH_SECRET_PREVIOUS the old signing secret, during a rotation
 #   CAIRN_EMBEDDINGS           local (default): search by meaning too, English
 #                              only; off: keyword search only, less memory
+#   CAIRN_IDLE_MINUTES         minutes without a request before Cairn stops
+#                              (default 30); the next request starts it again
+#   CAIRN_ALWAYS_ON            true: never stop, so no cold starts, for a small
+#                              monthly cost beyond the free grant (default false)
 #
 # The signing secret is generated on the first run and kept, with the other
 # secrets you give it, in deploy/azure/.cairn-deploy.env: readable only by
@@ -65,6 +69,8 @@ fi
 : "${CAIRN_SERVICE_TOKEN:=}"
 : "${CAIRN_AUTH_SECRET_PREVIOUS:=}"
 : "${CAIRN_EMBEDDINGS:=local}"
+: "${CAIRN_IDLE_MINUTES:=30}"
+: "${CAIRN_ALWAYS_ON:=false}"
 if [ -z "${CAIRN_AUTH_SECRET:-}" ]; then
   CAIRN_AUTH_SECRET="$(openssl rand -hex 32)"
   say "generated a signing secret, kept in $secrets_file"
@@ -86,7 +92,18 @@ CAIRN_AUTH_SECRET='$CAIRN_AUTH_SECRET'
 CAIRN_SERVICE_TOKEN='$CAIRN_SERVICE_TOKEN'
 CAIRN_AUTH_SECRET_PREVIOUS='$CAIRN_AUTH_SECRET_PREVIOUS'
 CAIRN_EMBEDDINGS='$CAIRN_EMBEDDINGS'
+CAIRN_IDLE_MINUTES='$CAIRN_IDLE_MINUTES'
+CAIRN_ALWAYS_ON='$CAIRN_ALWAYS_ON'
 SAVED
+
+case "$CAIRN_IDLE_MINUTES" in
+  '' | *[!0-9]*) fail "CAIRN_IDLE_MINUTES must be a whole number of minutes, from 1 to 1440" ;;
+esac
+[ "$CAIRN_IDLE_MINUTES" -ge 1 ] && [ "$CAIRN_IDLE_MINUTES" -le 1440 ] || fail "CAIRN_IDLE_MINUTES must be from 1 to 1440"
+case "$CAIRN_ALWAYS_ON" in
+  true | false) ;;
+  *) fail "CAIRN_ALWAYS_ON must be true or false" ;;
+esac
 
 if [ -n "$CAIRN_OAUTH_CLIENT_ID" ]; then
   [ -n "$CAIRN_OAUTH_CLIENT_SECRET" ] || fail "CAIRN_OAUTH_CLIENT_SECRET is required with CAIRN_OAUTH_CLIENT_ID"
@@ -136,7 +153,9 @@ trap 'rm -f "$params"' EXIT
   printf '"allowedUsers":{"value":%s},' "$(json_string "$CAIRN_ALLOWED_USERS")"
   printf '"serviceToken":{"value":%s},' "$(json_string "$CAIRN_SERVICE_TOKEN")"
   printf '"authSecretPrevious":{"value":%s},' "$(json_string "$CAIRN_AUTH_SECRET_PREVIOUS")"
-  printf '"embeddings":{"value":%s}' "$(json_string "$CAIRN_EMBEDDINGS")"
+  printf '"embeddings":{"value":%s},' "$(json_string "$CAIRN_EMBEDDINGS")"
+  printf '"idleMinutes":{"value":%s},' "$CAIRN_IDLE_MINUTES"
+  printf '"alwaysOn":{"value":%s}' "$CAIRN_ALWAYS_ON"
   printf '}}'
 } > "$params"
 

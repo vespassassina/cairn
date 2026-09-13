@@ -16,9 +16,19 @@ Search matches meaning as well as keywords, with a small English model inside th
 
 Trade-offs, all fine for personal use and recorded in ADR-018:
 
-1. A cold start takes about 30 seconds: measured on the first deployment, 19 seconds to pull the image, 6 to create the container and 3 to restore the database and start. It happens on the first request after Cairn has been idle, and later requests are fast.
+1. A cold start: the first request after Cairn has been idle waits while the container starts. It was about 30 seconds on the first deployment, 19 of them pulling a 342 MB image; the image is smaller since. Later requests are fast. See "Cold starts" below to have fewer of them, or none.
 2. Changes in the last second before a container stops can be lost.
 3. One region, no failover.
+
+## Cold starts
+
+Cairn stops after 30 minutes without a request, and the next request starts it again. Three settings, all passed to `deploy/azure/deploy.sh` and kept for later runs:
+
+1. **`CAIRN_IDLE_MINUTES`** (default 30). Longer means fewer cold starts, since a working session keeps it awake; the waiting time comes out of the free grant, which covers about 200 hours of running a month.
+2. **`CAIRN_ALWAYS_ON=true`**: never stop, so no cold starts. Azure bills a running copy that is not busy at its lower idle rate, and a month of that goes beyond the free grant: a few dollars a month for Cairn's size, by the published rates. Check the rates for your region before choosing it.
+3. **Keep the image small.** Every cold start pulls it. Nothing to set: it is how the image is built.
+
+`cairn sync --every` counts as use. Syncing more often than every `CAIRN_IDLE_MINUTES` keeps Cairn awake all the time, billed at the full rate rather than the idle one, so either sync less often than that, or turn on `CAIRN_ALWAYS_ON`.
 
 ## Before you start
 

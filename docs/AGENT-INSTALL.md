@@ -69,19 +69,20 @@ Human guide: `docs/DEPLOY-DOCKER.md`. The steps run on the server. If you are no
 1. **Ask how the HTTPS address will be provided:** a reverse proxy they already run, Cloudflare Tunnel, or Tailscale. Explain that Claude on the web and Desktop need an address reachable from the internet; Claude Code and the CLI on their own devices do not. Setting up the proxy or tunnel is theirs; point them to the guide's "The HTTPS address".
 2. **Ask where the database should live.** Default: `deploy/docker/data`. On Proxmox, a folder on the VM's disk, or a host folder mounted into the container (guide, "On Proxmox"). Never an NFS or SMB share.
 3. **Prepare the folder:** in `deploy/docker`, `mkdir data && sudo chown 1000:1000 data`, then `cp env.example .env && chmod 600 .env`. For an unprivileged Proxmox LXC with a host folder, the owner on the host is `101000:101000`.
-4. **The person creates the OAuth app,** as in 3c step 5, with their HTTPS address as the homepage and that address plus `/oauth/callback` as the callback URL.
+4. **The person creates the OAuth app,** as in 3c step 6, with their HTTPS address as the homepage and that address plus `/oauth/callback` as the callback URL.
 5. **The person fills in `.env`** in their own editor: `CAIRN_PUBLIC_URL`, the client id and secret, `CAIRN_ALLOWED_USERS=github:<login>`, and `CAIRN_AUTH_SECRET` from `openssl rand -hex 32`. You do not open the file. If the proxy is on another machine, they also add `CAIRN_BIND=0.0.0.0`.
 6. **Start it:** `docker compose up -d`, then `docker compose logs`. The log must say `on a mounted volume`. If it says a setting is missing or a folder is not writable, the message names the fix.
 7. **Check it,** on the server: `curl -s http://127.0.0.1:8787/health` must print `"status":"ok"`, and `curl -s -o /dev/null -w '%{http_code}\n' -X POST http://127.0.0.1:8787/mcp` must print `401`. Then the same health check through their HTTPS address.
-8. **Connect, move content and prove it** as in 3c steps 8 to 11.
+8. **Connect, move content and prove it** as in 3c steps 9 to 12.
 
 ## 3c. On Azure
 
 Human guide: `docs/DEPLOY-AZURE.md`. Say first: this creates a resource group, a storage account and a container app in their subscription; within the free grants it costs nothing to a few cents a month; they can remove it all with one command.
 
 1. **Sign in to Azure.** Ask the person to run `az login` themselves, in their own terminal. It opens a browser. Then check which subscription is active, and confirm it with them: `az account show --query "{name:name, id:id}" --output table`
-2. **Choose a name and region.** Defaults: name `cairn`, region `swedencentral`, resource group `cairn`. The name and region become part of the address, and so of the OAuth callback URL, so they are awkward to change later. Ask if they want different ones. West Europe refused new subscriptions in September 2026; to check a region before deploying, run `az deployment group validate -g <any existing group> --template-file deploy/azure/main.bicep --parameters location=<region>`, which fails with "not accepting new customers" if it is closed to them.
-3. **Check the image is published.** Should print `200`:
+2. **Ask about cold starts.** By default Cairn stops after 30 minutes idle, and the next request waits for it to start, up to half a minute. `CAIRN_IDLE_MINUTES` changes the wait; `CAIRN_ALWAYS_ON=true` removes cold starts for a few dollars a month (`docs/DEPLOY-AZURE.md`, "Cold starts"). If they will run `cairn sync --every`, tell them it keeps Cairn awake unless the interval is longer than the idle time.
+3. **Choose a name and region.** Defaults: name `cairn`, region `swedencentral`, resource group `cairn`. The name and region become part of the address, and so of the OAuth callback URL, so they are awkward to change later. Ask if they want different ones. West Europe refused new subscriptions in September 2026; to check a region before deploying, run `az deployment group validate -g <any existing group> --template-file deploy/azure/main.bicep --parameters location=<region>`, which fails with "not accepting new customers" if it is closed to them.
+4. **Check the image is published.** Should print `200`:
 
    ```
    token=$(curl -s "https://ghcr.io/token?scope=repository:vespassassina/cairn:pull" | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')
@@ -89,8 +90,8 @@ Human guide: `docs/DEPLOY-AZURE.md`. Say first: this creates a resource group, a
    ```
 
    If it prints anything else, stop and tell the person: the image cannot be pulled, so the deployment would not start. `latest` is the newest release; `edge` follows `main` and is only for testing unreleased work.
-4. **First pass.** Run `deploy/azure/deploy.sh`, with `CAIRN_NAME`, `CAIRN_LOCATION` and `CAIRN_RG` set if they chose other values. It prints the address and the callback URL. Give both to the person.
-5. **The person creates the OAuth app.** For GitHub, tell them to open https://github.com/settings/applications/new and fill in:
+5. **First pass.** Run `deploy/azure/deploy.sh`, with `CAIRN_NAME`, `CAIRN_LOCATION` and `CAIRN_RG` set if they chose other values. It prints the address and the callback URL. Give both to the person.
+6. **The person creates the OAuth app.** For GitHub, tell them to open https://github.com/settings/applications/new and fill in:
    1. Application name: Cairn
    2. Homepage URL: the address from step 4
    3. Authorization callback URL: the callback URL from step 4, exactly
@@ -99,20 +100,20 @@ Human guide: `docs/DEPLOY-AZURE.md`. Say first: this creates a resource group, a
    Ask them to tell you the **Client ID** (not secret) and their **GitHub login**. For the **client secret**, ask them to open `deploy/azure/.cairn-deploy.env` in their own editor and set the line `CAIRN_OAUTH_CLIENT_SECRET='...'`, then tell you when it is saved. You do not open that file.
 
    For Entra ID or Google instead, follow "Other sign-in providers" in `docs/DEPLOY-AZURE.md`, the same way: ids through the chat, secrets through the file.
-6. **Second pass:**
+7. **Second pass:**
 
    ```
    CAIRN_OAUTH_CLIENT_ID=<client id> CAIRN_ALLOWED_USERS=github:<login> deploy/azure/deploy.sh
    ```
 
    It waits for Cairn to answer and prints the addresses.
-7. **Check it:** `curl -s <address>/health` must print `"status":"ok"`, and `curl -s -o /dev/null -w '%{http_code}\n' -X POST <address>/mcp` must print `401`. That proves it refuses anyone not signed in.
-8. **The person signs in** to the console at the address, with GitHub. If the page says they are not on the list, it shows the exact entry; add it with step 6 again.
-9. **Connect their Claude,** with the steps in `docs/DEPLOY-AZURE.md` section 4:
+8. **Check it:** `curl -s <address>/health` must print `"status":"ok"`, and `curl -s -o /dev/null -w '%{http_code}\n' -X POST <address>/mcp` must print `401`. That proves it refuses anyone not signed in.
+9. **The person signs in** to the console at the address, with GitHub. If the page says they are not on the list, it shows the exact entry; add it with step 7 again.
+10. **Connect their Claude,** with the steps in `docs/DEPLOY-AZURE.md` section 4:
    1. Claude on the web or Desktop: they add a custom connector with `<address>/mcp`.
    2. Claude Code: `claude mcp add --transport http --scope user cairn <address>/mcp`, then `/mcp` in a new session to sign in. Or the CLI: `CAIRN_URL=<address> cairn login`, which opens their browser; the skill as in 3a.
-10. **Moving a local Cairn up**, if they have one. Ask whether they want to keep the local one in step. If yes: `cairn sync http://localhost:8787 <address>` after `cairn login`, and offer `--every 5m` (ADR-023). If not: `cairn export <folder>` against the local server, then `CAIRN_URL=<address> cairn import <folder>`. Either way, show them `--dry-run` first.
-11. **Prove it end to end,** with their permission: create a page with `cairn create` or through Claude, and have them find it in the console's recent changes.
+11. **Moving a local Cairn up**, if they have one. Ask whether they want to keep the local one in step. If yes: `cairn sync http://localhost:8787 <address>` after `cairn login`, and offer `--every`, with an interval longer than the idle time from step 2 (ADR-023). If not: `cairn export <folder>` against the local server, then `CAIRN_URL=<address> cairn import <folder>`. Either way, show them `--dry-run` first.
+12. **Prove it end to end,** with their permission: create a page with `cairn create` or through Claude, and have them find it in the console's recent changes.
 
 ## 4. Hand over
 

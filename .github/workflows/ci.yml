@@ -93,6 +93,12 @@ jobs:
           # Litestream verifies TLS against the system CA bundle, which the
           # Node base image lacks. Without it no replica can be reached.
           docker run --rm --entrypoint sh cairn:test -c 'test -s /etc/ssl/certs/ca-certificates.crt'
+          # No GPU libraries: they tripled the image, and Azure pulls it on every cold start.
+          if docker run --rm --entrypoint sh cairn:test -c 'find /app/node_modules -name "*providers_cuda*" -o -name "*providers_tensorrt*"' | grep -q .; then
+            echo "the image holds CUDA or TensorRT libraries; ONNXRUNTIME_NODE_INSTALL=skip is not working" >&2
+            exit 1
+          fi
+          docker image inspect cairn:test --format 'image size: {{.Size}} bytes'
           docker run -d --name cairn -p 8787:8787 --env-file "$RUNNER_TEMP/ci.env" cairn:test
           for _ in $(seq 1 30); do curl -fsS localhost:8787/health && break; sleep 1; done
           curl -fsS localhost:8787/health

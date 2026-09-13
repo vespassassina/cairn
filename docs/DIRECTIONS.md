@@ -13,6 +13,14 @@ Rules:
 
 ## 2026-09-13
 
+### Fix the cold start
+
+> "how can we fix the cold start issue ?"
+
+> "what other options we have to additionally cut cold start ? can we store a fully baked image ?"
+
+Landed in: the "Shorter and fewer cold starts on Azure" changelog entry (a smaller image, `CAIRN_IDLE_MINUTES`, `CAIRN_ALWAYS_ON`). The image was already fully baked; the other options are in the answer given with that change, and not built.
+
 ### Move everything to Azure, and let two Cairns sync
 
 > "move everything to azure, migrate memory. add an automigration feature to allow 2 cairns to be synced. azure works perfectly"

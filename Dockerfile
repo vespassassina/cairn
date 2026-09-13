@@ -8,6 +8,10 @@
 
 FROM node:24-slim AS build
 WORKDIR /src
+# On linux/x64, onnxruntime-node's install script downloads NVIDIA CUDA and
+# TensorRT libraries. Cairn runs the model on the CPU, and they made the amd64
+# image 342 MB against 137 MB for arm64, which Azure pulls on every cold start.
+ENV ONNXRUNTIME_NODE_INSTALL=skip
 RUN corepack enable
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
 COPY packages ./packages

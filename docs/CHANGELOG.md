@@ -6,6 +6,16 @@ Entries link to the ADR when there is one. A change of direction that has no ADR
 
 ## 2026-09-13
 
+### Shorter and fewer cold starts on Azure
+
+The owner asked how to fix the 30-second cold start. Three changes:
+
+1. **The amd64 image drops NVIDIA libraries it never used.** On Linux x64, onnxruntime-node's install script downloads the CUDA and TensorRT libraries, and they went into the image: 342 MB compressed for amd64 against 137 MB for arm64, which gets no GPU download. Cairn runs its model on the CPU. The build sets `ONNXRUNTIME_NODE_INSTALL=skip`, and CI fails if either library is in the image. Pulling that image was 19 of the 30 seconds.
+2. **`CAIRN_IDLE_MINUTES`, default 30:** how long Cairn stays up after the last request before scaling to zero. Container Apps' default was 5 minutes, so a pause in a working session meant another cold start. The waiting time comes out of the free grant.
+3. **`CAIRN_ALWAYS_ON=true`:** one copy always running, so no cold starts at all, billed at Azure's lower idle rate while unused, which a month of goes beyond the free grant. Off by default.
+
+The template moves to the 2025-01-01 Container Apps API, which accepts `cooldownPeriod`; `az deployment group validate` passed with it. The Azure guide explains the settings, and warns that `cairn sync --every` more often than the idle time keeps Cairn awake at the full rate.
+
 ### Added: `cairn sync`, to keep two Cairns the same (ADR-023)
 
 The owner asked for "an automigration feature to allow 2 cairns to be synced", after moving their wiki to Azure. `cairn sync <a> <b>` reads every page, collection and row from both servers, compares each with the content both sides agreed on at the last sync, and copies whichever side changed to the other, deletions included. When both changed a record, the newer edit wins on both sides and the replaced one stays in that record's history; the report names each conflict. `--every 5m` keeps it running, and `--dry-run` shows the plan.
