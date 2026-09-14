@@ -33,6 +33,7 @@ Agent memory is a crowded field, and Hacker News is tired of it. The recurring c
 1. **Memory layers** (Mem0 and OpenMemory, Letta, Zep and Graphiti, Cognee) extract facts from conversations into fragments or graphs, built for retrieval by software rather than reading by a person. Cairn stores documents a person reads and edits.
 2. **Basic Memory** is closest in spirit: Markdown on disk, wiki links, MCP, AGPL, about 3,900 GitHub stars. It has no typed tables, edit history only in its paid cloud, and a local install cannot be reached by claude.ai or another machine.
 3. **Remnus** is closest in data model: pages plus databases with JSON schemas, 14 MCP tools, SQLite, OAuth 2.1, AGPL. A one-person project, and proof the niche exists.
+4. **Obsidian with the vault in a git repository** is what many of the same people already use. It wins on its editor, plugins, graph view, price, and plain files with git history. It has no way for an agent on claude.ai or a phone to reach it, nothing that stops one agent overwriting another's edit, and no typed tables, sources or freshness. The roadmap section "Against a notes app kept in git" lists the features that would close its lead, starting with a bridge to and from a vault.
 
 What no one combines: typed tables next to the wiki, a revision for every write by every actor, a review screen that shows agent writes first, and one codebase that runs as a SQLite file or on a cloud free tier. That combination is the pitch. "Memory for agents" is not.
 
@@ -250,7 +251,7 @@ Status 2026-09-12: Azure uses Container Apps and Blob Storage instead of Functio
 2. **Postgres adapter with Apache AGE** for deep graph traversal.
 3. **Similarity edges** computed from vectors at write time ("related pages").
 4. **Client-side embeddings** in the browser via Transformers.js with a pinned model.
-5. **Import** from Notion export and Obsidian vaults.
+5. **Import** from Notion export and Obsidian vaults. The Obsidian half, both ways, is now a roadmap item of its own ("Against a notes app kept in git").
 6. **Permissions** beyond workspace membership: per-page sharing, read-only guests.
 
 ## 10. Success metrics

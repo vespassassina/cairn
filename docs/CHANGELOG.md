@@ -6,6 +6,10 @@ Entries link to the ADR when there is one. A change of direction that has no ADR
 
 ## 2026-09-14
 
+### Roadmap: features that answer Obsidian kept in git
+
+The owner asked why anyone would choose Cairn over Obsidian with its vault in a GitHub repository, then asked for the proposed features to go on the roadmap. A new roadmap section, "Against a notes app kept in git", holds all ten in the owner's order, each with the ADR or PRD limit it runs into: an Obsidian bridge, a git mirror, an agent activity digest with approvals, stale-page reviews, quick capture, a graph view, templates and attachments, a phone-friendly console with an optional public page, sharing, and a published search-quality number. The PRD's landscape gains Obsidian in git as the comparison most readers will make, and Obsidian import leaves Phase 3 for the new section. No code.
+
 ### Roadmap: ordered history and three-way merge in sync
 
 The owner asked that sync keep every edit in order and settle conflicts the way git does. Sync today orders edits by each server's millisecond clock, which a fast clock on one machine can get wrong, and a conflict keeps the whole newer record. Added to the roadmap as next: a hybrid logical clock on every write, revisions linked to the ones they replaced across instances, and a three-way merge by section against the version both sides last agreed on. No code yet.

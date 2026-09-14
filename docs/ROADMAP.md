@@ -59,6 +59,23 @@ Added after the project review of 2026-09-12. Done in this order, before the clo
 | Named instances, kept in sync: backup and a hybrid service | done | ADR-029. `cairn instances add <name> <url>` registers each Cairn in the owner's order; every command goes to the first that answers; `cairn sync` with no addresses syncs them all through the first that answers; `cairn start` starts the local copy and catches up with the cloud; `cairn sync install` puts a job on launchd, systemd or Task Scheduler, every hour by default so a scale-to-zero copy can sleep between runs. MCP clients keep one fixed address |
 | Ordered history and three-way merge in sync | next | The owner's direction of 2026-09-14: "no doc shall conflict and order should always be maintained". Today sync orders edits by each server's own millisecond clock, so a clock running fast on one machine can pick the wrong winner and a tie goes to the first server; a conflict keeps the whole newer record and the other in history. To do: a hybrid logical clock on every write (time, a counter and the instance's id), so every edit has one place in the order even on skewed clocks; each record's revisions linked to the one they replaced, so history is a chain across instances as in git; and a conflict merged three ways against the last version both sides agreed on, by section, taking both when they changed different sections. Only when both changed the same section does the newer win, with the other linked in history and flagged for review in the console. Needs an ADR |
 
+## Against a notes app kept in git
+
+Added on 2026-09-14, from the owner's question of why anyone would choose Cairn over Obsidian with its vault in a GitHub repository. Obsidian wins on its editor, plugins, graph view, price, and plain files under git. Cairn wins when agents do most of the writing: it is reachable over MCP from anywhere, refuses a stale write instead of overwriting it, keeps a revision with an actor and a note for every write, and has typed tables, sources and freshness. These items close the gaps that matter most, in the order the owner listed them. None has an ADR yet; each needs one before code, and several push against a limit an existing ADR or the PRD sets, named in its notes.
+
+| Item | Status | Notes |
+|---|---|---|
+| Obsidian bridge: import a vault, and export back to one | later | Removes the switching cost, the main objection. Wiki links, front matter, folders and tags map onto pages, tags and the page tree; the export already writes Markdown in folders (ADR-016), so exporting in a vault's shape is mostly naming. Was PRD P2 and Phase 3; this moves the Obsidian half forward |
+| Git mirror: the export pushed to a repository on a schedule | later | Keeps git's reassurance on top of Cairn: plain files, diffs, a copy on GitHub. Could run from the job `cairn sync install` sets up (ADR-029). The CLI would need git, which hard rule 16 does not allow yet |
+| Agent activity digest and approvals | later | What agents changed today, from the changes feed (ADR-013) and the review console (ADR-009), with optional sign-off before an agent's write goes live. Sign-off means a pending state for writes, which the core does not have |
+| Stale-page reviews | later | A regular list of the pages verified longest ago (ADR-028), with a re-check drafted by an agent for the owner to confirm |
+| Quick capture: a web clipper and share-to-Cairn from a phone | later | Capture a page or a note in one step, and let an agent file it into the right collection with its source. Needs a small capture endpoint and a way to sign in from a phone share sheet |
+| Graph view of links and relations | later | The edges already exist (hard rule 9). A picture in the console goes past ADR-009's limits and needs an ADR that amends them |
+| Templates, daily notes, attachments and images | later | Templates and daily notes are pages with a shape; attachments are PRD P1 item 4, up to 25 MB through the blob adapter |
+| A console that works on a phone, and an optional public read-only page | later | The PRD already asks that the web UI work on phones (non-goal 5). A public page must stay read-only and opt-in per page or collection, since every other request on a public address needs sign-in (ADR-017) |
+| Sharing with other people, each with their own permissions | later | PRD P2 item 6. Today a Cairn has one owner and the agents they approve; this changes the auth model (ADR-007, ADR-017) |
+| A published search-quality number from the eval set | next | The launch checklist's eval item, and the one claim about search Cairn can back with a number |
+
 ## Launch checklist
 
 Before publishing on GitHub and posting to Hacker News. From the review of 2026-09-12.
@@ -88,7 +105,7 @@ BlockNote editor, table editing, export UI. Gated on Phase 1.
 
 ## Phase 3: options
 
-A multilingual or bring-your-own embedding model, AWS adapters, Desktop extension, import from Notion and Obsidian.
+A multilingual or bring-your-own embedding model, AWS adapters, Desktop extension, import from Notion. Import from Obsidian moved to "Against a notes app kept in git" above.
 
 ## Open questions that block work
 

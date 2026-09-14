@@ -13,6 +13,12 @@ Rules:
 
 ## 2026-09-14
 
+### Put the features that answer Obsidian on the roadmap
+
+> "add these in our docs and roadmap"
+
+Followed by the ten features proposed in answer to the question below, in the same order: an Obsidian bridge both ways; a git mirror of the export; an agent activity digest with optional approvals; stale-page reviews; quick capture from a web clipper and a phone; a graph view; templates, daily notes, attachments and images; a console that works on a phone and an optional public read-only page; sharing with permissions; and a published search-quality number. Landed in: a new roadmap section, "Against a notes app kept in git", and a fourth entry in the PRD's landscape. None is built; each needs an ADR.
+
 ### Sync keeps order, and settles conflicts the way git does
 
 > "for sync to work we need to use very granular timestamps. no doc shall conflict and order should always be maintained. also in case of conflicts, how do we solve ? take the newest and merge ? newest and link the older keeping the chain in order ? how does git do it we could do the same"
