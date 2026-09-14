@@ -410,6 +410,8 @@ const PageEditor: FC<{
   version?: string | undefined;
   parentId?: string | null | undefined;
   pages?: Page[] | undefined;
+  /** Why that parent is chosen, when the console chose it rather than the person. */
+  parentHint?: Child | undefined;
   preview?: string | undefined;
   /** On an existing page: the box to mark it verified, and when it last was (ADR-028). */
   verify?: { checked: boolean; at: string | null } | undefined;
@@ -433,6 +435,7 @@ const PageEditor: FC<{
               </option>
             ))}
         </select>
+        {props.parentHint ? <p class="ak-small">{props.parentHint}</p> : null}
       </>
     ) : null}
     <label for="tags">Tags, comma separated</label>
@@ -1095,7 +1098,7 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
 
     return render(
       c,
-      <Layout title={page.title} section="collections">
+      <Layout title={page.title} section="collections" here={page.id}>
         <div class="cairn-page">
           <Tree pages={pages} tables={tables} currentId={page.id} rootId={ancestorsOf(page.id, byId)[0]?.id ?? page.id} />
           <div>
@@ -1182,7 +1185,7 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
     if (!page) return notFound(c, `Page ${c.req.param("id")}`);
     return render(
       c,
-      <Layout title={`Edit ${page.title}`} section="collections">
+      <Layout title={`Edit ${page.title}`} section="collections" here={page.id}>
         <p class="ak-eyebrow">Editing</p>
         <h1>{page.title}</h1>
         <PageEditor
@@ -1281,7 +1284,7 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
 
     return render(
       c,
-      <Layout title={`History of ${title}`} section="collections">
+      <Layout title={`History of ${title}`} section="collections" here={page ? page.id : null}>
         <p class="ak-eyebrow">History</p>
         <h1>{page ? <a href={pageHref(id)}>{title}</a> : title}</h1>
         {page ? null : (
@@ -1311,7 +1314,7 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
 
     return render(
       c,
-      <Layout title={`${view.snapshot.title}, earlier version`} section="collections">
+      <Layout title={`${view.snapshot.title}, earlier version`} section="collections" here={page ? page.id : null}>
         <p class="ak-eyebrow">
           <a href={`${pageHref(id)}/history`}>History</a> · version{" "}
           <span class="ak-mono">{view.revision.version.slice(0, 8)}</span>
@@ -1392,12 +1395,21 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
 
   app.get("/new", async (c) => {
     const pages = await allPages(context);
-    const parent = c.req.query("parent") ?? null;
+    // The page you came from is the parent, unless you say otherwise: reading a
+    // page and then writing one almost always means writing one underneath it.
+    const asked = c.req.query("parent") ?? null;
+    const under = asked === null ? null : (pages.find((page) => page.id === asked) ?? null);
     return render(
       c,
-      <Layout title="New page" section="collections">
+      <Layout title="New page" section="collections" here={under?.id ?? null}>
         <p class="ak-eyebrow">New page</p>
         <h1>New page</h1>
+        {asked !== null && under === null ? (
+          <Banner kind="bad">
+            Page <span class="ak-mono">{asked}</span> does not exist, so this one starts at the
+            top level. Choose a parent below if you meant another page.
+          </Banner>
+        ) : null}
         <PageEditor
           action="/new"
           title=""
@@ -1405,9 +1417,17 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
           body=""
           sources=""
           note=""
-          parentId={parent}
+          parentId={under?.id ?? null}
           pages={pages}
-          cancel={parent ? pageHref(parent) : "/pages"}
+          parentHint={
+            under ? (
+              <>
+                Starts under <strong>{under.title}</strong>, the page you came from. Change it
+                above, or choose "None (top level)".
+              </>
+            ) : undefined
+          }
+          cancel={under ? pageHref(under.id) : "/pages"}
         />
       </Layout>,
     );

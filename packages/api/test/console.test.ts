@@ -391,6 +391,26 @@ describe("reviewing and editing", () => {
     expect(child.updatedBy.kind).toBe("user");
   });
 
+  it("starts a new page under the page being read", async () => {
+    const parent = await context.pages.create(context.workspaceId, { title: "Peptides", body: "" }, {
+      actor: OWNER,
+    });
+
+    const page = await get(`/p/${parent.id}`);
+    expect(page.html).toContain(`href="/new?parent=${parent.id}"`);
+
+    const form = await get(`/new?parent=${parent.id}`);
+    expect(form.html).toContain(`<option value="${parent.id}" selected="">Peptides</option>`);
+    expect(form.html).toContain("the page you came from");
+  });
+
+  it("starts at the top level, and says so, when the parent is gone", async () => {
+    const form = await get("/new?parent=pg_gone");
+    expect(form.html).toContain("does not exist, so this one starts at the top level");
+    expect(form.html).not.toContain("selected=");
+    expect(form.html).toContain('<option value="">None (top level)</option>');
+  });
+
   it("refuses a page with no title and keeps what was typed", async () => {
     const result = await post("/new", { title: "", body: "keep me" });
     expect(result.status).toBe(400);

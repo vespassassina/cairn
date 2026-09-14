@@ -15,8 +15,13 @@ export const Layout: FC<{
   title: string;
   section: Section;
   query?: string;
+  /**
+   * The page being looked at, if any. "New page" then starts under it, which
+   * is where someone reading a page almost always wants the next one.
+   */
+  here?: string | null;
   children: Child;
-}> = ({ title, section, query, children }) => (
+}> = ({ title, section, query, here, children }) => (
   <html lang="en">
     <head>
       <meta charset="utf-8" />
@@ -54,7 +59,7 @@ export const Layout: FC<{
               placeholder="Search pages   /"
               aria-label="Search pages"
             />
-            <a class="ak-btn" href="/new">
+            <a class="ak-btn" href={here ? `/new?parent=${encodeURIComponent(here)}` : "/new"}>
               New page
             </a>
           </form>

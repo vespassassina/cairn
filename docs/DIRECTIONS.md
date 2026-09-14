@@ -13,6 +13,12 @@ Rules:
 
 ## 2026-09-14
 
+### A new page starts under the page you are reading
+
+> "in cairn web, when i click create a new page and i am inside a page, it should default to that. note and then implement next"
+
+The console's "New page" button always started a page at the top level, whatever you were reading, and only a small "New child page" link in the sidebar carried the parent. Landed in: the header button on a page, its history and its old versions now starts under that page, the form says which page it chose and why, and a parent that no longer exists starts at the top level with a banner saying so.
+
 ### Errors that guide, and sensible defaults
 
 > "add to our coding style guide that we always try to write the best possible useful errors. user needs to be guided as much as possible by the code (hence sensible defaults) even when the user is an agent."

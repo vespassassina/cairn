@@ -6,6 +6,12 @@ Entries link to the ADR when there is one. A change of direction that has no ADR
 
 ## 2026-09-14
 
+### A new page starts under the page you are reading
+
+The owner's direction (`docs/DIRECTIONS.md`). In the console, "New page" in the header started a page at the top level wherever you were, so making a child page meant finding the parent again in a long list. It now carries the page you are on: on a page, its history or one of its old versions, the button goes to `/new?parent=<that page>`, and the form starts with that parent chosen.
+
+Following the coding style, the form says the console chose it: "Starts under X, the page you came from. Change it above, or choose None (top level)." A parent that no longer exists is not an error page: the form opens at the top level with a banner naming the missing page. Two console tests cover both.
+
 ### An agent guide to running Cairn, errors that guide, and two editor items on the roadmap
 
 Four directions from the owner (`docs/DIRECTIONS.md`).
