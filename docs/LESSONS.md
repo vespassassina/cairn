@@ -13,6 +13,13 @@ Each entry answers four questions:
 
 ## 2026-09-14
 
+### A published page leaked a private page's id through its description
+
+1. **What happened.** Writing the published wiki (ADR-032), the leak test "renders a link to a private page as plain text, and does not name it" failed: the page body rendered correctly, with no link and no title, but the private page's id appeared in the `<meta name="description">` tag of the published page, where it is served to everyone and read by search engines.
+2. **Cause.** The description was the page's first line of Markdown, taken as written. The careful work went into the part that was obviously dangerous, the rendered body, and the description was treated as a harmless summary. It is not: it is the same untrusted text, on the same public response, only unrendered.
+3. **Fix.** `summaryOf` in `packages/api/src/web/public.tsx` now reduces every link to the words around it, wiki links and Markdown links alike, before taking a line.
+4. **Lesson.** When a rule is "this text must never appear", check every field the response carries, not the one the text is normally shown in. Metadata, titles, headers and error messages are all made of the same content, and a test that asks "does this id appear anywhere in the response" catches what a test on the rendered part alone will miss.
+
 ### `cairn login` told the owner localhost needs no sign-in, when they meant Azure
 
 1. **What happened.** Following the deploy steps, the owner ran `cairn login` to sign in to Azure and got "http://localhost:8787 does not use OAuth sign-in (HTTP 404). On localhost no sign-in is needed." They could not tell what to do next.

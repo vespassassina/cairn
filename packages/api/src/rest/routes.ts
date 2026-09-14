@@ -8,6 +8,7 @@ import {
   editPage,
   linkJson,
   moveRecord,
+  publishPage,
   toFieldDefs,
   EDIT_MODES,
   pageSummary,
@@ -128,6 +129,13 @@ const schemas = {
       .min(1),
     // The page it sits under. On PUT, leave it out to keep it where it is.
     parent_id: z.string().min(1).nullable().optional(),
+  }),
+  publish: z.object({
+    id: z.string().min(1),
+    // True publishes the page and everything under it; false takes it down.
+    public: z.boolean(),
+    version: z.string().min(1),
+    change_note: CHANGE_NOTE,
   }),
   move: z.object({
     id: z.string().min(1),
@@ -271,7 +279,7 @@ function revisionDetail(revision: Revision): Record<string, unknown> {
  * `updated_at`.
  */
 function restPage(page: Page): Record<string, unknown> {
-  return { ...pageSummary(page), edited_at: page.editedAt };
+  return { ...pageSummary(page), edited_at: page.editedAt, public: page.public };
 }
 
 function restRow(row: Row): Record<string, unknown> {
@@ -617,6 +625,13 @@ export function restRoutes(context: AppContext, callerFor: CallerFor): Hono {
   });
 
   // Move a page or a table (ADR-024).
+  // Publishing is deliberately its own route, not a field on an ordinary
+  // write, so nothing publishes a page by accident (ADR-032).
+  api.post("/publish", async (c) => {
+    const input = await parseBody(c, schemas.publish);
+    return c.json(await publishPage(context, input.id, input.public, input.version, by(c, input.change_note)));
+  });
+
   api.post("/move", async (c) => {
     const input = await parseBody(c, schemas.move);
     return c.json(await moveRecord(context, input.id, input.parent_id, input.version, by(c, input.change_note)));

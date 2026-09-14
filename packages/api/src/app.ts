@@ -10,6 +10,7 @@ import { restRoutes } from "./rest/routes.js";
 import { NO_LOCAL_TRUST, trustedForMcp, type LocalTrust } from "./trust.js";
 import type { OAuthServer } from "./oauth/server.js";
 import { registerConsole } from "./web/console.js";
+import { registerPublicWiki } from "./web/public.js";
 import { SESSION_COOKIE } from "./web/session.js";
 
 /**
@@ -31,6 +32,8 @@ export interface AppOptions {
   oauth?: OAuthServer | null;
   /** The origin people use, when it differs from what the server sees (a TLS proxy). */
   publicOrigin?: string | null;
+  /** The licence published pages carry (ADR-032). Null shows none. */
+  contentLicence?: string | null;
 }
 
 /** How a request got in, for attribution and for GET /api/v1/me. */
@@ -206,6 +209,15 @@ export function createApp(options: AppOptions): Hono {
     trust,
     oauth,
     publicOrigin: options.publicOrigin ?? null,
+  });
+
+  // The published wiki (ADR-032). Registered after the console so the console's
+  // middleware still runs in front of it: that middleware skips sign-in for
+  // these paths and adds the security headers they need.
+  registerPublicWiki(app, {
+    context: options.context,
+    publicOrigin: options.publicOrigin ?? null,
+    contentLicence: options.contentLicence ?? null,
   });
 
   return app;

@@ -86,6 +86,22 @@ describe("cairn", () => {
     expect(stdout).toContain("no matches");
   });
 
+  it("publishes a page and takes it down again, and says where it is readable", async () => {
+    const { id, version } = await createLog();
+    expect(await cairn("publish", id)).toBe(2);
+    expect(stderr).toContain("--version");
+
+    expect(await cairn("publish", id, "--version", version, "--note", "Published")).toBe(0);
+    expect(stdout).toContain(`/w/${id}`);
+    expect(stdout).toContain("does not travel with sync");
+    const published = await context.pages.get(context.workspaceId, id);
+    expect(published.public).toBe(true);
+
+    expect(await cairn("unpublish", id, "--version", published.version)).toBe(0);
+    expect(stdout).toContain("private again");
+    expect((await context.pages.get(context.workspaceId, id)).public).toBe(false);
+  });
+
   it("appends without a version, since appending never overwrites", async () => {
     const { id } = await createLog();
     stdin = "Props: 5.1 inch tri-blade.";

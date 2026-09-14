@@ -6,6 +6,21 @@ Entries link to the ADR when there is one. A change of direction that has no ADR
 
 ## 2026-09-14
 
+### A wiki can be published: read-only, no sign-in, indexed by search engines
+
+The owner's direction of 2026-09-14, and the roadmap item that several others waited on (`docs/DIRECTIONS.md`, ADR-032). Cairn was private end to end (ADR-017). It is now private by default and publishable on purpose: a page carries `public`, marking it publishes it and every page under it, and published pages are served read-only at `/w`, with `/sitemap.xml` and `/robots.txt`, to anyone.
+
+Everything about the design is shaped by the one mistake that matters, which is publishing something private. So:
+
+1. **The published surface reads published pages and nothing else.** An unpublished id answers the same 404 as an id that never existed, private children are never listed, a link to a private page renders as plain text rather than a link, and even the page description strips link targets so an id cannot leak through it. There is no search, no history and no tables on it.
+2. **It names nobody.** No actor, no change note, no version: the text, its sources, and when it was last updated.
+3. **An agent cannot publish.** The console has the control, the CLI has `cairn publish` and `cairn unpublish`, REST has its own `/publish` route, and MCP has nothing, which is hard rule 14 answered by the ADR rather than by adding a tool. Publishing is not a field on an ordinary write either, so no edit can publish a page by accident, and a restore cannot: publication is not part of a revision.
+4. **Publication belongs to the server.** It never travels with sync, export or import, so a published wiki synced to a laptop is private there, and no sync can publish anything. The console says so where the control is.
+
+`CAIRN_CONTENT_LICENCE` puts the owner's licence on published pages, separate from Cairn's own code licence. Checked end to end in the console and the browser: publishing a collection, reading it as a stranger, the sitemap, then taking it down again.
+
+The MCP server instructions and the skill both gained the same line, so an agent asked to publish says who does it instead of looking for a tool (ADR-011, ADR-012, ADR-013). That line pushed the initialize payload past `INSTRUCTIONS_BUDGET`, which trimmed the workspace summary that follows it, so the budget goes from 2000 to 2200 characters to keep the summary the room it had. `pnpm context-cost` after the change: about 3,100 tokens for the MCP surface, unchanged in the README's terms.
+
 ### The eval set is finished, and search has a published number
 
 The last Phase 0 item, and the launch checklist's. `eval/queries.yaml` had 16 queries with expected pages out of the 30 the PRD asks for, plus two placeholders about drones and 3D printing left over from before there was any content. The placeholders are gone, and 14 queries are added, written from the wiki's text with their expected pages chosen before any of them was run, because a query written while watching the results measures nothing. They cover what the first 14 did not: brand names, a misspelling, a question about two peptides together, and needs described without naming anything.

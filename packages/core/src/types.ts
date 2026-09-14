@@ -68,6 +68,13 @@ export interface Page {
    * this server stored the write.
    */
   editedAt: string;
+  /**
+   * Marked public by the owner, which publishes this page and everything
+   * under it on the read-only wiki (ADR-032). False on every page until
+   * someone says otherwise. It belongs to this server, so it never travels
+   * with sync, export or import.
+   */
+  public: boolean;
   createdAt: string;
   updatedAt: string;
   /** Who made the latest write, so a page view needs no history read. */
@@ -101,6 +108,12 @@ export interface PageInput {
    * Either way it ends up after the page's previous one.
    */
   editedAt?: string;
+  /**
+   * Publish this page and everything under it, or stop (ADR-032). Omitted:
+   * the page keeps what it has, so an ordinary write never publishes
+   * anything. A create with nothing said is private.
+   */
+  public?: boolean;
 }
 
 export type EdgeType = "link" | "mention" | "relation" | "parent" | "tag";

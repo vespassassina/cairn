@@ -17,7 +17,16 @@ export interface LinkResolver {
   title(id: string): string | null;
   /** Where that record is in the console, or null if nothing has that id. */
   href?(id: string): string | null;
+  /**
+   * Render a link to an id this resolver does not know as plain text instead
+   * of a link. The published wiki sets it, so a link to a page that is not
+   * published leads nowhere and names nothing (ADR-032 decision 3).
+   */
+  plainWhenUnknown?: boolean;
 }
+
+/** What an unpublished link is called on the published wiki. */
+const NOT_PUBLISHED = "a page that is not published";
 
 /** A page or collection id, or a row as `collection-id/row-id` (ADR-024). */
 const TARGET_ID = /^[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)?$/;
@@ -35,6 +44,16 @@ function cairnTarget(href: string): string | null {
   const match = /^(?:cairn:|\/pages\/|\/p\/)([A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)?)$/.exec(href);
   return match ? decodeURIComponent(match[1]!) : null;
 }
+
+/** What the renderer carries from token to token: the resolver, and one flag. */
+interface RenderEnv {
+  links: LinkResolver;
+  /** True between a link that is being written as plain text and its close. */
+  plain: boolean;
+}
+
+/** markdown-it types its env as its own empty interface, so read it through this. */
+const envOf = (env: unknown): RenderEnv => env as RenderEnv;
 
 export function createMarkdownRenderer(): (body: string, links: LinkResolver) => string {
   const md = new MarkdownIt({ html: false, linkify: true, typographer: false });
@@ -71,13 +90,22 @@ export function createMarkdownRenderer(): (body: string, links: LinkResolver) =>
     md.renderer.rules.link_open ??
     ((tokens, idx, options, _env, self) => self.renderToken(tokens, idx, options));
   const defaultText = md.renderer.rules.text!;
+  const defaultLinkClose =
+    md.renderer.rules.link_close ??
+    ((tokens, idx, options, _env, self) => self.renderToken(tokens, idx, options));
 
   md.renderer.rules.link_open = (tokens, idx, options, env, self) => {
     const token = tokens[idx]!;
-    const links = (env as { links: LinkResolver }).links;
+    const links = envOf(env).links;
     const href = String(token.attrGet("href") ?? "");
     const target = cairnTarget(href);
     if (target !== null) {
+      if (links.plainWhenUnknown && links.title(target) === null) {
+        // Not a link, and not marked as one either: whether that id exists is
+        // itself private. Links cannot nest, so one flag is enough.
+        envOf(env).plain = true;
+        return "";
+      }
       token.attrSet("href", links.href?.(target) ?? pageHref(target));
       if (links.title(target) === null) {
         // A link to something that does not exist, shown as such rather than
@@ -92,15 +120,24 @@ export function createMarkdownRenderer(): (body: string, links: LinkResolver) =>
     return defaultLinkOpen(tokens, idx, options, env, self);
   };
 
+  md.renderer.rules.link_close = (tokens, idx, options, env, self) => {
+    if (envOf(env).plain) {
+      envOf(env).plain = false;
+      return "";
+    }
+    return defaultLinkClose(tokens, idx, options, env, self);
+  };
+
   md.renderer.rules.text = (tokens, idx, options, env, self) => {
     const token = tokens[idx]!;
     const titleFor = (token.meta as { wikiTitleFor?: string | null } | null)?.wikiTitleFor;
     if (titleFor) {
-      const links = (env as { links: LinkResolver }).links;
-      token.content = links.title(titleFor) ?? titleFor;
+      const links = envOf(env).links;
+      token.content =
+        links.title(titleFor) ?? (links.plainWhenUnknown ? NOT_PUBLISHED : titleFor);
     }
     return defaultText(tokens, idx, options, env, self);
   };
 
-  return (body, links) => md.render(body, { links });
+  return (body, links) => md.render(body, { links, plain: false } satisfies RenderEnv);
 }

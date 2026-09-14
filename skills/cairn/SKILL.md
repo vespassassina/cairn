@@ -75,6 +75,15 @@ means a list of row ids from `col_x`: set it with `--set 'components=["row_a","r
 `[[table-id/row-id]]` links a page to a row. `cairn move <id> --parent <page-id>
 --version <v>` puts a page or table under a page, or `--parent root` at the top.
 
+## Publishing
+
+Everything in a Cairn is private. `cairn publish <page-id> --version <v>` serves
+that page and every page under it to anyone at `<server>/w`, with no sign-in, and
+`cairn unpublish` takes it down. Run either only when the owner asks for it in so
+many words: it is their decision, not yours, and everything below the page goes
+public with it. Publishing is per server, so it never travels with sync, export or
+import.
+
 ## What others changed
 
 `cairn changes --since <time>` lists changes newest first. Its output ends with the

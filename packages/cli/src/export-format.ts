@@ -33,6 +33,7 @@ export function tablesFolder(version: number): string {
 }
 export const MANIFEST = "cairn-export.json";
 
+/** What an export carries. Not `public`: publication stays on the server it was set on (ADR-032). */
 export interface ExportPage {
   id: string;
   title: string;

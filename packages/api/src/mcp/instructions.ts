@@ -8,7 +8,9 @@
  * INSTRUCTIONS_BUDGET, which a test enforces.
  */
 
-export const INSTRUCTIONS_BUDGET = 2000;
+// Raised from 2000 to 2200 with ADR-032's line about publishing, so the
+// workspace summary that follows keeps the room it had. About 50 tokens.
+export const INSTRUCTIONS_BUDGET = 2200;
 
 export const SERVER_INSTRUCTIONS = `Cairn is the owner's long-term memory: wiki pages in Markdown, linked with [[page-id]], and typed tables of rows. Pages form a tree; a top-level page with everything under it is a collection, one wiki.
 
@@ -19,5 +21,7 @@ Write back what lasts. When you learn something the owner will want again, such 
 Every write needs a change_note saying what changed and why. When a fact came from somewhere, such as a paper, a web page or the owner, name it in sources: a URL or a short citation. A page's verified_at says when its facts were last confirmed; when you re-check one and it still holds, pass verified: true. Writes apply at once, with no approval step. Each one is kept as a revision that the owner reviews and can restore, so write freely but accurately.
 
 Writes carry the version you read. On version_conflict, read the page again, merge your change into the new text, and retry. Never overwrite blindly.
+
+Pages are private. Only the owner publishes one, in the console or with cairn publish; there is no tool for it, so say that when asked.
 
 Do not store secrets, credentials or throwaway scratch work.`;

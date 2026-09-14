@@ -99,6 +99,10 @@ Write (every write is a revision the owner can review and undo)
   cairn write <page-id> --version V                     replace the whole body
   cairn delete <page-id> --version V
   cairn move <page-or-table-id> --parent PAGE|root --version V   change its place in the tree
+  cairn publish <page-id> --version V     serve it, and everything under it, to anyone
+      with no sign-in, at <server>/w. Publishing a collection publishes its wiki
+  cairn unpublish <page-id> --version V   take it back down
+      Publishing is per server: it never travels with sync, export or import
   All writes take --note "why", shown to the owner, and --source S (repeatable):
   a URL or short citation for where the facts came from, added to the page's or row's sources.
   append, replace-section and write take --verified: you re-checked the page's facts and they
@@ -850,6 +854,23 @@ export async function run(argv: string[], io: Io): Promise<number> {
           body: note ? { change_note: note } : {},
         });
         out({ deleted: id }, () => `ok deleted ${id}\n`);
+        return 0;
+      }
+
+      case "publish":
+      case "unpublish": {
+        const id = need(args[0], "the page to publish");
+        const version = need(flags.version, "--version V, from cairn read");
+        const wanted = command === "publish";
+        const { json } = await client.request("POST", "/publish", {
+          body: { id, public: wanted, version, ...(note ? { change_note: note } : {}) },
+        });
+        out(json, () =>
+          wanted
+            ? `ok ${id} and everything under it are public, at ${client.baseUrl}/w/${encodeURIComponent(id)}, version ${String(json?.["version"])}\n` +
+              "   only on this Cairn: publishing does not travel with sync.\n"
+            : `ok ${id} and everything under it are private again, version ${String(json?.["version"])}\n`,
+        );
         return 0;
       }
 

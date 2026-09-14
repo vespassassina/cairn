@@ -62,7 +62,7 @@ What no one combines: typed tables next to the wiki, a revision for every write 
 
 **Tertiary: small team (2 to 10 people).** Shares a workspace. Needs auth and basic permissions, not real-time co-editing.
 
-**Later: readers on the web.** Cairn is a knowledge manager, and it can also be a free knowledge source: the owner publishes a collection, such as the peptide wiki, for anyone to read and for search engines to index. Either Cairn serves it read-only with no sign-in, or an export as a static site is put on GitHub Pages, a blob storage or S3 static website, Google Cloud Storage or Dropbox, with no server at all. Not built; see the roadmap items "Public wiki" and "Static site export" (owner's direction of 2026-09-14).
+**Later: readers on the web.** Cairn is a knowledge manager, and it can also be a free knowledge source: the owner publishes a collection, such as the peptide wiki, for anyone to read and for search engines to index. Either Cairn serves it read-only with no sign-in, or an export as a static site is put on GitHub Pages, a blob storage or S3 static website, Google Cloud Storage or Dropbox, with no server at all. The read-only surface is built (ADR-032): the owner publishes a page, and it and everything under it are served at `/w` with no sign-in. The static site export is not; see that roadmap item (owner's direction of 2026-09-14).
 
 ## 5. User stories
 

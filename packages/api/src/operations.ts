@@ -357,6 +357,31 @@ export function describeError(error: unknown, wording: ErrorWording): DescribedE
  * (ADR-024). The id says which: pages are tried first. Needs the version the
  * caller read, like any other write.
  */
+/**
+ * Publish a page, or take it down (ADR-032). The console and the CLI both do
+ * this, so the rule lives here: only a page can be published, and publishing
+ * it publishes everything under it.
+ */
+export async function publishPage(
+  context: AppContext,
+  id: string,
+  isPublic: boolean,
+  version: string,
+  by: WriteContext,
+): Promise<{ id: string; public: boolean; version: string }> {
+  const ws = context.workspaceId;
+  const page = await context.store.getPage(ws, id);
+  if (!page) throw new NotFoundError("page", id);
+  const written = await context.pages.update(
+    ws,
+    id,
+    { title: page.title, body: page.body, tags: page.tags, parentId: page.parentId, public: isPublic },
+    version,
+    by,
+  );
+  return { id, public: written.public, version: written.version };
+}
+
 export async function moveRecord(
   context: AppContext,
   id: string,

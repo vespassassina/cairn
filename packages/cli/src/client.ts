@@ -38,6 +38,11 @@ export class ApiError extends Error {
 export class CairnClient {
   constructor(private readonly options: ClientOptions) {}
 
+  /** The Cairn this client talks to, for messages that name an address. */
+  get baseUrl(): string {
+    return this.options.baseUrl.replace(/\/+$/, "");
+  }
+
   async request(
     method: string,
     path: string,

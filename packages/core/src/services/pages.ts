@@ -277,11 +277,15 @@ export class PageService {
     // A new page has nothing to keep; the check against it comes in putPage.
     const current = expectedVersion === null ? null : await this.store.getPage(workspaceId, id);
     const { verified, verifiedAt, editedAt, ...rest } = input;
+    // Publication is kept unless this write says otherwise, so an ordinary
+    // edit can neither publish a page nor take it down (ADR-032).
+    const published = input.public ?? current?.public ?? false;
     const sources = input.sources === undefined ? (current?.sources ?? []) : normalizeSources(input.sources);
     input = {
       ...rest,
       sources,
       editedAt: editTime(current?.editedAt, editedAt),
+      public: published,
       verifiedAt: verified
         ? at
         : verifiedAt !== undefined

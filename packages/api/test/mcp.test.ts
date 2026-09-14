@@ -130,6 +130,24 @@ describe("transport and auth", () => {
         "upsert_row",
       ].sort(),
     );
+    // No tool publishes a page, on purpose: publishing is the owner's action,
+    // never an agent's (ADR-032 decision 5).
+    expect(names.some((name) => name.includes("publish"))).toBe(false);
+  });
+
+  it("does not let an agent publish what it wrote", async () => {
+    const created = await rpc("tools/call", {
+      name: "create_page",
+      arguments: { title: "Notes", body: "Text.", change_note: "First" },
+    });
+    const id = JSON.parse(created.body.result.content[0].text).id as string;
+    // Even asked for it by name, and even with the field on the payload.
+    const asked = await rpc("tools/call", {
+      name: "update_page",
+      arguments: { id, title: "Notes", body: "Text.", change_note: "Try", public: true },
+    });
+    expect(asked.status).toBe(200);
+    expect((await context.store.getPage(context.workspaceId, id))!.public).toBe(false);
   });
 
   it("describes each tool and its inputs, since the description is the contract", async () => {

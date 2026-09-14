@@ -361,6 +361,32 @@ describe("cairn sync between two servers", () => {
   });
 });
 
+describe("publication does not travel (ADR-032)", () => {
+  it("copies a published page as a private page, and never publishes on the other side", async () => {
+    await seed(a);
+    const healing = await a.pages.get(a.workspaceId, "pg_cat_healing");
+    await a.pages.update(
+      a.workspaceId,
+      healing.id,
+      { title: healing.title, parentId: healing.parentId, tags: healing.tags, body: healing.body, public: true },
+      healing.version,
+      BY,
+    );
+
+    expect(await sync()).toBe(0);
+    expect((await b.pages.get(b.workspaceId, "pg_cat_healing")).public).toBe(false);
+    expect((await b.pages.get(b.workspaceId, "pg_bpc-157")).public).toBe(false);
+    // And the copy that is published stays published: sync did not take it down.
+    expect((await a.pages.get(a.workspaceId, "pg_cat_healing")).public).toBe(true);
+
+    // A page edited on the other side and synced back does not publish it either.
+    await edit(b, "pg_bpc-157", "Edited over there.");
+    expect(await sync()).toBe(0);
+    expect((await a.pages.get(a.workspaceId, "pg_bpc-157")).public).toBe(false);
+    expect((await a.pages.get(a.workspaceId, "pg_cat_healing")).public).toBe(true);
+  });
+});
+
 describe("the sync rules", () => {
   const page = (id: string, body: string, updatedAt: string): Promise<SyncRecord> =>
     record("page", id, null, id, { title: id, parent_id: null, tags: [], body }, updatedAt, "v1");

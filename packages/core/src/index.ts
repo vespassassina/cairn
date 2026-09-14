@@ -2,6 +2,7 @@ export * from "./types.js";
 export * from "./errors.js";
 export * from "./sources.js";
 export * from "./freshness.js";
+export * from "./publish.js";
 export * from "./edit-time.js";
 export * from "./ids.js";
 export * from "./ports/document-store.js";

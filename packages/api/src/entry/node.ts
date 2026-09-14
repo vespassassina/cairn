@@ -39,6 +39,7 @@ async function main(): Promise<void> {
     trust: { enabled: config.trustLocal, hosts: config.localHosts },
     oauth,
     publicOrigin: config.oauth ? new URL(config.oauth.publicUrl).origin : null,
+    contentLicence: config.contentLicence,
   });
 
   const [primary, ...optional] = listenAddresses(config.host);

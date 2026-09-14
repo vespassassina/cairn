@@ -794,3 +794,35 @@ describe("collections are the home page (ADR-026)", () => {
     expect((await get("/changes")).html).toContain("Recent changes");
   });
 });
+
+describe("publishing from the console (ADR-032)", () => {
+  it("offers to publish a private page, and says publication stays on this server", async () => {
+    const page = await context.pages.create(context.workspaceId, { title: "Peptides", body: "Notes." }, { actor: OWNER });
+    const { html } = await get(`/p/${page.id}`);
+    expect(html).toContain("Publish this page and everything under it");
+    expect(html).toContain("never travels with sync, export or import");
+    expect(html).not.toContain("Make private");
+  });
+
+  it("publishes, then shows the public address and the way back", async () => {
+    const page = await context.pages.create(context.workspaceId, { title: "Peptides", body: "Notes." }, { actor: OWNER });
+    const result = await post(`/p/${page.id}/publish`, { version: page.version, public: "true" });
+    expect(result.status).toBe(303);
+    expect(result.location).toBe(`/p/${page.id}?published=1`);
+
+    const { html } = await get(`/p/${page.id}`);
+    expect(html).toContain(`href="/w/${page.id}"`);
+    expect(html).toContain("Make private");
+  });
+
+  it("sends someone to the page above when that is what publishes this one", async () => {
+    const parent = await context.pages.create(context.workspaceId, { title: "Peptides", body: "Notes." }, { actor: OWNER });
+    const child = await context.pages.create(context.workspaceId, { title: "BPC-157", body: "Healing.", parentId: parent.id }, { actor: OWNER });
+    await post(`/p/${parent.id}/publish`, { version: parent.version, public: "true" });
+
+    const { html } = await get(`/p/${child.id}`);
+    expect(html).toContain("Public, because");
+    expect(html).toContain(`href="/p/${parent.id}"`);
+    expect(html).not.toContain("Make private");
+  });
+});

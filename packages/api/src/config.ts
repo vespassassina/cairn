@@ -39,6 +39,12 @@ export interface Config {
   oauth: OAuthConfig | null;
   /** Semantic search with a model inside the process (ADR-022). */
   embeddings: EmbeddingsConfig;
+  /**
+   * The licence shown on published pages (ADR-032), such as
+   * "CC BY 4.0". It covers the owner's text, not Cairn's code. Null shows
+   * no licence at all.
+   */
+  contentLicence: string | null;
 }
 
 export interface EmbeddingsConfig {
@@ -69,6 +75,8 @@ export interface OAuthConfig {
 /** The shape of `cairn.config.json`. Every key is optional. */
 export interface ConfigFile {
   database?: string;
+  /** The licence published pages carry, such as "CC BY 4.0" (ADR-032). */
+  contentLicence?: string;
   port?: number;
   workspace?: string;
   embeddings?: {
@@ -268,6 +276,7 @@ export function loadConfig(
     configFile: configPath,
     oauth,
     embeddings,
+    contentLicence: (env["CAIRN_CONTENT_LICENCE"] ?? file.contentLicence ?? "").trim() || null,
   };
 }
 

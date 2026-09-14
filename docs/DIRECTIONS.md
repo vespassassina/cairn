@@ -13,6 +13,12 @@ Rules:
 
 ## 2026-09-14
 
+### Build the public wiki
+
+> "implement next"
+
+Said again after the eval set landed. Asked which roadmap item, the owner chose the public wiki: mark a collection public, serve it read-only with no sign-in, with `sitemap.xml` and `robots.txt`, private by default, and nothing private leaking. It follows the earlier direction that Cairn "can be a knowledge manager as well as a free knowledge source", and the owner's note that "cairn documents and wikis can be made public but they default to private". Landed in: ADR-032, the published surface at `/w`, the console control, `cairn publish` and `cairn unpublish`, `CAIRN_CONTENT_LICENCE`, and section 7 of `docs/AGENT-OPERATE.md`.
+
 ### Finish the eval set and publish the number
 
 > "implement next"

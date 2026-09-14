@@ -25,10 +25,11 @@ import {
   type Row,
 } from "@cairn/core";
 import { OWNER, type AppContext } from "../context.js";
-import { moveRecord } from "../operations.js";
+import { moveRecord, publishPage } from "../operations.js";
 import { ASSET_VERSION, CONSOLE_CSS, CONSOLE_JS, documentTitle, FAVICON_SVG, HEAD_TAGS, ICON_180_PNG, ICON_512_PNG, MANIFEST } from "./assets.js";
 import { ActorPill, ageOf, Banner, DiffView, Layout, Verified, When } from "./layout.js";
 import { createMarkdownRenderer, pageHref, type LinkResolver } from "./markdown.js";
+import { wikiHref } from "./public.js";
 import { isSameOrigin, SESSION_COOKIE, sessionValue, timingSafeEqual } from "./session.js";
 import type { OAuthServer } from "../oauth/server.js";
 import type { Actor } from "@cairn/core";
@@ -79,7 +80,9 @@ const SECURITY_HEADERS: Record<string, string> = {
   "x-frame-options": "DENY",
 };
 
-const PUBLIC_PATHS = [/^\/health$/, /^\/mcp/, /^\/api(\/|$)/, /^\/assets\//, /^\/favicon\.ico$/, /^\/login$/, /^\/oauth\//, /^\/\.well-known\//];
+// Addresses that need no sign-in. The published wiki is here because that is
+// the whole point of it (ADR-032); it serves published pages and nothing else.
+const PUBLIC_PATHS = [/^\/health$/, /^\/mcp/, /^\/api(\/|$)/, /^\/assets\//, /^\/favicon\.ico$/, /^\/login$/, /^\/oauth\//, /^\/\.well-known\//, /^\/w(\/|$)/, /^\/sitemap\.xml$/, /^\/robots\.txt$/];
 
 async function render(c: Context, element: Child, status: 200 | 400 | 404 | 409 = 200) {
   const body = await (element as Promise<string> | string);
@@ -365,6 +368,55 @@ const SourcesSection: FC<{ sources: readonly string[] }> = ({ sources }) =>
       <SourceList sources={sources} />
     </section>
   );
+
+/**
+ * Publishing a page, and taking it down again (ADR-032). Publishing runs down
+ * the tree, so a page can be public because something above it is; that case
+ * says where to go to change it, because changing it here would be wrong.
+ */
+const PublishControl: FC<{ page: Page; publishedVia: Page | null }> = ({ page, publishedVia }) => (
+  <>
+    <h3>Published</h3>
+    {page.public ? (
+      <>
+        <p class="ak-small">
+          Public. Anyone can read this page and every page under it, without signing in.
+        </p>
+        <p class="ak-small">
+          <a href={wikiHref(page.id)}>{wikiHref(page.id)}</a>
+        </p>
+        <form method="post" action={`${pageHref(page.id)}/publish`}>
+          <input type="hidden" name="version" value={page.version} />
+          <input type="hidden" name="public" value="false" />
+          <button class="ak-btn" type="submit">
+            Make private
+          </button>
+        </form>
+      </>
+    ) : publishedVia ? (
+      <p class="ak-small">
+        Public, because <a href={pageHref(publishedVia.id)}>{publishedVia.title}</a> above it is
+        published. Read at <a href={wikiHref(page.id)}>{wikiHref(page.id)}</a>. To take it down,
+        make that page private.
+      </p>
+    ) : (
+      <>
+        <p class="ak-small">Private. Only someone signed in to this Cairn can read it.</p>
+        <form method="post" action={`${pageHref(page.id)}/publish`}>
+          <input type="hidden" name="version" value={page.version} />
+          <input type="hidden" name="public" value="true" />
+          <button class="ak-btn" type="submit">
+            Publish this page and everything under it
+          </button>
+        </form>
+      </>
+    )}
+    <p class="ak-small ak-soft">
+      Publishing belongs to this server. It never travels with sync, export or import, so
+      publishing here publishes nowhere else.
+    </p>
+  </>
+);
 
 /** The sources one revision added and dropped (ADR-027). */
 const SourceChanges: FC<{ added: readonly string[]; removed: readonly string[] }> = ({ added, removed }) => (
@@ -1084,6 +1136,10 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
     const linkedRows = await rowsFor(context, [...outbound.map((e) => e.targetId), ...inbound.map((e) => e.sourceId)], tables);
     const titles = resolverFor(pages, tables, linkedRows);
     const children = pages.filter((p) => p.parentId === page.id);
+    // Published, but by a page above this one? Then the control points there.
+    const publishedVia = page.public
+      ? null
+      : (ancestorsOf(page.id, byId).reverse().find((ancestor) => ancestor.public) ?? null);
     const tablesHere = tables.filter((table) => table.parentId === page.id);
     const tableCounts = new Map(
       await Promise.all(tablesHere.map(async (table) => [table.id, await rowCount(context, table.id)] as const)),
@@ -1094,7 +1150,11 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
         ? "Restored. The restore is itself a new version, so it can be undone from history."
         : c.req.query("created")
           ? "Created."
-          : null;
+          : c.req.query("published")
+            ? "Published. It is readable by anyone, on this Cairn only."
+            : c.req.query("unpublished")
+              ? "Made private. It is off the published wiki now."
+              : null;
 
     return render(
       c,
@@ -1167,6 +1227,7 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
                 ))}
               </p>
             )}
+            <PublishControl page={page} publishedVia={publishedVia} />
             <h3>Page</h3>
             <p class="ak-small ak-mono">{page.id}</p>
             <p>
@@ -1868,6 +1929,37 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
       );
     }
     return c.redirect(`${tableHref(table.id)}?moved=1`, 303);
+  });
+
+  // Publish a page, or take it down (ADR-032). Owner action only: MCP has no
+  // equivalent, on purpose, so an agent cannot publish what it wrote.
+  app.post("/p/:id/publish", async (c) => {
+    const page = await loadPage(c);
+    if (!page) return notFound(c, `Page ${c.req.param("id")}`);
+    const form = await c.req.parseBody();
+    const wanted = text(form, "public") === "true";
+    try {
+      await publishPage(
+        context,
+        page.id,
+        wanted,
+        text(form, "version"),
+        by(c, wanted ? "Published" : "Made private"),
+      );
+    } catch (error) {
+      if (!(error instanceof VersionConflictError)) throw error;
+      return render(
+        c,
+        <Layout title="Not changed" section="collections">
+          <Banner kind="bad">
+            <strong>Not changed: the page changed since you opened it.</strong>{" "}
+            <a href={pageHref(page.id)}>Open {page.title} again</a> and try once more.
+          </Banner>
+        </Layout>,
+        409,
+      );
+    }
+    return c.redirect(`${pageHref(page.id)}?${wanted ? "published" : "unpublished"}=1`, 303);
   });
 
   // From a page: put a table under it (ADR-024).

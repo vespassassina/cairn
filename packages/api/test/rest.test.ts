@@ -257,6 +257,65 @@ describe("pages", () => {
   });
 });
 
+describe("publishing (ADR-032)", () => {
+  it("publishes a page, and takes it down again, with its version each time", async () => {
+    const created = await createBuildLog();
+    const id = String(created.json["id"]);
+    expect(created.json["public"]).toBe(false);
+
+    const published = await call("/publish", {
+      method: "POST",
+      body: { id, public: true, version: created.json["version"], change_note: "Published" },
+    });
+    expect(published.status).toBe(200);
+    expect(published.json["public"]).toBe(true);
+    expect((await call(`/pages/${id}`)).json["public"]).toBe(true);
+
+    const down = await call("/publish", {
+      method: "POST",
+      body: { id, public: false, version: published.json["version"], change_note: "Made private" },
+    });
+    expect(down.json["public"]).toBe(false);
+  });
+
+  it("refuses a stale version, so two people cannot publish past each other", async () => {
+    const created = await createBuildLog();
+    const id = String(created.json["id"]);
+    const stale = String(created.json["version"]);
+    await call(`/pages/${id}`, {
+      method: "PATCH",
+      body: { content: "more" },
+      headers: { "if-match": `"${stale}"` },
+    });
+    const refused = await call("/publish", {
+      method: "POST",
+      body: { id, public: true, version: stale, change_note: "Published" },
+    });
+    expect(refused.status).toBe(409);
+    expect(refused.json["error"]).toBe("version_conflict");
+    expect((await call(`/pages/${id}`)).json["public"]).toBe(false);
+  });
+
+  it("answers 404 for a page that is not there", async () => {
+    const missing = await call("/publish", {
+      method: "POST",
+      body: { id: "pg_missing", public: true, version: "v1", change_note: "Published" },
+    });
+    expect(missing.status).toBe(404);
+  });
+
+  it("does not publish through an ordinary write", async () => {
+    const created = await createBuildLog();
+    const id = String(created.json["id"]);
+    await call(`/pages/${id}`, {
+      method: "PUT",
+      body: { title: "5 inch build log", body: "Rewritten.", public: true },
+      headers: { "if-match": `"${String(created.json["version"])}"` },
+    });
+    expect((await call(`/pages/${id}`)).json["public"]).toBe(false);
+  });
+});
+
 describe("tables in the tree and rows as links (ADR-024)", () => {
   it("creates a table under a page, moves it, and reports links from rows", async () => {
     const home = await call("/pages", { method: "POST", body: { title: "Peptides", body: "Hub.", change_note: "A home for the peptide tables" } });

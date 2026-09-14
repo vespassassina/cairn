@@ -122,7 +122,13 @@ function withVerified(verifiedAt: unknown): { verified_at?: string } {
   return typeof verifiedAt === "string" && verifiedAt !== "" ? { verified_at: verifiedAt } : {};
 }
 
-/** A page's content in the shape sync compares, from a page or a revision of one. */
+/**
+ * A page's content in the shape sync compares, from a page or a revision of one.
+ *
+ * Only these fields travel. `public` is deliberately not one of them: being
+ * published belongs to a server, not to the content, so a sync can never
+ * publish anything anywhere (ADR-032 decision 6).
+ */
 function pageContent(page: Json): Json {
   return {
     title: page["title"],

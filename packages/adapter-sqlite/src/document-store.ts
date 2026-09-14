@@ -56,6 +56,7 @@ CREATE TABLE IF NOT EXISTS pages (
   sources      TEXT NOT NULL DEFAULT '[]',
   verified_at  TEXT,
   edited_at    TEXT,
+  public       INTEGER NOT NULL DEFAULT 0,
   created_at   TEXT NOT NULL,
   updated_at   TEXT NOT NULL,
   updated_by   TEXT NOT NULL DEFAULT '${LEGACY_ACTOR}',
@@ -136,6 +137,7 @@ interface PageRecord {
   sources: string;
   verified_at: string | null;
   edited_at: string | null;
+  public: number | null;
   created_at: string;
   updated_at: string;
   updated_by: string;
@@ -236,6 +238,7 @@ function toPage(record: PageRecord): Page {
     sources: JSON.parse(record.sources) as string[],
     verifiedAt: record.verified_at,
     editedAt: record.edited_at ?? record.updated_at,
+    public: record.public === 1,
     createdAt: record.created_at,
     updatedAt: record.updated_at,
     updatedBy: JSON.parse(record.updated_by) as Actor,
@@ -341,6 +344,11 @@ export class SqliteDocumentStore implements DocumentStore {
       if (table !== "collections" && !columns.some((column) => column.name === "edited_at")) {
         this.db.exec(`ALTER TABLE ${table} ADD COLUMN edited_at TEXT`);
       }
+      // Pages gained a published flag (ADR-032). Every page that existed
+      // before it is private, which is the only safe migration.
+      if (table === "pages" && !columns.some((column) => column.name === "public")) {
+        this.db.exec("ALTER TABLE pages ADD COLUMN public INTEGER NOT NULL DEFAULT 0");
+      }
     }
     this.db.exec(SCHEMA);
   }
@@ -378,6 +386,7 @@ export class SqliteDocumentStore implements DocumentStore {
       sources: input.sources ?? [],
       verifiedAt: input.verifiedAt ?? null,
       editedAt: input.editedAt ?? meta.at,
+      public: input.public ?? existing?.public ?? false,
       createdAt: existing?.createdAt ?? meta.at,
       updatedAt: meta.at,
       updatedBy: meta.actor,
@@ -390,7 +399,7 @@ export class SqliteDocumentStore implements DocumentStore {
       ? this.db
           .prepare(
             `UPDATE pages SET title = ?, parent_id = ?, tags = ?, body = ?, sources = ?, verified_at = ?,
-             edited_at = ?, updated_at = ?, updated_by = ?, version = ?
+             edited_at = ?, public = ?, updated_at = ?, updated_by = ?, version = ?
              WHERE workspace_id = ? AND id = ? AND version = ?`,
           )
           .run(
@@ -401,6 +410,7 @@ export class SqliteDocumentStore implements DocumentStore {
             JSON.stringify(page.sources),
             page.verifiedAt,
             page.editedAt,
+            page.public ? 1 : 0,
             page.updatedAt,
             JSON.stringify(page.updatedBy),
             page.version,
@@ -411,8 +421,8 @@ export class SqliteDocumentStore implements DocumentStore {
       : this.db
           .prepare(
             `INSERT OR IGNORE INTO pages
-             (workspace_id, id, title, parent_id, tags, body, sources, verified_at, edited_at, created_at, updated_at, updated_by, version)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             (workspace_id, id, title, parent_id, tags, body, sources, verified_at, edited_at, public, created_at, updated_at, updated_by, version)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           )
           .run(
             workspaceId,
@@ -424,6 +434,7 @@ export class SqliteDocumentStore implements DocumentStore {
             JSON.stringify(page.sources),
             page.verifiedAt,
             page.editedAt,
+            page.public ? 1 : 0,
             page.createdAt,
             page.updatedAt,
             JSON.stringify(page.updatedBy),
