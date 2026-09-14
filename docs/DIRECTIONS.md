@@ -13,6 +13,12 @@ Rules:
 
 ## 2026-09-14
 
+### Sync as backup and a hybrid service across clouds
+
+> "add to the features : use sync as a backup/ha strategy, allow cairn cli to register multiple instances and keep them synced regularly, for example work local and sync remote every x minutes (or hours to keep cost low) so we have a hybrid service running cross cloud using the same atomic unit"
+
+"The same atomic unit" is the one container every deployment runs (ADR-020). Landed in: a new roadmap item, "Named instances, kept in sync", marked next. Not built yet; it needs an ADR first, since ADR-023 covers only two Cairns.
+
 ### Freshness: when a page was last verified
 
 > "done, do next"

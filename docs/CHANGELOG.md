@@ -6,6 +6,10 @@ Entries link to the ADR when there is one. A change of direction that has no ADR
 
 ## 2026-09-14
 
+### Roadmap: named instances kept in sync, for backup and a hybrid service
+
+The owner asked for sync to become a backup and availability strategy: the CLI registers several Cairns by name and keeps them in sync on a schedule, so one Cairn runs across a laptop and one or more clouds, all on the same container. Added to the roadmap as next, with the questions its ADR has to answer: the topology beyond ADR-023's two Cairns, how the scheduled job runs on each OS, and the cost of waking a cloud copy that scales to zero. No code yet.
+
 ### Pages say when their facts were last verified (ADR-028)
 
 The roadmap's freshness item. A page's update time moves with a typo fix and says nothing about whether its facts still hold. The owner chose a verification time set by a flag on a write, set at creation when the page has sources, shown as an age with no staleness threshold, on pages only.

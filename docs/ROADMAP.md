@@ -56,6 +56,7 @@ Added after the project review of 2026-09-12. Done in this order, before the clo
 | Collections in the page tree, and relations as links | done | ADR-024 (the collections it moved are tables since ADR-026). `move` for pages and tables; relation fields to pages or rows, lists allowed; backlinks from rows |
 | Collections are wikis, and tables are called tables | done | ADR-026. The web app opens on collections (top-level pages and their trees); REST, MCP, CLI and export say table, with the old REST paths and CLI names kept for now |
 | Sync between two Cairns | done | ADR-023. `cairn sync <a> <b> [--every 5m]`: content compared with the last sync, newest edit wins, the other kept in history. Checked between the owner's laptop and Azure |
+| Named instances, kept in sync: backup and a hybrid service | next | The owner's direction of 2026-09-14. Register several Cairns in the CLI by name (the laptop, Azure, later a Proxmox server) and keep them all in sync on a schedule, as a background job, so the same container runs in several places at once as one Cairn: work on the local copy, sync to the cloud every so many minutes, or every few hours to let a scale-to-zero copy sleep and cost less. Each copy is then a backup of the others, and any one can serve if another is down. Builds on ADR-023, which leaves out more than two Cairns; needs an ADR on the topology (the machine running the job syncs each instance with its own copy, not a ring), how the job runs on each OS, and what it costs to wake a sleeping cloud copy |
 
 ## Launch checklist
 
