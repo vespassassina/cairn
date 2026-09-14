@@ -62,6 +62,11 @@ const CAIRN_CSS = `
 .cairn-editor label{ display:block; font-size:11px; letter-spacing:.06em; text-transform:uppercase;
   color:var(--ak-ink-soft); margin:var(--ak-s3) 0 var(--ak-s1) }
 .cairn-editor .ak-input{ width:100% }
+.cairn-editor .cairn-sources-input{ min-height:5em; width:100% }
+
+/* Sources (ADR-027). */
+.cairn-sources{ margin:0; padding-left:1.2em; font-size:13px; color:var(--ak-ink-muted) }
+.cairn-sources li{ margin:var(--ak-s1) 0; word-break:break-word }
 .cairn-actions{ display:flex; gap:var(--ak-s2); align-items:center; margin-top:var(--ak-s4) }
 
 /* Recent changes and history. */

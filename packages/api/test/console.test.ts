@@ -572,6 +572,116 @@ describe("tables in the tree and rows as links (ADR-024)", () => {
   });
 });
 
+describe("sources (ADR-027)", () => {
+  const PAPER = "https://pubmed.ncbi.nlm.nih.gov/12345/";
+  const CITE = "Smith 2021, J Pept Sci";
+
+  it("shows a page's sources, with web addresses as links and the rest as text", async () => {
+    const page = await context.pages.create(
+      context.workspaceId,
+      { title: "BPC-157", body: "A gastric peptide.", sources: [PAPER, CITE, "javascript:alert(1)"] },
+      AGENT,
+    );
+    const { html } = await get(`/p/${page.id}`);
+    expect(html).toContain("Sources");
+    expect(html).toContain(`<a href="${PAPER}" rel="noopener noreferrer nofollow">`);
+    expect(html).toContain(`<li>${CITE}</li>`);
+    // Not a web address, so never a link.
+    expect(html).not.toContain('href="javascript:');
+  });
+
+  it("edits a page's sources one per line, and shows the change in history", async () => {
+    const page = await context.pages.create(
+      context.workspaceId,
+      { title: "BPC-157", body: "x", sources: [PAPER] },
+      AGENT,
+    );
+    const editor = await get(`/p/${page.id}/edit`);
+    expect(editor.html).toContain('name="sources"');
+    expect(editor.html).toContain(PAPER);
+
+    const result = await post(`/p/${page.id}/edit`, {
+      title: "BPC-157",
+      body: "x",
+      tags: "",
+      sources: `${CITE}\r\n\r\n`,
+      version: page.version,
+      note: "The link was dead",
+    });
+    expect(result.status).toBe(303);
+    const saved = await context.pages.get(context.workspaceId, page.id);
+    expect(saved.sources).toEqual([CITE]);
+
+    const { html } = await get(`/p/${page.id}/v/${saved.version}`);
+    expect(html).toContain("Sources added");
+    expect(html).toContain("Sources removed");
+    expect(html).toContain(PAPER);
+  });
+
+  it("keeps a page's sources when a form has no sources field", async () => {
+    const page = await context.pages.create(context.workspaceId, { title: "Log", body: "x", sources: [CITE] }, AGENT);
+    await post(`/p/${page.id}/edit`, { title: "Log", body: "y", tags: "", version: page.version });
+    expect((await context.pages.get(context.workspaceId, page.id)).sources).toEqual([CITE]);
+  });
+
+  it("refuses a source too long, keeping what was typed", async () => {
+    const page = await context.pages.create(context.workspaceId, { title: "Log", body: "x" }, AGENT);
+    const result = await post(`/p/${page.id}/edit`, {
+      title: "Log",
+      body: "kept text",
+      tags: "",
+      sources: "x".repeat(501),
+      version: page.version,
+    });
+    expect(result.status).toBe(400);
+    expect(result.html).toContain("cite it, do not quote it");
+    expect(result.html).toContain("kept text");
+
+    const created = await post("/new", { title: "New", body: "", tags: "", sources: "y".repeat(501) });
+    expect(created.status).toBe(400);
+  });
+
+  it("creates a page with sources", async () => {
+    const result = await post("/new", { title: "TB-500", body: "x", tags: "", sources: PAPER });
+    expect(result.status).toBe(303);
+    const id = result.location!.split("/p/")[1]!.split("?")[0]!;
+    expect((await context.pages.get(context.workspaceId, id)).sources).toEqual([PAPER]);
+  });
+
+  it("shows and edits a row's sources", async () => {
+    await context.tables.create(
+      context.workspaceId,
+      { name: "Peptides", fields: [{ name: "name", type: "text", required: true }] },
+      { actor: OWNER },
+      "col_src",
+    );
+    const row = await context.tables.upsertRow(
+      context.workspaceId,
+      "col_src",
+      { values: { name: "BPC-157" }, sources: [PAPER] },
+      AGENT,
+      { id: "row_bpc" },
+    );
+    const view = await get("/t/col_src/r/row_bpc");
+    expect(view.html).toContain(`<a href="${PAPER}" rel="noopener noreferrer nofollow">`);
+
+    const result = await post("/t/col_src/r/row_bpc", {
+      name: "BPC-157",
+      sources: `${PAPER}\n${CITE}`,
+      version: row.version,
+    });
+    expect(result.status).toBe(303);
+    const saved = await context.store.getRow(context.workspaceId, "col_src", "row_bpc");
+    expect(saved!.sources).toEqual([PAPER, CITE]);
+    const revision = await get(`/t/col_src/r/row_bpc/v/${saved!.version}`);
+    expect(revision.html).toContain("Sources added");
+    expect(revision.html).toContain(CITE);
+
+    const created = await post("/t/col_src/new", { name: "TB-500", sources: CITE });
+    expect(created.status).toBe(303);
+  });
+});
+
 describe("collections are the home page (ADR-026)", () => {
   beforeEach(async () => {
     const ws = context.workspaceId;

@@ -1,3 +1,7 @@
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   TableService,
@@ -505,6 +509,130 @@ describe("PageService and TableService on sqlite", () => {
       expect((await tables.rebuildWorkspace(WS)).rows).toBe(3);
       expect(await tables.needsRelink(WS)).toBe(false);
       expect(await tables.rowBacklinks(WS, "col_peptides", "row_bpc")).toHaveLength(2);
+    });
+  });
+
+  describe("sources (ADR-027)", () => {
+    const CITE = "Smith 2021, J Pept Sci";
+    const URL = "https://pubmed.ncbi.nlm.nih.gov/12345/";
+
+    it("cleans the list: trims, collapses spaces, drops blanks and repeats", async () => {
+      const page = await pages.create(
+        WS,
+        { title: "BPC-157", body: "x", sources: [`  ${URL} `, "", "Smith  2021,\tJ Pept Sci", URL] },
+        OWNER,
+      );
+      expect(page.sources).toEqual([URL, CITE]);
+      expect((await pages.get(WS, page.id)).sources).toEqual([URL, CITE]);
+    });
+
+    it("keeps a page's sources when a write leaves them out, and replaces them when it names them", async () => {
+      const page = await pages.create(WS, { title: "BPC-157", body: "x", sources: [URL] }, OWNER);
+      const moved = await pages.update(WS, page.id, { title: "BPC 157", body: "x" }, page.version, OWNER);
+      expect(moved.sources).toEqual([URL]);
+      const replaced = await pages.update(WS, page.id, { title: "BPC 157", body: "x", sources: [CITE] }, moved.version, OWNER);
+      expect(replaced.sources).toEqual([CITE]);
+    });
+
+    it("refuses a source that quotes instead of citing, and too many", async () => {
+      await expect(pages.create(WS, { title: "T", body: "x", sources: ["x".repeat(501)] }, OWNER)).rejects.toThrow(
+        ValidationError,
+      );
+      const many = Array.from({ length: 101 }, (_, i) => `source ${i}`);
+      await expect(pages.create(WS, { title: "T", body: "x", sources: many }, OWNER)).rejects.toThrow(ValidationError);
+    });
+
+    it("shows in history which revision added and dropped each source, and restores them", async () => {
+      const first = await pages.create(WS, { title: "BPC-157", body: "x", sources: [URL] }, AGENT);
+      const second = await pages.update(WS, first.id, { title: "BPC-157", body: "y", sources: [URL, CITE] }, first.version, AGENT);
+      const third = await pages.update(WS, first.id, { title: "BPC-157", body: "y", sources: [CITE] }, second.version, OWNER);
+
+      const created = await pages.revision(WS, first.id, first.version);
+      expect(created.sourcesAdded).toEqual([URL]);
+      expect(created.sourcesRemoved).toEqual([]);
+      const added = await pages.revision(WS, first.id, second.version);
+      expect(added.sourcesAdded).toEqual([CITE]);
+      const dropped = await pages.revision(WS, first.id, third.version);
+      expect(dropped.sourcesAdded).toEqual([]);
+      expect(dropped.sourcesRemoved).toEqual([URL]);
+
+      const restored = await pages.restore(WS, first.id, second.version, third.version, OWNER);
+      expect(restored.sources).toEqual([URL, CITE]);
+    });
+
+    it("keeps a row's sources when a write leaves them out, and records them in its history", async () => {
+      await tables.create(WS, { name: "Peptides", fields: [{ name: "name", type: "text", required: true }] }, OWNER, "col_src");
+      const row = await tables.upsertRow(WS, "col_src", { values: { name: "BPC-157" }, sources: [URL] }, AGENT);
+      expect(row.sources).toEqual([URL]);
+      const edited = await tables.upsertRow(WS, "col_src", { values: { name: "BPC 157" } }, OWNER, {
+        id: row.id,
+        expectedVersion: row.version,
+      });
+      expect(edited.sources).toEqual([URL]);
+      const cited = await tables.upsertRow(WS, "col_src", { values: { name: "BPC 157" }, sources: [CITE] }, OWNER, {
+        id: row.id,
+        expectedVersion: edited.version,
+      });
+      const view = await tables.rowRevision(WS, "col_src", row.id, cited.version);
+      expect(view.sourcesAdded).toEqual([CITE]);
+      expect(view.sourcesRemoved).toEqual([URL]);
+      const restored = await tables.restoreRow(WS, "col_src", row.id, row.version, cited.version, OWNER);
+      expect(restored.sources).toEqual([URL]);
+    });
+
+    it("treats a revision written before sources existed as keeping the current ones", async () => {
+      const dir = await mkdtemp(join(tmpdir(), "cairn-sources-"));
+      const location = join(dir, "cairn.db");
+      try {
+        const fileStore = new SqliteDocumentStore({ location });
+        await fileStore.init();
+        const fileSearch = new SqliteSearchIndex();
+        await fileSearch.init();
+        const filePages = new PageService(fileStore, fileSearch);
+        const page = await filePages.create(WS, { title: "Old", body: "v1", sources: [URL] }, OWNER);
+        const updated = await filePages.update(WS, page.id, { title: "Old", body: "v2" }, page.version, OWNER);
+        // Make the first revision look like one written before ADR-027.
+        const raw = new DatabaseSync(location);
+        raw
+          .prepare("UPDATE revisions SET snapshot = json_remove(snapshot, '$.sources') WHERE record_id = ? AND version = ?")
+          .run(page.id, page.version);
+        raw.close();
+
+        const view = await filePages.revision(WS, page.id, page.version);
+        expect(view.snapshot.sources).toBeUndefined();
+        expect(view.sourcesAdded).toEqual([]);
+        expect(view.sourcesRemoved).toEqual([]);
+        const restored = await filePages.restore(WS, page.id, page.version, updated.version, OWNER);
+        expect(restored.body).toBe("v1");
+        expect(restored.sources).toEqual([URL]);
+        await fileStore.close();
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    });
+
+    it("adds the column to a database made before sources, keeping every page", async () => {
+      const dir = await mkdtemp(join(tmpdir(), "cairn-sources-"));
+      const location = join(dir, "cairn.db");
+      try {
+        const before = new SqliteDocumentStore({ location });
+        await before.init();
+        const index = new SqliteSearchIndex();
+        await index.init();
+        await new PageService(before, index).create(WS, { title: "Kept", body: "x" }, OWNER, "pg_kept");
+        await before.close();
+        const raw = new DatabaseSync(location);
+        raw.exec("ALTER TABLE pages DROP COLUMN sources");
+        raw.exec("ALTER TABLE rows_ DROP COLUMN sources");
+        raw.close();
+
+        const after = new SqliteDocumentStore({ location });
+        await after.init();
+        expect((await after.getPage(WS, "pg_kept"))?.sources).toEqual([]);
+        await after.close();
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
     });
   });
 });

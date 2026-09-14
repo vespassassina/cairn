@@ -4,6 +4,7 @@ import { diffLines, type Diff } from "../history/diff.js";
 import { readHistory, sweepOrphans, writeWithRevision } from "../history/revisions.js";
 import { chunkPage, DEFAULT_CHUNK_OPTIONS, type ChunkOptions } from "../indexer/chunk.js";
 import { extractReferences } from "../indexer/extract.js";
+import { normalizeSources } from "../sources.js";
 import type { DocumentStore } from "../ports/document-store.js";
 import type { SearchIndex } from "../ports/search-index.js";
 import type {
@@ -32,6 +33,9 @@ export interface PageRevisionView {
   /** Whether the title or tags changed too, since the diff covers the body only. */
   titleChanged: boolean;
   tagsChanged: boolean;
+  /** Sources this revision added, and ones it dropped (ADR-027). */
+  sourcesAdded: string[];
+  sourcesRemoved: string[];
 }
 
 function snapshotOf(input: PageInput): PageSnapshot {
@@ -40,6 +44,22 @@ function snapshotOf(input: PageInput): PageSnapshot {
     parentId: input.parentId ?? null,
     tags: input.tags ?? [],
     body: input.body,
+    sources: input.sources ?? [],
+  };
+}
+
+/** What a revision's sources changed against the one before it (ADR-027). */
+export function sourceChanges(
+  before: readonly string[] | undefined,
+  after: readonly string[] | undefined,
+): { sourcesAdded: string[]; sourcesRemoved: string[] } {
+  // A revision from before ADR-027 carries no list, which is not a removal.
+  if (after === undefined) return { sourcesAdded: [], sourcesRemoved: [] };
+  const was = new Set(before ?? []);
+  const now = new Set(after);
+  return {
+    sourcesAdded: after.filter((source) => !was.has(source)),
+    sourcesRemoved: before === undefined ? [] : before.filter((source) => !now.has(source)),
   };
 }
 
@@ -179,6 +199,7 @@ export class PageService {
       titleChanged: before !== null && before.title !== snapshot.title,
       tagsChanged:
         before !== null && JSON.stringify(before.tags) !== JSON.stringify(snapshot.tags),
+      ...sourceChanges(before?.sources, snapshot.sources),
     };
   }
 
@@ -194,6 +215,7 @@ export class PageService {
     expectedVersion: Version,
     context: WriteContext,
   ): Promise<Page> {
+    // A revision from before ADR-027 has no sources: the page keeps its own.
     const { snapshot } = await this.revision(workspaceId, id, version);
     return this.update(workspaceId, id, snapshot, expectedVersion, {
       actor: context.actor,
@@ -243,6 +265,7 @@ export class PageService {
     expectedVersion: ExpectedVersion,
     context: WriteContext,
   ): Promise<Page> {
+    input = { ...input, sources: await this.sourcesFor(workspaceId, id, input.sources, expectedVersion) };
     const page = await writeWithRevision(
       this.store,
       {
@@ -258,6 +281,21 @@ export class PageService {
     );
     await this.index(page);
     return page;
+  }
+
+  /**
+   * The list a write stores. Given: that list, cleaned. Omitted: the page's
+   * current list, so a move or a retitle keeps its sources (ADR-027).
+   */
+  private async sourcesFor(
+    workspaceId: WorkspaceId,
+    id: Id,
+    sources: string[] | undefined,
+    expectedVersion: ExpectedVersion,
+  ): Promise<string[]> {
+    if (sources !== undefined) return normalizeSources(sources);
+    if (expectedVersion === null) return [];
+    return (await this.store.getPage(workspaceId, id))?.sources ?? [];
   }
 
   private async index(page: Page): Promise<void> {

@@ -5,6 +5,8 @@ import { raw } from "hono/html";
 import type { Child, FC } from "hono/jsx";
 import {
   diffLines,
+  isUrlSource,
+  normalizeSources,
   NotFoundError,
   parseRowNodeId,
   relationTarget,
@@ -91,6 +93,15 @@ function safeNext(next: string | undefined): string {
 function text(form: Record<string, unknown>, key: string): string {
   const value = form[key];
   return typeof value === "string" ? value : "";
+}
+
+/**
+ * Sources typed one per line in an editor (ADR-027). Undefined when the form
+ * has no such field, so the record keeps the sources it has.
+ */
+function parseSources(form: Record<string, unknown>): string[] | undefined {
+  const value = form["sources"];
+  return typeof value === "string" ? value.split(/\r?\n/) : undefined;
 }
 
 function parseTags(value: string): string[] {
@@ -330,11 +341,71 @@ const EdgeList: FC<{ edges: Edge[]; direction: "in" | "out"; titles: LinkResolve
   );
 };
 
+/** Where a page's or row's facts came from, with web addresses as links (ADR-027). */
+const SourceList: FC<{ sources: readonly string[] }> = ({ sources }) => (
+  <ul class="cairn-sources">
+    {sources.map((source) => (
+      <li>
+        {isUrlSource(source) ? (
+          <a href={source} rel="noopener noreferrer nofollow">
+            {source}
+          </a>
+        ) : (
+          source
+        )}
+      </li>
+    ))}
+  </ul>
+);
+
+const SourcesSection: FC<{ sources: readonly string[] }> = ({ sources }) =>
+  sources.length === 0 ? null : (
+    <section class="ak-section" aria-labelledby="cairn-sources">
+      <h2 id="cairn-sources">Sources</h2>
+      <SourceList sources={sources} />
+    </section>
+  );
+
+/** The sources one revision added and dropped (ADR-027). */
+const SourceChanges: FC<{ added: readonly string[]; removed: readonly string[] }> = ({ added, removed }) => (
+  <>
+    {added.length > 0 ? (
+      <>
+        <h3>Sources added</h3>
+        <SourceList sources={added} />
+      </>
+    ) : null}
+    {removed.length > 0 ? (
+      <>
+        <h3>Sources removed</h3>
+        <SourceList sources={removed} />
+      </>
+    ) : null}
+  </>
+);
+
+const SourcesField: FC<{ value: string; error?: string | undefined }> = ({ value, error }) => (
+  <>
+    <label for="sources">Sources, one per line: a web address or a short citation (optional)</label>
+    <textarea class="ak-textarea cairn-sources-input" id="sources" name="sources" rows={3}>
+      {value}
+    </textarea>
+    {error ? <p class="ak-small ak-neg">{error}</p> : null}
+  </>
+);
+
+const ValidationBanner: FC<{ error: ValidationError }> = ({ error }) => (
+  <Banner kind="bad">
+    <strong>Not saved.</strong> {error.errors.map((e) => e.message).join("; ")}
+  </Banner>
+);
+
 const PageEditor: FC<{
   action: string;
   title: string;
   tags: string;
   body: string;
+  sources: string;
   note: string;
   version?: string | undefined;
   parentId?: string | null | undefined;
@@ -368,6 +439,7 @@ const PageEditor: FC<{
     <textarea class="ak-textarea" id="body" name="body" spellcheck>
       {props.body}
     </textarea>
+    <SourcesField value={props.sources} />
     <label for="note">What changed, and why (optional)</label>
     <input class="ak-input" id="note" name="note" value={props.note} maxlength={500} />
     <div class="cairn-actions">
@@ -590,11 +662,12 @@ const RowForm: FC<{
   table: Table;
   action: string;
   values: Record<string, FieldValue>;
+  sources: string;
   errors: FieldError[];
   version?: string | undefined;
   note: string;
   cancel: string;
-}> = ({ table, action, values, errors, version, note, cancel }) => (
+}> = ({ table, action, values, sources, errors, version, note, cancel }) => (
   <form method="post" action={action} class="cairn-editor" data-dirty-guard>
     {version ? <input type="hidden" name="version" value={version} /> : null}
     {errors.length > 0 ? (
@@ -619,6 +692,7 @@ const RowForm: FC<{
         );
       })}
     </div>
+    <SourcesField value={sources} error={errors.find((e) => e.field === "sources")?.message} />
     <label for="note">What changed, and why (optional)</label>
     <input class="ak-input" id="note" name="note" value={note} maxlength={500} />
     <div class="cairn-actions">
@@ -1041,6 +1115,7 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
                 raw(renderMarkdown(page.body, titles))
               )}
             </article>
+            <SourcesSection sources={page.sources} />
             <PageTables page={page} tables={tablesHere} counts={tableCounts} others={tables.filter((c) => c.parentId !== page.id)} />
           </div>
           <aside class="cairn-rail" aria-label="About this page">
@@ -1098,6 +1173,7 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
           title={page.title}
           tags={page.tags.join(", ")}
           body={page.body}
+          sources={page.sources.join("\n")}
           note=""
           version={page.version}
           cancel={pageHref(page.id)}
@@ -1115,11 +1191,12 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
       body: text(form, "body").replace(/\r\n/g, "\n"),
       parentId: page.parentId,
       tags: parseTags(text(form, "tags")),
+      sources: parseSources(form) ?? page.sources,
     };
     const note = text(form, "note");
     const version = text(form, "version");
 
-    const editor = (props: { version: string; preview?: string; banner?: Child }) =>
+    const editor = (props: { version: string; preview?: string; banner?: Child; status?: 200 | 400 | 409 }) =>
       render(
         c,
         <Layout title={`Edit ${page.title}`} section="collections">
@@ -1131,13 +1208,14 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
             title={input.title}
             tags={input.tags.join(", ")}
             body={input.body}
+            sources={input.sources.join("\n")}
             note={note}
             version={props.version}
             preview={props.preview}
             cancel={pageHref(page.id)}
           />
         </Layout>,
-        props.banner ? 409 : 200,
+        props.status ?? 200,
       );
 
     if (c.req.query("preview")) {
@@ -1149,12 +1227,16 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
       await context.pages.update(ws, page.id, input, version, by(c, note));
       return c.redirect(`${pageHref(page.id)}?saved=1`, 303);
     } catch (error) {
+      if (error instanceof ValidationError) {
+        return editor({ version, status: 400, banner: <ValidationBanner error={error} /> });
+      }
       if (!(error instanceof VersionConflictError)) throw error;
       // Someone else saved first. Keep this edit, show what they changed, and
       // make the next save a deliberate overwrite of their version.
       const current = error.current as Page;
       return editor({
         version: current.version,
+        status: 409,
         banner: (
           <Banner kind="bad">
             <p>
@@ -1250,9 +1332,11 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
         ) : (
           <p class="ak-small">This is the first recorded version.</p>
         )}
+        <SourceChanges added={view.sourcesAdded} removed={view.sourcesRemoved} />
         <details class="ak-disclosure">
           <summary>The page as it was at this version</summary>
           <article class="ak-prose">{raw(renderMarkdown(view.snapshot.body, titles))}</article>
+          <SourcesSection sources={view.snapshot.sources ?? []} />
         </details>
       </Layout>,
     );
@@ -1294,6 +1378,7 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
           title=""
           tags=""
           body=""
+          sources=""
           note=""
           parentId={parent}
           pages={pages}
@@ -1310,23 +1395,31 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
       body: text(form, "body").replace(/\r\n/g, "\n"),
       parentId: text(form, "parent") || null,
       tags: parseTags(text(form, "tags")),
+      sources: parseSources(form) ?? [],
     };
     const note = text(form, "note");
-    if (c.req.query("preview") || input.title === "") {
+    const preview = Boolean(c.req.query("preview"));
+    let problem: Child = input.title === "" ? <Banner kind="bad">A page needs a title.</Banner> : null;
+    try {
+      normalizeSources(input.sources);
+    } catch (error) {
+      if (!(error instanceof ValidationError)) throw error;
+      problem = <ValidationBanner error={error} />;
+    }
+    if (preview || problem) {
       const pages = await allPages(context);
       return render(
         c,
         <Layout title="New page" section="collections">
           <p class="ak-eyebrow">New page</p>
           <h1>New page</h1>
-          {input.title === "" && !c.req.query("preview") ? (
-            <Banner kind="bad">A page needs a title.</Banner>
-          ) : null}
+          {preview ? null : problem}
           <PageEditor
             action="/new"
             title={input.title}
             tags={input.tags.join(", ")}
             body={input.body}
+            sources={input.sources.join("\n")}
             note={note}
             parentId={input.parentId}
             pages={pages}
@@ -1334,7 +1427,7 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
             cancel="/pages"
           />
         </Layout>,
-        input.title === "" ? 400 : 200,
+        preview ? 200 : 400,
       );
     }
     const page = await context.pages.create(ws, input, by(c, note));
@@ -1692,6 +1785,7 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
     table: Table;
     row: Row | null;
     values: Record<string, FieldValue>;
+    sources: string;
     errors: FieldError[];
     note: string;
     history: Revision[];
@@ -1699,7 +1793,7 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
     notice?: Child;
     version?: string | undefined;
     links?: { outbound: Edge[]; inbound: Edge[]; resolver: LinkResolver } | undefined;
-  }> = ({ table, row, values, errors, note, history, flash, notice, version, links }) => {
+  }> = ({ table, row, values, sources, errors, note, history, flash, notice, version, links }) => {
     const base = `/t/${encodeURIComponent(table.id)}`;
     const title = row ? rowLabel(row.values, table, row.id) : "New row";
     return (
@@ -1720,6 +1814,7 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
             table={table}
             action={row ? `${base}/r/${encodeURIComponent(row.id)}` : `${base}/new`}
             values={values}
+            sources={sources}
             errors={errors}
             version={version ?? row?.version}
             note={note}
@@ -1727,6 +1822,12 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
           />
           {row ? (
             <section>
+              {row.sources.length > 0 ? (
+                <>
+                  <h2>Sources</h2>
+                  <SourceList sources={row.sources} />
+                </>
+              ) : null}
               {links ? (
                 <>
                   <h2>Links</h2>
@@ -1755,7 +1856,7 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
     if (!table) return notFound(c, `Table ${c.req.param("cid")}`);
     return render(
       c,
-      <RowPage table={table} row={null} values={{}} errors={[]} note="" history={[]} />,
+      <RowPage table={table} row={null} values={{}} sources="" errors={[]} note="" history={[]} />,
     );
   });
 
@@ -1764,9 +1865,10 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
     if (!table) return notFound(c, `Table ${c.req.param("cid")}`);
     const form = await c.req.parseBody({ all: true });
     const values = readRowValues(table, form);
+    const sources = parseSources(form) ?? [];
     const note = text(form, "note");
     try {
-      const row = await context.tables.upsertRow(ws, table.id, { values }, by(c, note));
+      const row = await context.tables.upsertRow(ws, table.id, { values, sources }, by(c, note));
       return c.redirect(
         `/t/${encodeURIComponent(table.id)}/r/${encodeURIComponent(row.id)}?saved=1`,
         303,
@@ -1779,6 +1881,7 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
           table={table}
           row={null}
           values={values}
+          sources={sources.join("\n")}
           errors={error.errors}
           note={note}
           history={[]}
@@ -1814,6 +1917,7 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
         table={table}
         row={row}
         values={row.values}
+        sources={row.sources.join("\n")}
         errors={[]}
         note=""
         history={history}
@@ -1830,11 +1934,12 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
     if (!row) return notFound(c, `Row ${c.req.param("rid")}`);
     const form = await c.req.parseBody({ all: true });
     const values = readRowValues(table, form);
+    const sources = parseSources(form) ?? row.sources;
     const note = text(form, "note");
     const history = () => context.tables.rowHistory(ws, table.id, row.id, { limit: 50 });
 
     try {
-      await context.tables.upsertRow(ws, table.id, { values }, by(c, note), {
+      await context.tables.upsertRow(ws, table.id, { values, sources }, by(c, note), {
         id: row.id,
         expectedVersion: text(form, "version"),
       });
@@ -1850,6 +1955,7 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
             table={table}
             row={row}
             values={values}
+            sources={sources.join("\n")}
             errors={error.errors}
             note={note}
             history={await history()}
@@ -1866,6 +1972,7 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
             table={table}
             row={current}
             values={values}
+            sources={sources.join("\n")}
             errors={[]}
             note={note}
             history={await history()}
@@ -1937,6 +2044,7 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
         ) : (
           <p class="ak-small">This is the first recorded version.</p>
         )}
+        <SourceChanges added={view.sourcesAdded} removed={view.sourcesRemoved} />
       </Layout>,
     );
   });

@@ -191,6 +191,31 @@ describe("cairn export and import", () => {
     expect(history[0]!.note).toBe("Edited in a text editor");
   });
 
+  it("carries sources through export and import, and only where there are some (ADR-027)", async () => {
+    const ws = source.workspaceId;
+    const page = await source.pages.get(ws, "pg_bpc-157");
+    await source.pages.update(ws, page.id, { ...page, sources: ["https://pubmed.ncbi.nlm.nih.gov/12345/", "Smith 2021"] }, page.version, BY);
+    const row = await source.tables.getRow(ws, "col_peptides", "row_bpc");
+    await source.tables.upsertRow(ws, "col_peptides", { values: row.values, sources: ["Smith 2021"] }, BY, {
+      id: row.id,
+      expectedVersion: row.version,
+    });
+    await cairn(source, "export", folder);
+    const file = (await readdir(join(folder, "pages"), { recursive: true })).find((name) => name.endsWith("bpc-157.md"))!;
+    expect(await readFile(join(folder, "pages", file), "utf8")).toContain('sources: ["https://pubmed.ncbi.nlm.nih.gov/12345/","Smith 2021"]');
+    expect(await readFile(join(folder, "pages", "longevity.md"), "utf8")).not.toContain("sources");
+
+    expect(await cairn(target, "import", folder)).toBe(0);
+    expect((await target.pages.get(target.workspaceId, "pg_bpc-157")).sources).toEqual([
+      "https://pubmed.ncbi.nlm.nih.gov/12345/",
+      "Smith 2021",
+    ]);
+    expect((await target.tables.getRow(target.workspaceId, "col_peptides", "row_bpc")).sources).toEqual(["Smith 2021"]);
+    expect(await cairn(target, "import", folder)).toBe(0);
+    expect(stdout).toContain("pages        0 created, 0 updated, 4 unchanged");
+    expect(stdout).toContain("rows         0 created, 0 updated, 1 unchanged");
+  });
+
   it("shows the plan without writing anything on a dry run", async () => {
     await cairn(source, "export", folder);
     expect(await cairn(target, "import", folder, "--dry-run")).toBe(0);

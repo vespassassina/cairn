@@ -35,11 +35,15 @@ once only if it would have mattered. If it says to sign in, ask the user to run
    work, never secrets, credentials or tokens.
 2. Search first, and update an existing page rather than creating a near-duplicate.
 3. Every write takes `--note "why"`. The owner reads these notes when reviewing.
-4. Link pages with `[[page-id]]` in the body.
+4. When a fact came from somewhere, such as a paper, a web page or the owner, add
+   `--source` with a URL or a short citation ("Smith 2021, J Pept Sci", "the owner,
+   2026-09-14"). Repeat it for more than one. Sources are added to the page's or
+   row's list, which the owner sees beside it.
+5. Link pages with `[[page-id]]` in the body.
 
 ```
-cairn create --title "Title" --tag topic --note "why" --text "Markdown body"
-cairn append <page-id> --note "why" --text "More Markdown"
+cairn create --title "Title" --tag topic --note "why" --source <url> --text "Markdown body"
+cairn append <page-id> --note "why" --source "Smith 2021" --text "More Markdown"
 cairn replace-section <page-id> --section "Heading" --version <v> --note "why" --text "New text"
 cairn write <page-id> --version <v> --note "why" --file body.md
 ```

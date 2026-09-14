@@ -4,6 +4,24 @@ What changed, and why. Newest first. One entry per meaningful change: code, desi
 
 Entries link to the ADR when there is one. A change of direction that has no ADR yet still gets an entry here.
 
+## 2026-09-14
+
+### Pages and rows say where their facts came from (ADR-027)
+
+The roadmap's provenance item. Agents write most of what Cairn holds, and the change note said why a write happened but not where its facts came from. The owner chose a list of sources on each page and row, added to by each write, optional but prompted, each one a URL or a short citation.
+
+1. **Core:** `Page.sources` and `Row.sources`, cleaned (whitespace collapsed, blanks and repeats dropped), at most 500 characters each and 100 per record. A write that leaves `sources` out keeps the list, so a move or a retitle never wipes it. Revisions snapshot the list, and a revision view reports the sources it added and dropped. Revisions from before carry no list and report no change.
+2. **SQLite:** a `sources` JSON column on `pages` and `rows_`, added to an existing database on start.
+3. **MCP:** `create_page`, `update_page` and `upsert_row` take `sources`, and the updates add to the list; `get_page` and row results return it, and `get_revision` reports `sources_added` and `sources_removed`. `query_table` leaves an empty list out, so reading a table costs what it did. The server instructions gain one sentence: when a fact came from somewhere, name it in `sources`.
+4. **REST:** `sources` on create; `PATCH` on a page adds; `PUT` on a page or row replaces the whole list, or keeps it when left out; `PUT` on a row takes `add_sources` to add instead, and refuses both at once. The Markdown view of a page shows a `sources` line. An `append` with empty content now leaves the body alone, so an edit can add a source without touching the text; before, it added two blank lines.
+5. **CLI:** `--source`, repeatable, on `create`, `append`, `replace-section`, `write` and `upsert`, adding to the list. `cairn row` prints the sources and `cairn revision` prints the ones added and removed. The skill says to use it.
+6. **Console:** a Sources section on a page and beside a row, with web addresses as links (`rel="noopener noreferrer nofollow"`) and the rest as text; a "Sources, one per line" field in the page and row editors, which replaces the list; and the sources added and removed on each revision.
+7. **Export, import and sync:** a `sources` line in a page's front matter and a list on a row, only when there are some, still format version 2. Import sets the list to match the export. Sync hashes sources only when a record has some, so records without them hash as before and the first sync after upgrading copies nothing; a removal on one side reaches the other.
+
+Context cost, measured with `pnpm context-cost`: MCP from about 2,931 tokens a session to 3,091. The argument's description was cut to one line and its length limits left to core, which took it down from 3,164. The skill description is unchanged, at about 115 tokens.
+
+22 tests added, across core services, REST, MCP, the console, the CLI, export and sync. 366 tests pass, 1 skipped, and the CLI smoke test passes. The console was checked by eye on a scratch database, pages and rows.
+
 ## 2026-09-13
 
 ### Tables are tables in the API, the MCP tools, the CLI and the export (ADR-026, step 2)

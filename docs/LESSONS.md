@@ -11,6 +11,29 @@ Each entry answers four questions:
 3. **Fix.** What changed, with the commit or file.
 4. **Lesson.** What to do differently next time. This is the part worth reading.
 
+## 2026-09-14
+
+### An insertion script deleted the line it inserted before
+
+1. **What happened.** Adding tests for sources, three CLI test files stopped parsing: "`await` is only allowed within async functions", pointing at the body of an existing test.
+2. **Cause.** The agent's Python edit found an existing test's first line as an anchor and replaced it with the new test, instead of with the new test followed by the anchor. Each existing test lost its `it(...)` line, leaving its body loose inside the one before.
+3. **Fix.** The three anchors put back, checked with `git diff` showing only added tests.
+4. **Lesson.** When inserting before an anchor, write the replacement as `new + anchor`, and read the diff of an insertion for removed lines before running anything: an insertion should remove nothing.
+
+### A schema error from the MCP SDK is not the tool's JSON
+
+1. **What happened.** A test that sent a 501-character source to `create_page` failed parsing the answer: "MCP error ..." is not valid JSON.
+2. **Cause.** When arguments fail a tool's zod schema, the MCP SDK answers with a plain-text error before the tool runs, so the tool's own JSON error shape never appears. The test assumed every error came from the tool.
+3. **Fix.** The limit moved from the MCP schema into core, which every surface already calls, and the test reads the raw result. That also shortened the tool list every session loads.
+4. **Lesson.** Errors from an MCP tool come in two shapes: the SDK's text for schema failures, and the tool's JSON for everything else. Put rules that need a helpful message in core, and keep the schema to types.
+
+### The zsh variable mistake, again
+
+1. **What happened.** Seeding a scratch server, `C="node packages/cli/dist/bin.js"` then `$C create ...` failed with "no such file or directory".
+2. **Cause.** zsh does not split an unquoted variable into words, which the entry "zsh does not split a command held in a variable" already records. The agent did not apply it.
+3. **Fix.** A shell function.
+4. **Lesson.** The same as before: a function, never a variable, for a repeated command. Read this file before scripting in the shell here.
+
 ## 2026-09-13
 
 ### A bulk rename silently did nothing, twice

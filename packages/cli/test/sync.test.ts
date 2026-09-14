@@ -189,6 +189,31 @@ describe("cairn sync between two servers", () => {
     expect((await b.pages.get(b.workspaceId, "pg_tb-500")).body).toBe("Still needed.");
   });
 
+  it("copies a source added on one side, and one removed on the other (ADR-027)", async () => {
+    await seed(a);
+    await sync();
+    const page = await a.pages.get(a.workspaceId, "pg_bpc-157");
+    await a.pages.update(a.workspaceId, page.id, { ...page, sources: ["Smith 2021", "Jones 2022"] }, page.version, BY);
+    const row = await a.tables.getRow(a.workspaceId, "col_peptides", "row_tb");
+    await a.tables.upsertRow(a.workspaceId, "col_peptides", { values: row.values, sources: ["Jones 2022"] }, BY, {
+      id: row.id,
+      expectedVersion: row.version,
+    });
+    expect(await sync()).toBe(0);
+    expect((await b.pages.get(b.workspaceId, "pg_bpc-157")).sources).toEqual(["Smith 2021", "Jones 2022"]);
+    expect((await b.tables.getRow(b.workspaceId, "col_peptides", "row_tb")).sources).toEqual(["Jones 2022"]);
+
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    const onB = await b.pages.get(b.workspaceId, "pg_bpc-157");
+    await b.pages.update(b.workspaceId, onB.id, { ...onB, sources: [] }, onB.version, BY);
+    expect(await sync()).toBe(0);
+    expect((await a.pages.get(a.workspaceId, "pg_bpc-157")).sources).toEqual([]);
+    // Settled: nothing more to copy.
+    expect(await sync()).toBe(0);
+    expect(stdout).toContain(`to ${A_URL}: nothing to change`);
+    expect(stdout).toContain(`to ${B_URL}: nothing to change`);
+  });
+
   it("settles two Cairns that already hold the same pages without writing", async () => {
     // A migration done earlier by export and import: same content, no state.
     await seed(a);

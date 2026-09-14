@@ -72,7 +72,8 @@ Write (every write is a revision the owner can review and undo)
   cairn write <page-id> --version V                     replace the whole body
   cairn delete <page-id> --version V
   cairn move <page-or-table-id> --parent PAGE|root --version V   change its place in the tree
-  All writes take --note "why", shown to the owner.
+  All writes take --note "why", shown to the owner, and --source S (repeatable):
+  a URL or short citation for where the facts came from, added to the page's or row's sources.
 
 Tables
   cairn tables                            names, ids, fields and where each sits
@@ -110,6 +111,7 @@ const OPTIONS = {
   title: { type: "string" },
   parent: { type: "string" },
   tag: { type: "string", multiple: true },
+  source: { type: "string", multiple: true },
   note: { type: "string" },
   text: { type: "string" },
   file: { type: "string" },
@@ -442,6 +444,8 @@ export async function run(argv: string[], io: Io): Promise<number> {
         );
         out(json, () =>
           `${String(json?.["version"])}  ${String(json?.["at"])}  ${by(json?.["by"])}\n` +
+          list(json?.["sources_added"] as unknown).map((source) => `+ source: ${String(source)}\n`).join("") +
+          list(json?.["sources_removed"] as unknown).map((source) => `- source: ${String(source)}\n`).join("") +
           `${json?.["diff"] ? String(json["diff"]) : "(first version, nothing to compare)"}\n`,
         );
         return 0;
@@ -479,6 +483,7 @@ export async function run(argv: string[], io: Io): Promise<number> {
             body,
             ...(flags.parent ? { parent_id: flags.parent } : {}),
             ...(flags.tag ? { tags: flags.tag } : {}),
+            ...(flags.source ? { sources: flags.source } : {}),
             ...(note ? { change_note: note } : {}),
           },
         });
@@ -496,6 +501,7 @@ export async function run(argv: string[], io: Io): Promise<number> {
           mode,
           content: text,
           ...(mode === "replace_section" ? { section: need(flags.section, "--section") } : {}),
+          ...(flags.source ? { sources: flags.source } : {}),
           ...(note ? { change_note: note } : {}),
         };
         const path = `/pages/${encodeURIComponent(id)}`;
@@ -586,23 +592,25 @@ export async function run(argv: string[], io: Io): Promise<number> {
           "GET",
           `/tables/${encodeURIComponent(cid)}/rows/${encodeURIComponent(rid)}`,
         );
-        out(json, () => `${String(json?.["id"])}  v${String(json?.["version"])}  ${JSON.stringify(json?.["values"])}\n`);
+        out(json, () => {
+          const sources = list(json?.["sources"] as unknown).map((source) => `  source: ${String(source)}`);
+          return `${String(json?.["id"])}  v${String(json?.["version"])}  ${JSON.stringify(json?.["values"])}\n${sources.map((line) => `${line}\n`).join("")}`;
+        });
         return 0;
       }
 
       case "upsert": {
         const cid = need(args[0], "table id");
-        const body = {
-          values: parseSet(need(flags.set, "--set field=value")),
-          ...(note ? { change_note: note } : {}),
-        };
+        const values = parseSet(need(flags.set, "--set field=value"));
+        const withNote = note ? { change_note: note } : {};
         const rows = `/tables/${encodeURIComponent(cid)}/rows`;
+        // On an update, --source adds to the row's sources, as it does for pages.
         const { json } = flags.id
           ? await client.request("PUT", `${rows}/${encodeURIComponent(flags.id)}`, {
-              body,
+              body: { values, ...(flags.source ? { add_sources: flags.source } : {}), ...withNote },
               ifMatch: flags.version ?? null,
             })
-          : await client.request("POST", rows, { body });
+          : await client.request("POST", rows, { body: { values, ...(flags.source ? { sources: flags.source } : {}), ...withNote } });
         out(json, () => written(json));
         return 0;
       }
@@ -647,7 +655,12 @@ export async function run(argv: string[], io: Io): Promise<number> {
                 `/tables/${encodeURIComponent(String(table["id"]))}/rows${query({ limit: "200", cursor: rowCursor ?? undefined })}`,
               );
               for (const row of list(page.json?.["rows"])) {
-                rows.push({ id: String(row["id"]), values: row["values"] as Record<string, unknown> });
+                const sources = list(row["sources"] as unknown).map(String);
+                rows.push({
+                  id: String(row["id"]),
+                  values: row["values"] as Record<string, unknown>,
+                  ...(sources.length > 0 ? { sources } : {}),
+                });
               }
               rowCursor = (page.json?.["cursor"] as string | null) ?? null;
             } while (rowCursor !== null);
@@ -730,7 +743,7 @@ export async function run(argv: string[], io: Io): Promise<number> {
               parent = null;
             }
           }
-          const desired = { title: page.title, body: page.body, parent_id: parent, tags: page.tags };
+          const desired = { title: page.title, body: page.body, parent_id: parent, tags: page.tags, sources: page.sources ?? [] };
           const path = `/pages/${encodeURIComponent(page.id)}`;
           const current = await maybe(client, path);
           if (current === null) {
@@ -743,7 +756,8 @@ export async function run(argv: string[], io: Io): Promise<number> {
             now["title"] === desired.title &&
             now["body"] === desired.body &&
             (now["parent_id"] ?? null) === desired.parent_id &&
-            stable(now["tags"]) === stable(desired.tags);
+            stable(now["tags"]) === stable(desired.tags) &&
+            stable(now["sources"] ?? []) === stable(desired.sources);
           if (same) {
             pageTally.unchanged += 1;
             continue;
@@ -790,16 +804,20 @@ export async function run(argv: string[], io: Io): Promise<number> {
             const rowPath = `${path}/rows/${encodeURIComponent(row.id)}`;
             // In a dry run a new table has no rows to compare against.
             const existing = current === null ? null : await maybe(client, rowPath);
+            const desiredRow = { values: row.values, sources: row.sources ?? [] };
             if (existing === null) {
               rowTally.created += 1;
-              if (!dry) await client.request("PUT", rowPath, { body: { values: row.values, change_note: change } });
-            } else if (stable(existing.json?.["values"]) === stable(row.values)) {
+              if (!dry) await client.request("PUT", rowPath, { body: { ...desiredRow, change_note: change } });
+            } else if (
+              stable(existing.json?.["values"]) === stable(row.values) &&
+              stable(existing.json?.["sources"] ?? []) === stable(desiredRow.sources)
+            ) {
               rowTally.unchanged += 1;
             } else {
               rowTally.updated += 1;
               if (!dry) {
                 await client.request("PUT", rowPath, {
-                  body: { values: row.values, change_note: change },
+                  body: { ...desiredRow, change_note: change },
                   ifMatch: existing.etag,
                 });
               }

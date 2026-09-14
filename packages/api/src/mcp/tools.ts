@@ -14,7 +14,9 @@ import {
   renderDiff,
   revisionSummary,
   rowJson,
+  sourceChangesJson,
   toFieldDefs,
+  writeRow,
 } from "../operations.js";
 
 export { replaceSection } from "../operations.js";
@@ -63,6 +65,15 @@ const CHANGE_NOTE = z
   .optional()
   .describe(
     "One line saying why you made this change. Shown to the owner next to the change in their review of recent edits. Write it for them, not for yourself.",
+  );
+
+// Lengths and counts are checked in core (ADR-027), so the schema every
+// session loads stays short.
+const SOURCES = z
+  .array(z.string())
+  .optional()
+  .describe(
+    "Where this came from: URLs or short citations (\"Smith 2021, J Pept Sci\"). Added to the record's list.",
   );
 
 export function registerTools(server: McpServer, context: AppContext, actor: Actor): void {
@@ -163,14 +174,15 @@ export function registerTools(server: McpServer, context: AppContext, actor: Act
         body: z.string().default(""),
         parent_id: z.string().optional(),
         tags: z.array(z.string()).optional(),
+        sources: SOURCES,
         change_note: CHANGE_NOTE,
       },
     },
-    async ({ title, body, parent_id, tags, change_note }): Promise<ToolResult> => {
+    async ({ title, body, parent_id, tags, sources, change_note }): Promise<ToolResult> => {
       try {
         const page = await context.pages.create(
           ws,
-          { title, body, parentId: parent_id ?? null, tags: tags ?? [] },
+          { title, body, parentId: parent_id ?? null, tags: tags ?? [], sources: sources ?? [] },
           by(change_note),
         );
         return json(pageSummary(page));
@@ -200,16 +212,17 @@ export function registerTools(server: McpServer, context: AppContext, actor: Act
           .describe("Heading text, required for replace_section."),
         title: z.string().optional(),
         tags: z.array(z.string()).optional(),
+        sources: SOURCES,
         change_note: CHANGE_NOTE,
       },
     },
-    async ({ page_id, version, mode, content, section, title, tags, change_note }): Promise<ToolResult> => {
+    async ({ page_id, version, mode, content, section, title, tags, sources, change_note }): Promise<ToolResult> => {
       try {
         const updated = await editPage(
           context,
           page_id,
           version,
-          { mode, content, section, title, tags },
+          { mode, content, section, title, tags, sources },
           by(change_note),
         );
         return json(pageSummary(updated));
@@ -424,9 +437,13 @@ export function registerTools(server: McpServer, context: AppContext, actor: Act
           limit: limit ?? 25,
           cursor: cursor ?? null,
         });
-        const budgeted = budgetList(result.items, (row) => JSON.stringify(row.values));
+        const budgeted = budgetList(result.items, (row) => JSON.stringify([row.values, row.sources]));
         return json({
-          rows: budgeted.items.map(rowJson),
+          // An empty sources list is left out, to spend no tokens on it.
+          rows: budgeted.items.map((row) => {
+            const { sources, ...rest } = rowJson(row);
+            return (sources as string[]).length > 0 ? { ...rest, sources } : rest;
+          }),
           truncated: budgeted.truncated || result.cursor !== null,
           cursor: result.cursor,
         });
@@ -451,15 +468,17 @@ export function registerTools(server: McpServer, context: AppContext, actor: Act
           .string()
           .optional()
           .describe("Required when updating an existing row."),
+        sources: SOURCES,
         change_note: CHANGE_NOTE,
       },
     },
-    async ({ table_id, values, row_id, version, change_note }): Promise<ToolResult> => {
+    async ({ table_id, values, row_id, version, sources, change_note }): Promise<ToolResult> => {
       try {
-        const row = await context.tables.upsertRow(
-          ws,
+        const row = await writeRow(
+          context,
           table_id,
-          { values: values as never },
+          values,
+          sources,
           by(change_note),
           {
             ...(row_id ? { id: row_id } : {}),
@@ -538,10 +557,12 @@ export function registerTools(server: McpServer, context: AppContext, actor: Act
             ...revisionSummary(view.revision),
             title: view.snapshot.title,
             tags: view.snapshot.tags,
+            sources: view.snapshot.sources,
             body: body.text,
             truncated: body.truncated,
             title_changed: view.titleChanged || undefined,
             tags_changed: view.tagsChanged || undefined,
+            ...sourceChangesJson(view),
             diff: renderDiff(view.diff),
           });
         }
@@ -550,6 +571,8 @@ export function registerTools(server: McpServer, context: AppContext, actor: Act
           return json({
             ...revisionSummary(view.revision),
             values: view.snapshot.values,
+            sources: view.snapshot.sources,
+            ...sourceChangesJson(view),
             diff: renderDiff(view.diff),
           });
         }

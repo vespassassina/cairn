@@ -1,5 +1,6 @@
 export * from "./types.js";
 export * from "./errors.js";
+export * from "./sources.js";
 export * from "./ids.js";
 export * from "./ports/document-store.js";
 export * from "./ports/search-index.js";

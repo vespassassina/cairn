@@ -34,6 +34,7 @@ A decision that changes is not edited away. Add a new ADR that supersedes it, an
 | [024](ADR-024.md) | Collections sit in the page tree, and relation fields are links | accepted | 2026-09-13 |
 | [025](ADR-025.md) | Headings weigh more than text, and a search for a page's exact title finds that page first | accepted, amends 021 | 2026-09-13 |
 | [026](ADR-026.md) | A collection is a top-level page and its tree; typed tables are tables | accepted, amends 009 and 024 | 2026-09-13 |
+| [027](ADR-027.md) | Pages and rows keep a list of sources | accepted | 2026-09-14 |
 
 ## Writing one
 

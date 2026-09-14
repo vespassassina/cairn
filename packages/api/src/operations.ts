@@ -1,4 +1,5 @@
 import {
+  addSources,
   CairnError,
   NotFoundError,
   parseRowNodeId,
@@ -32,6 +33,7 @@ export function pageSummary(page: Page): Record<string, unknown> {
     title: page.title,
     parent_id: page.parentId,
     tags: page.tags,
+    sources: page.sources,
     updated_at: page.updatedAt,
     updated_by: { kind: page.updatedBy.kind, name: page.updatedBy.label },
     version: page.version,
@@ -39,7 +41,7 @@ export function pageSummary(page: Page): Record<string, unknown> {
 }
 
 export function rowJson(row: Row): Record<string, unknown> {
-  return { id: row.id, values: row.values, version: row.version, updated_at: row.updatedAt };
+  return { id: row.id, values: row.values, sources: row.sources, version: row.version, updated_at: row.updatedAt };
 }
 
 export function tableJson(table: Table): Record<string, unknown> {
@@ -102,6 +104,14 @@ export function revisionSummary(revision: Revision): Record<string, unknown> {
   };
 }
 
+/** What a revision did to the sources, only when it did something (ADR-027). */
+export function sourceChangesJson(view: { sourcesAdded: string[]; sourcesRemoved: string[] }): Record<string, unknown> {
+  return {
+    sources_added: view.sourcesAdded.length > 0 ? view.sourcesAdded : undefined,
+    sources_removed: view.sourcesRemoved.length > 0 ? view.sourcesRemoved : undefined,
+  };
+}
+
 /** A compact unified-style diff: only changed lines and a little context. */
 export function renderDiff(diff: Diff | null, context = 2): string | null {
   if (!diff) return null;
@@ -135,6 +145,8 @@ export interface PageEdit {
   section?: string | undefined;
   title?: string | undefined;
   tags?: string[] | undefined;
+  /** Added to the page's sources; the ones it has are kept (ADR-027). */
+  sources?: string[] | undefined;
 }
 
 /** The heading named in a replace_section edit is not on the page. */
@@ -166,7 +178,13 @@ export async function editPage(
   if (edit.mode === "replace_body") {
     body = edit.content;
   } else if (edit.mode === "append") {
-    body = page.body.trimEnd() === "" ? edit.content : `${page.body.trimEnd()}\n\n${edit.content}`;
+    // Appending nothing leaves the body alone: an edit that only adds sources.
+    body =
+      edit.content.trim() === ""
+        ? page.body
+        : page.body.trimEnd() === ""
+          ? edit.content
+          : `${page.body.trimEnd()}\n\n${edit.content}`;
   } else {
     if (!edit.section) {
       throw new ValidationError([{ field: "section", message: "required for replace_section" }]);
@@ -176,12 +194,47 @@ export async function editPage(
     body = replaced;
   }
 
+  const sources = addSources(page.sources, edit.sources);
   return context.pages.update(
     ws,
     pageId,
-    { title: edit.title ?? page.title, body, parentId: page.parentId, tags: edit.tags ?? page.tags },
+    {
+      title: edit.title ?? page.title,
+      body,
+      parentId: page.parentId,
+      tags: edit.tags ?? page.tags,
+      ...(sources === undefined ? {} : { sources }),
+    },
     expectedVersion,
     write,
+  );
+}
+
+/**
+ * Create or update a row, adding `sources` to the ones it has rather than
+ * replacing them (ADR-027). What the agent-facing writes use: MCP
+ * `upsert_row` and the CLI. REST `PUT` replaces the whole row, sources too.
+ */
+export async function writeRow(
+  context: AppContext,
+  tableId: string,
+  values: Record<string, unknown>,
+  sources: string[] | undefined,
+  write: WriteContext,
+  options: { id?: string; expectedVersion?: string } = {},
+): Promise<Row> {
+  const ws = context.workspaceId;
+  const existing =
+    options.id !== undefined && options.expectedVersion !== undefined && sources?.length
+      ? await context.tables.getRow(ws, tableId, options.id)
+      : null;
+  const merged = addSources(existing?.sources ?? [], sources);
+  return context.tables.upsertRow(
+    ws,
+    tableId,
+    { values: values as Row["values"], ...(merged === undefined ? {} : { sources: merged }) },
+    write,
+    options,
   );
 }
 
@@ -296,6 +349,7 @@ export async function moveRecord(
   }
   const page = await context.store.getPage(ws, id);
   if (page) {
+    // Sources left out: the page keeps its own (ADR-027).
     // A page under one of its own descendants would cut a loop out of the tree.
     for (let at = parentId, depth = 0; at !== null && depth < 64; depth += 1) {
       if (at === id) throw new ValidationError([{ field: "parent_id", message: "that page is inside this one" }]);

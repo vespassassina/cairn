@@ -11,6 +11,14 @@ Rules:
 3. Every entry says where it landed: an ADR, a doc, a commit, or "not yet".
 4. A later direction that reverses an earlier one does not edit it. Add the new one and point back.
 
+## 2026-09-14
+
+### Provenance: sources on every write
+
+> "next item"
+
+The next roadmap item was "Provenance: `sources` on every write", where a fact came from, shown in the console. Asked three questions, the owner chose the recommended answer each time: sources live on the page or row, as a list that each write adds to, with history showing which change added each one; they are optional but prompted, so agents are told to add one whenever a fact came from somewhere and a write without one still goes through; and a source is a short text, a URL or a citation such as "Smith 2021, J Pept Sci", with URLs shown as links. Landed in: ADR-027 and the matching changelog entry.
+
 ## 2026-09-13
 
 ### Start step 2 of the rename

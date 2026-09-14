@@ -160,6 +160,34 @@ describe("cairn", () => {
     expect(stderr).toContain("grams:");
   });
 
+  it("records sources with --source, adds more on later writes, and prints them (ADR-027)", async () => {
+    const paper = "https://pubmed.ncbi.nlm.nih.gov/12345/";
+    stdin = "A gastric peptide.";
+    expect(await cairn("create", "--title", "BPC-157", "--source", paper, "--note", "From the review")).toBe(0);
+    stdin = null;
+    const [, id, version] = /^ok (\S+) version (\S+)$/.exec(stdout.trim())!;
+    expect(await cairn("append", id!, "--text", "Studied in rats.", "--source", "Smith 2021, J Pept Sci")).toBe(0);
+    const page = await context.pages.get(context.workspaceId, id!);
+    expect(page.sources).toEqual([paper, "Smith 2021, J Pept Sci"]);
+    expect(await cairn("revision", id!, page.version)).toBe(0);
+    expect(stdout).toContain("+ source: Smith 2021, J Pept Sci");
+    expect(version).not.toBe(page.version);
+
+    const table = await context.tables.create(
+      context.workspaceId,
+      { name: "Peptides", fields: [{ name: "name", type: "text", required: true }] },
+      { actor: OWNER, note: null },
+    );
+    expect(await cairn("upsert", table.id, "--set", "name=BPC-157", "--source", paper)).toBe(0);
+    const [, rid, rversion] = /^ok (\S+) version (\S+)$/.exec(stdout.trim())!;
+    expect(
+      await cairn("upsert", table.id, "--id", rid!, "--version", rversion!, "--set", "name=BPC-157", "--source", "the owner, 2026-09-14"),
+    ).toBe(0);
+    expect(await cairn("row", table.id, rid!)).toBe(0);
+    expect(stdout).toContain(`source: ${paper}`);
+    expect(stdout).toContain("source: the owner, 2026-09-14");
+  });
+
   it("prints its version, which matches the package", async () => {
     const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { version: string };
     expect(VERSION).toBe(pkg.version);

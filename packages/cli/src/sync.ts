@@ -90,6 +90,15 @@ export async function record(
   return { key, kind, id, tableId, label, content, hash: await sha256(stable({ kind, content })), updatedAt, version };
 }
 
+/**
+ * Sources are part of a record's content (ADR-027), but only when there are
+ * some: a record without them hashes as it did before, so the first sync
+ * after the upgrade, or against an older server, finds nothing changed.
+ */
+function withSources(sources: unknown): { sources?: string[] } {
+  return Array.isArray(sources) && sources.length > 0 ? { sources: sources.map(String) } : {};
+}
+
 /** Every page, table and row on one server. */
 export async function readSide(client: CairnClient): Promise<Snapshot> {
   const snapshot: Snapshot = new Map();
@@ -107,6 +116,7 @@ export async function readSide(client: CairnClient): Promise<Snapshot> {
         parent_id: page["parent_id"] ?? null,
         tags: page["tags"] ?? [],
         body: page["body"],
+        ...withSources(page["sources"]),
       };
       add(await record("page", String(page["id"]), null, String(page["title"]), content, String(page["updated_at"]), String(page["version"])));
     }
@@ -127,7 +137,7 @@ export async function readSide(client: CairnClient): Promise<Snapshot> {
       );
       for (const row of list(page.json?.["rows"])) {
         const rid = String(row["id"]);
-        add(await record("row", rid, cid, `${name} / ${rid}`, { values: row["values"] }, String(row["updated_at"]), String(row["version"])));
+        add(await record("row", rid, cid, `${name} / ${rid}`, { values: row["values"], ...withSources(row["sources"]) }, String(row["updated_at"]), String(row["version"])));
       }
       rowCursor = (page.json?.["cursor"] as string | null) ?? null;
     } while (rowCursor !== null);
@@ -302,7 +312,8 @@ export async function apply(
         }
         await write(action, () =>
           client.request("PUT", `/pages/${encodeURIComponent(source.id)}`, {
-            body: { ...source.content, parent_id: parent, change_note: note(action) },
+            // Always send the list, empty too, so a removal reaches the other side.
+            body: { sources: [], ...source.content, parent_id: parent, change_note: note(action) },
             ifMatch,
           }),
         );
@@ -311,7 +322,7 @@ export async function apply(
           client.request(
             "PUT",
             `/tables/${encodeURIComponent(source.tableId!)}/rows/${encodeURIComponent(source.id)}`,
-            { body: { ...source.content, change_note: note(action) }, ifMatch },
+            { body: { sources: [], ...source.content, change_note: note(action) }, ifMatch },
           ),
         );
       }

@@ -443,6 +443,79 @@ describe("table tools", () => {
   });
 });
 
+describe("sources (ADR-027)", () => {
+  const PAPER = "https://pubmed.ncbi.nlm.nih.gov/12345/";
+  const CITE = "Smith 2021, J Pept Sci";
+
+  it("records where a page's facts came from, and adds to them on update", async () => {
+    const created = await callTool("create_page", {
+      title: "BPC-157",
+      body: "# BPC-157\n\nA gastric peptide studied for tendon healing.",
+      sources: [PAPER],
+      change_note: "Started from the review",
+    });
+    expect(created.data["sources"]).toEqual([PAPER]);
+
+    const updated = await callTool("update_page", {
+      page_id: created.data["id"],
+      version: created.data["version"],
+      mode: "append",
+      content: "## Dosing\n\nStudied at 10 mcg/kg in rats.",
+      sources: [CITE],
+      change_note: "Added dosing from Smith",
+    });
+    expect(updated.isError).toBe(false);
+    expect(updated.data["sources"]).toEqual([PAPER, CITE]);
+
+    const read = await callTool("get_page", { page_id: created.data["id"] });
+    expect(read.data["sources"]).toEqual([PAPER, CITE]);
+
+    const revision = await callTool("get_revision", {
+      page_id: created.data["id"],
+      version: updated.data["version"],
+    });
+    expect(revision.data["sources_added"]).toEqual([CITE]);
+  });
+
+  it("adds to a row's sources on upsert, and leaves empty lists out of a query", async () => {
+    const table = await callTool("create_table", {
+      name: "Peptides",
+      fields: [{ name: "name", type: "text", required: true }],
+    });
+    const row = await callTool("upsert_row", {
+      table_id: table.data["id"],
+      values: { name: "BPC-157" },
+      sources: [PAPER],
+    });
+    const updated = await callTool("upsert_row", {
+      table_id: table.data["id"],
+      row_id: row.data["id"],
+      version: row.data["version"],
+      values: { name: "BPC-157" },
+      sources: [CITE],
+    });
+    expect(updated.data["sources"]).toEqual([PAPER, CITE]);
+    await callTool("upsert_row", { table_id: table.data["id"], values: { name: "TB-500" } });
+
+    const query = await callTool("query_table", { table_id: table.data["id"] });
+    const rows = query.data["rows"] as Array<Record<string, unknown>>;
+    expect(rows.find((r) => (r["values"] as Record<string, unknown>)["name"] === "BPC-157")!["sources"]).toEqual([
+      PAPER,
+      CITE,
+    ]);
+    expect(rows.find((r) => (r["values"] as Record<string, unknown>)["name"] === "TB-500")).not.toHaveProperty("sources");
+  });
+
+  it("refuses a quotation passed off as a source, as an input error", async () => {
+    const { body } = await rpc("tools/call", {
+      name: "create_page",
+      arguments: { title: "Quote", body: "x", sources: ["x".repeat(501)] },
+    });
+    expect(body.result.isError).toBe(true);
+    expect(body.result.content[0].text).toContain("sources");
+  });
+});
+
 describe("replaceSection", () => {
   it("stops at the next heading of the same or higher level", () => {
     const body = "# A\n\nold a\n\n## A1\n\nnested\n\n# B\n\nkeep b";

@@ -12,6 +12,10 @@
  * Version 1 differed only in names: the folder was `collections/` and the
  * manifest counted `collections`. `cairn import` reads both.
  *
+ * Sources (ADR-027) are a `sources` line in a page's front matter and a
+ * `sources` list on a row, written only when there are some. Readers ignore
+ * keys they do not know, so this needed no new version.
+ *
  * Ids travel in the front matter, not the file name, so links survive an
  * import and files can be renamed freely. Derived data (links, search chunks)
  * is not exported; an import rebuilds it.
@@ -34,6 +38,8 @@ export interface ExportPage {
   parent_id: string | null;
   tags: string[];
   body: string;
+  /** Where its facts came from (ADR-027). Absent when there are none. */
+  sources?: string[];
   updated_at?: string;
   updated_by?: { kind: string; name: string };
   version?: string;
@@ -45,7 +51,7 @@ export interface ExportTable {
   /** The page it sits under (ADR-024). Absent in exports made before it existed. */
   parent_id?: string | null;
   fields: unknown[];
-  rows: Array<{ id: string; values: Record<string, unknown> }>;
+  rows: Array<{ id: string; values: Record<string, unknown>; sources?: string[] }>;
 }
 
 export interface Manifest {
@@ -124,6 +130,7 @@ export function pageFile(page: ExportPage): string {
     ["parent", page.parent_id],
     ["tags", page.tags],
   ];
+  if (page.sources && page.sources.length > 0) header.push(["sources", page.sources]);
   if (page.updated_at) header.push(["updated", page.updated_at]);
   if (page.updated_by) header.push(["updated_by", `${page.updated_by.kind}: ${page.updated_by.name}`]);
   if (page.version) header.push(["version", page.version]);
@@ -157,6 +164,7 @@ export function parsePageFile(text: string, file: string): ExportPage {
   if (typeof title !== "string" || title === "") throw new Error(`${file}: front matter has no title`);
   const parent = fields.get("parent");
   const tags = fields.get("tags");
+  const sources = fields.get("sources");
   const body = match[2]!;
 
   return {
@@ -164,6 +172,7 @@ export function parsePageFile(text: string, file: string): ExportPage {
     title,
     parent_id: typeof parent === "string" && parent !== "" ? parent : null,
     tags: Array.isArray(tags) ? tags.map(String) : [],
+    ...(Array.isArray(sources) && sources.length > 0 ? { sources: sources.map(String) } : {}),
     // pageFile ends every body with one newline; give back what was stored.
     body: body.endsWith("\n") ? body.slice(0, -1) : body,
   };

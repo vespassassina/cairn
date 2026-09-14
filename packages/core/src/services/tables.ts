@@ -13,6 +13,8 @@ import {
 } from "../query/filter.js";
 import { extractRowReferences } from "../indexer/extract.js";
 import { validateRow, validateSchema } from "../query/validate.js";
+import { normalizeSources } from "../sources.js";
+import { sourceChanges } from "./pages.js";
 import type {
   Table,
   TableInput,
@@ -35,6 +37,9 @@ export interface RowRevisionView {
   snapshot: RowSnapshot;
   /** One line per field, so a changed value reads as a one-line change. */
   diff: Diff | null;
+  /** Sources this revision added, and ones it dropped (ADR-027). */
+  sourcesAdded: string[];
+  sourcesRemoved: string[];
 }
 
 function valuesAsLines(values: RowSnapshot["values"]): string {
@@ -205,6 +210,14 @@ export class TableService {
     const id = options.id ?? newRowId();
     const expectedVersion =
       options.expectedVersion !== undefined ? options.expectedVersion : null;
+    // Omitted sources on an update keep the row's own, as for pages (ADR-027).
+    const sources =
+      input.sources !== undefined
+        ? normalizeSources(input.sources)
+        : expectedVersion === null
+          ? []
+          : ((await this.store.getRow(workspaceId, tableId, id))?.sources ?? []);
+    input = { ...input, sources };
 
     const row = await writeWithRevision(
       this.store,
@@ -214,7 +227,7 @@ export class TableService {
         recordId: revisionRecordId("row", id, tableId),
         tableId,
         expectedVersion,
-        snapshot: { tableId, values: input.values },
+        snapshot: { tableId, values: input.values, sources },
       },
       context,
       (meta) => this.store.putRow(workspaceId, tableId, id, input, expectedVersion, meta),
@@ -252,7 +265,7 @@ export class TableService {
         recordId: revisionRecordId("row", id, tableId),
         tableId,
         expectedVersion,
-        snapshot: { tableId, values: row.values },
+        snapshot: { tableId, values: row.values, sources: row.sources },
         deleted: true,
       },
       context,
@@ -293,15 +306,12 @@ export class TableService {
     const parent = revision.parentVersion
       ? await this.store.getRevision(workspaceId, "row", recordId, revision.parentVersion)
       : null;
+    const before = parent ? (parent.snapshot as RowSnapshot) : null;
     return {
       revision,
       snapshot,
-      diff: parent
-        ? diffLines(
-            valuesAsLines((parent.snapshot as RowSnapshot).values),
-            valuesAsLines(snapshot.values),
-          )
-        : null,
+      diff: before ? diffLines(valuesAsLines(before.values), valuesAsLines(snapshot.values)) : null,
+      ...sourceChanges(before ? before.sources : [], snapshot.sources),
     };
   }
 
@@ -318,7 +328,7 @@ export class TableService {
     return this.upsertRow(
       workspaceId,
       tableId,
-      { values: snapshot.values },
+      snapshot.sources === undefined ? { values: snapshot.values } : { values: snapshot.values, sources: snapshot.sources },
       { actor: context.actor, note: context.note ?? `Restored version ${version.slice(0, 8)}` },
       { id, expectedVersion },
     );

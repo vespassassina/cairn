@@ -55,6 +55,8 @@ export interface Page {
   tags: string[];
   /** Markdown in P0. BlockNote JSON arrives with the editor in Phase 2. */
   body: string;
+  /** Where its facts came from: URLs or short citations (ADR-027). */
+  sources: string[];
   createdAt: string;
   updatedAt: string;
   /** Who made the latest write, so a page view needs no history read. */
@@ -67,6 +69,11 @@ export interface PageInput {
   parentId?: Id | null;
   tags?: string[];
   body: string;
+  /**
+   * The whole list. Omitted on an update: the page keeps the sources it has,
+   * so a write that does not mention them never drops them (ADR-027).
+   */
+  sources?: string[];
 }
 
 export type EdgeType = "link" | "mention" | "relation" | "parent" | "tag";
@@ -147,6 +154,8 @@ export interface Row {
   workspaceId: WorkspaceId;
   tableId: Id;
   values: Record<string, FieldValue>;
+  /** Where its values came from, as for a page (ADR-027). */
+  sources: string[];
   createdAt: string;
   updatedAt: string;
   updatedBy: Actor;
@@ -155,6 +164,8 @@ export interface Row {
 
 export interface RowInput {
   values: Record<string, FieldValue>;
+  /** The whole list. Omitted on an update: the row keeps the sources it has. */
+  sources?: string[];
 }
 
 /**
@@ -172,11 +183,15 @@ export interface PageSnapshot {
   parentId: Id | null;
   tags: string[];
   body: string;
+  /** Missing in revisions written before ADR-027. */
+  sources?: string[];
 }
 
 export interface RowSnapshot {
   tableId: Id;
   values: Record<string, FieldValue>;
+  /** Missing in revisions written before ADR-027. */
+  sources?: string[];
 }
 
 export interface Revision {

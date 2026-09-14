@@ -1,6 +1,6 @@
 import { Hono, type Context } from "hono";
 import { z } from "zod";
-import { NotFoundError, type Actor, type Page, type Paged, type Revision } from "@cairn/core";
+import { MAX_SOURCES, NotFoundError, type Actor, type Page, type Paged, type Revision } from "@cairn/core";
 import type { AppContext } from "../context.js";
 import {
   tableJson,
@@ -14,6 +14,8 @@ import {
   renderDiff,
   revisionSummary,
   rowJson,
+  sourceChangesJson,
+  writeRow,
 } from "../operations.js";
 import { workspaceSummary } from "../mcp/summary.js";
 
@@ -63,12 +65,17 @@ const FIELD_TYPES = [
 
 const OPERATORS = ["eq", "ne", "lt", "lte", "gt", "gte", "contains", "in", "exists"] as const;
 
+// Where facts came from (ADR-027). Core checks each one's length and the
+// total; this only keeps a request from sending thousands.
+const SOURCES = z.array(z.string()).max(MAX_SOURCES).optional();
+
 const schemas = {
   createPage: z.object({
     title: z.string().min(1),
     body: z.string().default(""),
     parent_id: z.string().nullable().optional(),
     tags: z.array(z.string()).optional(),
+    sources: SOURCES,
     change_note: CHANGE_NOTE,
   }),
   editPage: z.object({
@@ -77,6 +84,8 @@ const schemas = {
     section: z.string().optional(),
     title: z.string().min(1).optional(),
     tags: z.array(z.string()).optional(),
+    // Added to the page's sources.
+    sources: SOURCES,
     change_note: CHANGE_NOTE,
   }),
   deleteBody: z.object({ change_note: CHANGE_NOTE }).default({}),
@@ -85,6 +94,8 @@ const schemas = {
     body: z.string().default(""),
     parent_id: z.string().nullable().optional(),
     tags: z.array(z.string()).default([]),
+    // The whole list. Left out, the page keeps the sources it has.
+    sources: SOURCES,
     change_note: CHANGE_NOTE,
   }),
   createTable: z.object({
@@ -112,6 +123,10 @@ const schemas = {
   }),
   row: z.object({
     values: z.record(z.string(), z.unknown()),
+    // On PUT, the whole list; left out, the row keeps the sources it has.
+    sources: SOURCES,
+    // Added to the row's sources instead, as `cairn upsert --source` does.
+    add_sources: SOURCES,
     change_note: CHANGE_NOTE,
   }),
   query: z.object({
@@ -243,6 +258,7 @@ function pageMarkdown(page: Page): string {
     `title: ${JSON.stringify(page.title)}`,
     `version: ${page.version}`,
     `tags: ${JSON.stringify(page.tags)}`,
+    ...(page.sources.length > 0 ? [`sources: ${JSON.stringify(page.sources)}`] : []),
     `updated: ${page.updatedAt} by ${page.updatedBy.kind} ${JSON.stringify(page.updatedBy.label)}`,
     "---",
     "",
@@ -318,7 +334,13 @@ export function restRoutes(context: AppContext, callerFor: CallerFor): Hono {
     const input = await parseBody(c, schemas.createPage);
     const page = await context.pages.create(
       ws,
-      { title: input.title, body: input.body, parentId: input.parent_id ?? null, tags: input.tags ?? [] },
+      {
+        title: input.title,
+        body: input.body,
+        parentId: input.parent_id ?? null,
+        tags: input.tags ?? [],
+        sources: input.sources ?? [],
+      },
       by(c, input.change_note),
     );
     c.header("ETag", etag(page.version));
@@ -343,7 +365,13 @@ export function restRoutes(context: AppContext, callerFor: CallerFor): Hono {
     const page = await context.pages.update(
       ws,
       c.req.param("id"),
-      { title: input.title, body: input.body, parentId: input.parent_id ?? null, tags: input.tags },
+      {
+        title: input.title,
+        body: input.body,
+        parentId: input.parent_id ?? null,
+        tags: input.tags,
+        ...(input.sources === undefined ? {} : { sources: input.sources }),
+      },
       version,
       by(c, input.change_note),
     );
@@ -358,7 +386,14 @@ export function restRoutes(context: AppContext, callerFor: CallerFor): Hono {
       context,
       c.req.param("id"),
       version,
-      { mode: input.mode, content: input.content, section: input.section, title: input.title, tags: input.tags },
+      {
+        mode: input.mode,
+        content: input.content,
+        section: input.section,
+        title: input.title,
+        tags: input.tags,
+        sources: input.sources,
+      },
       by(c, input.change_note),
     );
     c.header("ETag", etag(page.version));
@@ -400,9 +435,11 @@ export function restRoutes(context: AppContext, callerFor: CallerFor): Hono {
       ...revisionSummary(view.revision),
       title: view.snapshot.title,
       tags: view.snapshot.tags,
+      sources: view.snapshot.sources,
       body: view.snapshot.body,
       title_changed: view.titleChanged || undefined,
       tags_changed: view.tagsChanged || undefined,
+      ...sourceChangesJson(view),
       diff: renderDiff(view.diff),
     });
   });
@@ -478,7 +515,7 @@ export function restRoutes(context: AppContext, callerFor: CallerFor): Hono {
     const row = await context.tables.upsertRow(
       ws,
       c.req.param("cid"),
-      { values: input.values as never },
+      { values: input.values as never, sources: input.sources ?? [] },
       by(c, input.change_note),
     );
     c.header("ETag", etag(row.version));
@@ -500,13 +537,22 @@ export function restRoutes(context: AppContext, callerFor: CallerFor): Hono {
   tables.put("/:cid/rows/:rid", async (c) => {
     const version = ifMatch(c);
     const input = await parseBody(c, schemas.row);
-    const row = await context.tables.upsertRow(
-      ws,
-      c.req.param("cid"),
-      { values: input.values as never },
-      by(c, input.change_note),
-      { id: c.req.param("rid"), expectedVersion: version },
-    );
+    if (input.sources !== undefined && input.add_sources !== undefined) {
+      throw new BadRequest("Send sources to replace the list, or add_sources to add to it, not both.", [
+        { field: "add_sources", message: "not with sources" },
+      ]);
+    }
+    const target = { id: c.req.param("rid"), ...(version === null ? {} : { expectedVersion: version }) };
+    const row =
+      input.add_sources !== undefined
+        ? await writeRow(context, c.req.param("cid"), input.values, input.add_sources, by(c, input.change_note), target)
+        : await context.tables.upsertRow(
+            ws,
+            c.req.param("cid"),
+            { values: input.values as never, ...(input.sources === undefined ? {} : { sources: input.sources }) },
+            by(c, input.change_note),
+            { id: c.req.param("rid"), expectedVersion: version },
+          );
     c.header("ETag", etag(row.version));
     return c.json(rowJson(row), version === null ? 201 : 200);
   });
@@ -570,6 +616,8 @@ export function restRoutes(context: AppContext, callerFor: CallerFor): Hono {
     return c.json({
       ...revisionSummary(view.revision),
       values: view.snapshot.values,
+      sources: view.snapshot.sources,
+      ...sourceChangesJson(view),
       diff: renderDiff(view.diff),
     });
   });

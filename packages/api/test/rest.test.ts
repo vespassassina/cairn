@@ -405,6 +405,100 @@ describe("the paths from before tables were called tables (ADR-026)", () => {
   });
 });
 
+describe("sources (ADR-027)", () => {
+  const PAPER = "https://pubmed.ncbi.nlm.nih.gov/12345/";
+  const CITE = "Smith 2021, J Pept Sci";
+
+  it("creates a page with sources, adds to them on PATCH, and replaces them on PUT", async () => {
+    const created = await call("/pages", {
+      method: "POST",
+      body: { title: "BPC-157", body: "# BPC-157\n\nA gastric peptide.", sources: [PAPER] },
+    });
+    expect(created.status).toBe(201);
+    expect(created.json["sources"]).toEqual([PAPER]);
+    const id = String(created.json["id"]);
+
+    const patched = await call(`/pages/${id}`, {
+      method: "PATCH",
+      headers: { "if-match": created.headers.get("etag")! },
+      body: { content: "", sources: [CITE, PAPER], change_note: "Cited the review" },
+    });
+    expect(patched.status).toBe(200);
+    expect(patched.json["sources"]).toEqual([PAPER, CITE]);
+    expect((await call(`/pages/${id}`)).json["body"]).toBe("# BPC-157\n\nA gastric peptide.");
+
+    const revision = await call(`/pages/${id}/revisions/${String(patched.json["version"])}`);
+    expect(revision.json["sources_added"]).toEqual([CITE]);
+    expect(revision.json["sources_removed"]).toBeUndefined();
+
+    const markdown = await call(`/pages/${id}?format=markdown`);
+    expect(markdown.text).toContain(`sources: ${JSON.stringify([PAPER, CITE])}`);
+
+    const kept = await call(`/pages/${id}`, {
+      method: "PUT",
+      headers: { "if-match": patched.headers.get("etag")! },
+      body: { title: "BPC 157", body: "Retitled." },
+    });
+    expect(kept.json["sources"]).toEqual([PAPER, CITE]);
+
+    const replaced = await call(`/pages/${id}`, {
+      method: "PUT",
+      headers: { "if-match": kept.headers.get("etag")! },
+      body: { title: "BPC 157", body: "Retitled.", sources: [CITE] },
+    });
+    expect(replaced.json["sources"]).toEqual([CITE]);
+    const dropped = await call(`/pages/${id}/revisions/${String(replaced.json["version"])}`);
+    expect(dropped.json["sources_removed"]).toEqual([PAPER]);
+  });
+
+  it("refuses a source too long to be a citation", async () => {
+    const response = await call("/pages", {
+      method: "POST",
+      body: { title: "Quote", body: "", sources: ["x".repeat(501)] },
+    });
+    expect(response.status).toBe(422);
+    expect(JSON.stringify(response.json)).toContain("cite it, do not quote it");
+  });
+
+  it("replaces a row's sources with sources, adds with add_sources, and refuses both", async () => {
+    const table = await call("/tables", {
+      method: "POST",
+      body: { name: "Peptides", fields: [{ name: "name", type: "text", required: true }] },
+    });
+    const cid = String(table.json["id"]);
+    const created = await call(`/tables/${cid}/rows`, {
+      method: "POST",
+      body: { values: { name: "BPC-157" }, sources: [PAPER] },
+    });
+    expect(created.json["sources"]).toEqual([PAPER]);
+    const rid = String(created.json["id"]);
+
+    const added = await call(`/tables/${cid}/rows/${rid}`, {
+      method: "PUT",
+      headers: { "if-match": created.headers.get("etag")! },
+      body: { values: { name: "BPC-157" }, add_sources: [CITE] },
+    });
+    expect(added.status).toBe(200);
+    expect(added.json["sources"]).toEqual([PAPER, CITE]);
+
+    const both = await call(`/tables/${cid}/rows/${rid}`, {
+      method: "PUT",
+      headers: { "if-match": added.headers.get("etag")! },
+      body: { values: { name: "BPC-157" }, sources: [], add_sources: [CITE] },
+    });
+    expect(both.status).toBe(400);
+
+    const cleared = await call(`/tables/${cid}/rows/${rid}`, {
+      method: "PUT",
+      headers: { "if-match": added.headers.get("etag")! },
+      body: { values: { name: "BPC-157" }, sources: [] },
+    });
+    expect(cleared.json["sources"]).toEqual([]);
+    const revision = await call(`/tables/${cid}/rows/${rid}/revisions/${String(cleared.json["version"])}`);
+    expect(revision.json["sources_removed"]).toEqual([PAPER, CITE]);
+  });
+});
+
 describe("changes feed", () => {
   it("lists changes newest first, filters by actor, and stops at since", async () => {
     const first = await createBuildLog();

@@ -53,6 +53,7 @@ CREATE TABLE IF NOT EXISTS pages (
   parent_id    TEXT,
   tags         TEXT NOT NULL,
   body         TEXT NOT NULL,
+  sources      TEXT NOT NULL DEFAULT '[]',
   created_at   TEXT NOT NULL,
   updated_at   TEXT NOT NULL,
   updated_by   TEXT NOT NULL DEFAULT '${LEGACY_ACTOR}',
@@ -113,6 +114,7 @@ CREATE TABLE IF NOT EXISTS rows_ (
   collection_id TEXT NOT NULL,
   id            TEXT NOT NULL,
   values_       TEXT NOT NULL,
+  sources       TEXT NOT NULL DEFAULT '[]',
   created_at    TEXT NOT NULL,
   updated_at    TEXT NOT NULL,
   updated_by    TEXT NOT NULL DEFAULT '${LEGACY_ACTOR}',
@@ -128,6 +130,7 @@ interface PageRecord {
   parent_id: string | null;
   tags: string;
   body: string;
+  sources: string;
   created_at: string;
   updated_at: string;
   updated_by: string;
@@ -151,6 +154,7 @@ interface RowRecord {
   collection_id: string;
   id: string;
   values_: string;
+  sources: string;
   created_at: string;
   updated_at: string;
   updated_by: string;
@@ -223,6 +227,7 @@ function toPage(record: PageRecord): Page {
     parentId: record.parent_id,
     tags: JSON.parse(record.tags) as string[],
     body: record.body,
+    sources: JSON.parse(record.sources) as string[],
     createdAt: record.created_at,
     updatedAt: record.updated_at,
     updatedBy: JSON.parse(record.updated_by) as Actor,
@@ -250,6 +255,7 @@ function toRow(record: RowRecord): Row {
     workspaceId: record.workspace_id,
     tableId: record.collection_id,
     values: JSON.parse(record.values_) as Row["values"],
+    sources: JSON.parse(record.sources) as string[],
     createdAt: record.created_at,
     updatedAt: record.updated_at,
     updatedBy: JSON.parse(record.updated_by) as Actor,
@@ -313,6 +319,10 @@ export class SqliteDocumentStore implements DocumentStore {
       if (table === "collections" && !columns.some((column) => column.name === "parent_id")) {
         this.db.exec("ALTER TABLE collections ADD COLUMN parent_id TEXT");
       }
+      // Pages and rows gained sources (ADR-027).
+      if (table !== "collections" && !columns.some((column) => column.name === "sources")) {
+        this.db.exec(`ALTER TABLE ${table} ADD COLUMN sources TEXT NOT NULL DEFAULT '[]'`);
+      }
     }
     this.db.exec(SCHEMA);
   }
@@ -347,6 +357,7 @@ export class SqliteDocumentStore implements DocumentStore {
       parentId: input.parentId ?? null,
       tags: input.tags ?? [],
       body: input.body,
+      sources: input.sources ?? [],
       createdAt: existing?.createdAt ?? meta.at,
       updatedAt: meta.at,
       updatedBy: meta.actor,
@@ -358,7 +369,7 @@ export class SqliteDocumentStore implements DocumentStore {
     const applied = existing
       ? this.db
           .prepare(
-            `UPDATE pages SET title = ?, parent_id = ?, tags = ?, body = ?,
+            `UPDATE pages SET title = ?, parent_id = ?, tags = ?, body = ?, sources = ?,
              updated_at = ?, updated_by = ?, version = ?
              WHERE workspace_id = ? AND id = ? AND version = ?`,
           )
@@ -367,6 +378,7 @@ export class SqliteDocumentStore implements DocumentStore {
             page.parentId,
             JSON.stringify(page.tags),
             page.body,
+            JSON.stringify(page.sources),
             page.updatedAt,
             JSON.stringify(page.updatedBy),
             page.version,
@@ -377,8 +389,8 @@ export class SqliteDocumentStore implements DocumentStore {
       : this.db
           .prepare(
             `INSERT OR IGNORE INTO pages
-             (workspace_id, id, title, parent_id, tags, body, created_at, updated_at, updated_by, version)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             (workspace_id, id, title, parent_id, tags, body, sources, created_at, updated_at, updated_by, version)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           )
           .run(
             workspaceId,
@@ -387,6 +399,7 @@ export class SqliteDocumentStore implements DocumentStore {
             page.parentId,
             JSON.stringify(page.tags),
             page.body,
+            JSON.stringify(page.sources),
             page.createdAt,
             page.updatedAt,
             JSON.stringify(page.updatedBy),
@@ -622,6 +635,7 @@ export class SqliteDocumentStore implements DocumentStore {
       workspaceId,
       tableId,
       values: input.values,
+      sources: input.sources ?? [],
       createdAt: existing?.createdAt ?? meta.at,
       updatedAt: meta.at,
       updatedBy: meta.actor,
@@ -631,11 +645,12 @@ export class SqliteDocumentStore implements DocumentStore {
     const applied = existing
       ? this.db
           .prepare(
-            `UPDATE rows_ SET values_ = ?, updated_at = ?, updated_by = ?, version = ?
+            `UPDATE rows_ SET values_ = ?, sources = ?, updated_at = ?, updated_by = ?, version = ?
              WHERE workspace_id = ? AND collection_id = ? AND id = ? AND version = ?`,
           )
           .run(
             JSON.stringify(row.values),
+            JSON.stringify(row.sources),
             row.updatedAt,
             JSON.stringify(row.updatedBy),
             row.version,
@@ -647,14 +662,15 @@ export class SqliteDocumentStore implements DocumentStore {
       : this.db
           .prepare(
             `INSERT OR IGNORE INTO rows_
-             (workspace_id, collection_id, id, values_, created_at, updated_at, updated_by, version)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+             (workspace_id, collection_id, id, values_, sources, created_at, updated_at, updated_by, version)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           )
           .run(
             workspaceId,
             tableId,
             id,
             JSON.stringify(row.values),
+            JSON.stringify(row.sources),
             row.createdAt,
             row.updatedAt,
             JSON.stringify(row.updatedBy),
