@@ -13,6 +13,12 @@ Rules:
 
 ## 2026-09-14
 
+### The table inside Peptides is Peptides Index
+
+> "rename the inner peptide table to Peptides Index"
+
+This settles the name clash left open on 2026-09-13, where the Peptides collection held a table also called Peptides. Landed in: the changelog entry "The Peptides table is now Peptides Index".
+
 ### Provenance: sources on every write
 
 > "next item"

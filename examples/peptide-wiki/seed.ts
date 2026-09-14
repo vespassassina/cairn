@@ -14,7 +14,7 @@ import type { TableInput, PageInput, WriteContext } from "@cairn/core";
  * 2. A Stacks page, with a page per stack beneath it.
  * 3. `related`, stack components and mixing notes become `[[page-id]]` links,
  *    so backlinks and neighbours have a real graph to walk.
- * 4. Peptides and Stacks tables, one row each, for query_table.
+ * 4. Peptides Index and Stacks tables, one row each, for query_table.
  *
  * Idempotent. Ids are derived from the wiki's slugs, and existing records are
  * updated with their current version, so re-running it after the wiki changes
@@ -285,7 +285,7 @@ async function main(): Promise<void> {
     }
 
     const schema: TableInput = {
-      name: "Peptides",
+      name: "Peptides Index",
       fields: [
         { name: "name", type: "text", required: true },
         { name: "full_name", type: "text" },

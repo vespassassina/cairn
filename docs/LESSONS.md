@@ -34,6 +34,8 @@ Each entry answers four questions:
 3. **Fix.** A shell function.
 4. **Lesson.** The same as before: a function, never a variable, for a repeated command. Read this file before scripting in the shell here.
 
+Later the same day, `grep --include=*.ts` failed with "no matches found", the empty-glob half of the same entry. Quoting the pattern fixed it.
+
 ## 2026-09-13
 
 ### A bulk rename silently did nothing, twice

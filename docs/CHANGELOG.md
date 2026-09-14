@@ -6,6 +6,12 @@ Entries link to the ADR when there is one. A change of direction that has no ADR
 
 ## 2026-09-14
 
+### The Peptides table is now Peptides Index
+
+The owner's answer to the name clash left open on 2026-09-13: the Peptides collection held a table also called Peptides. The table `col_peptides` was renamed Peptides Index, and the collection's front page (`pg_peptides`) now says "The Peptides Index table has one row per peptide", as a revision with a change note. The id did not change, so the Stacks table's links to its rows, and every `[[col_peptides/...]]` link, still work. The peptide wiki seed (`examples/peptide-wiki/seed.ts`) uses the new name, so reseeding does not rename it back.
+
+Done through the REST API on the laptop's copy. It reaches Azure with the next `cairn sync`, which the agent's permissions did not allow it to run; the owner runs it.
+
 ### Pages and rows say where their facts came from (ADR-027)
 
 The roadmap's provenance item. Agents write most of what Cairn holds, and the change note said why a write happened but not where its facts came from. The owner chose a list of sources on each page and row, added to by each write, optional but prompted, each one a URL or a short citation.
