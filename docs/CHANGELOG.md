@@ -6,6 +6,12 @@ Entries link to the ADR when there is one. A change of direction that has no ADR
 
 ## 2026-09-14
 
+### Edit times and merging deployed to Azure
+
+The owner deployed the image built from the ADR-030 change (`ghcr.io/vespassassina/cairn@sha256:26d7b601...`, revision `cairn--0000014`) and ran `cairn sync` between the laptop and Azure, dry run first. Checked afterwards, read-only: `/health` answers 0.1.4, the container app runs that digest, and a second dry run found the two copies the same, 186 records.
+
+ADR-030 decision 8 said the CLI shows `edited_at`; it does not. Only sync reads and writes it, and the CLI prints what it printed before, like MCP. The ADR was wrong, not the code, and now says so, with why.
+
 ### Sync keeps the order of edits and merges both sides, as git does
 
 The owner's direction that sync keep order and settle conflicts the way git does, built after "then keep building" with defaults the agent chose (ADR-030, `docs/DIRECTIONS.md`).
