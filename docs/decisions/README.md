@@ -42,6 +42,7 @@ A decision that changes is not edited away. Add a new ADR that supersedes it, an
 | [032](ADR-032.md) | A collection can be published, read-only and without sign-in | accepted, amends 017 | 2026-09-14 |
 | [033](ADR-033.md) | A refresh token answers a repeat for one minute before it counts as theft | accepted | 2026-09-14 |
 | [034](ADR-034.md) | A public Cairn describes itself at /.well-known/cairn.json | accepted | 2026-09-14 |
+| [035](ADR-035.md) | cairn export can write a static site, no server required | accepted | 2026-09-14 |
 
 ## Writing one
 

@@ -283,6 +283,34 @@ describe("cairn export and import", () => {
     expect(stderr).toContain("cairn-export.json");
   });
 
+  it("writes a static site as HTML, with relative links and a sitemap (ADR-035)", async () => {
+    expect(await cairn(source, "export", folder, "--format", "site")).toBe(0);
+    expect(stdout).toContain("exported 4 pages as a static site");
+
+    const index = await readFile(join(folder, "index.html"), "utf8");
+    expect(index).toContain('<a href="pages/recovery-healing.html">Recovery &amp; healing</a>');
+    expect(index).toContain('<a href="pages/longevity.html">Longevity</a>');
+
+    const bpc = await readFile(join(folder, "pages", "recovery-healing", "bpc-157.html"), "utf8");
+    expect(bpc).toContain("<h1>BPC-157</h1>");
+    expect(bpc).toContain('<a href="tb-500.html">TB-500</a>');
+    expect(bpc).toContain('<a href="../recovery-healing.html">Recovery &amp; healing</a>');
+
+    expect(await readdir(join(folder, "tables")).catch(() => null)).toBeNull();
+
+    await rm(join(folder, ".."), { recursive: true, force: true });
+    folder = join(await mkdtemp(join(tmpdir(), "cairn-export-test-")), "export");
+    expect(await cairn(source, "export", folder, "--format", "site", "--site-url", "https://wiki.example.com/")).toBe(0);
+    const sitemap = await readFile(join(folder, "sitemap.xml"), "utf8");
+    expect(sitemap).toContain("<loc>https://wiki.example.com/index.html</loc>");
+    expect(sitemap).toContain("<loc>https://wiki.example.com/pages/longevity.html</loc>");
+  });
+
+  it("refuses an unknown --format", async () => {
+    expect(await cairn(source, "export", folder, "--format", "pdf")).toBe(2);
+    expect(stderr).toContain('--format must be "cairn" or "site"');
+  });
+
   it("keeps a table's place in the tree and its row links (ADR-024)", async () => {
     const ws = source.workspaceId;
     await source.tables.create(

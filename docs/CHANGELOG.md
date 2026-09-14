@@ -6,6 +6,14 @@ Entries link to the ADR when there is one. A change of direction that has no ADR
 
 ## 2026-09-14
 
+### A static site export, no server required
+
+The owner picked this off the roadmap next: `cairn export` gains a site format (ADR-035). `cairn export <folder> --format site` writes a folder of plain HTML instead of Markdown, openable by double-click or put on GitHub Pages, an Azure Blob Storage static website, Amazon S3, Google Cloud Storage or Dropbox, at no hosting cost and with no Cairn running.
+
+The reason it needed its own ADR rather than being an obvious extra flag: today's Markdown export already goes into a GitHub repository, which renders Markdown, but a wiki link like `[[pg_bpc-157|TB-500]]` points at a page id GitHub's renderer cannot resolve, so it never becomes a clickable link (ADR-016, consequence 4). The site format fixes that by resolving every wiki link to the other page's real, relative `.html` path, the same way the export's folder layout already places pages (`assignPaths`). Each page keeps a breadcrumb trail to the root, its rendered body, its sources as visible, clickable citations, and its own children; `index.html` lists the top-level collections, and `--site-url` writes a `sitemap.xml` with absolute addresses.
+
+Rendering is a small, self-written Markdown-to-HTML subset in a new CLI module, `packages/cli/src/site-format.ts`, checked against what `examples/peptide-wiki` actually contains: headings, paragraphs, bold, italic, inline code, fenced code, lists, links and wiki links. Not `markdown-it`: hard rule 16 does not let the CLI depend on it without checking both the Node and Bun-compiled builds, and this covers what the content needs. Tables are not part of this format yet; the default `cairn` format's `--tables` still writes them as JSON.
+
 ### A public Cairn describes itself
 
 The next step past the published wiki (ADR-032), and the first item on "Bridges between Cairns" (`docs/ROADMAP.md`, ADR-034): every other discovery item, the registry, discovery by following citations, "cited by" notices, needs a machine-readable place a Cairn says what it is, and now there is one.

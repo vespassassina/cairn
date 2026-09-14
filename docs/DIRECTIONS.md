@@ -13,6 +13,12 @@ Rules:
 
 ## 2026-09-14
 
+### Which roadmap item next: static site export
+
+> "commit and next item"
+
+Asked to choose again from the roadmap's "Bridges between Cairns" section, the owner picked "Static site export" over citations kept correct and links to the original across Cairns. Landed in: ADR-035, `cairn export --format site`.
+
 ### Which roadmap item next: a Cairn describes itself
 
 > "next item"

@@ -18,6 +18,7 @@ import {
   type ExportPage,
   type Manifest,
 } from "./export-format.js";
+import { indexPages, renderIndex, renderPage, sitemapXml, sitePaths, trailOf } from "./site-format.js";
 import { checkInstance, firstReachable, instancesPath, isLoopback, loadInstances, reachable, saveInstances, type Instance } from "./instances.js";
 import { credentialsPath, login, logout, NoSignIn, storedToken } from "./login.js";
 import {
@@ -118,6 +119,8 @@ Tables
 
 Your data
   cairn export <folder> [--root PAGE] [--tables]        Markdown files and JSON, readable without Cairn
+  cairn export <folder> --format site [--site-url URL]  a folder of HTML, openable by double-click or a
+                                                        static host; --site-url also writes a sitemap.xml
   cairn import <folder> [--dry-run]                     read an export back in, keeping ids; safe to repeat
   cairn sync <url-a> <url-b> [--every 5m] [--dry-run]   keep two Cairns the same; edits made on both
                                                         merge as in git, and where both changed the same
@@ -173,6 +176,8 @@ const OPTIONS = {
   people: { type: "boolean" },
   root: { type: "string" },
   tables: { type: "boolean" },
+  format: { type: "string" },
+  "site-url": { type: "string" },
   // The names before ADR-026, kept so scripts that use them still work.
   collections: { type: "boolean" },
   force: { type: "boolean" },
@@ -953,6 +958,10 @@ export async function run(argv: string[], io: Io): Promise<number> {
 
       case "export": {
         const target = need(args[0], "a folder to export into");
+        const format = flags.format ?? "cairn";
+        if (format !== "cairn" && format !== "site") {
+          throw new UsageError(`--format must be "cairn" or "site", not "${format}"`);
+        }
         const existing = await readdir(target).catch(() => null);
         if (existing && existing.length > 0 && !flags.force) {
           throw new UsageError(`${target} is not empty. Pick a new folder, or pass --force to write into it`);
@@ -971,6 +980,28 @@ export async function run(argv: string[], io: Io): Promise<number> {
 
         // The root's parent is outside this export, so it becomes top level.
         if (flags.root && pages[0]) pages[0] = { ...pages[0], parent_id: null };
+
+        if (format === "site") {
+          const pathOf = sitePaths(pages);
+          const { childrenOf, roots } = indexPages(pages);
+          const byId = new Map(pages.map((page) => [page.id, page]));
+          await mkdir(target, { recursive: true });
+          for (const page of pages) {
+            const path = pathOf.get(page.id)!;
+            const file = join(target, path);
+            await mkdir(dirname(file), { recursive: true });
+            const trail = trailOf(page, byId);
+            await writeFile(file, renderPage({ page, path, pathOf, childrenOf, trail }), "utf8");
+          }
+          await writeFile(join(target, "index.html"), renderIndex(roots, pathOf), "utf8");
+          if (flags["site-url"]) {
+            await writeFile(join(target, "sitemap.xml"), sitemapXml(pages, pathOf, flags["site-url"]), "utf8");
+          }
+          out({ format: "site", pages: pages.length, target } as unknown as Json, () =>
+            `exported ${pages.length} pages as a static site to ${target}\n`,
+          );
+          return 0;
+        }
 
         const paths = assignPaths(pages);
         for (const page of pages) {
