@@ -12,7 +12,7 @@ Cairn (working name): a source-available, self-hosted wiki and table store where
 
 ## Current phase
 
-Phase 0 is done apart from the eval set (spike S1 was dropped by ADR-020). Phase 1 (MCP only, used daily) is under way locally. Live status is in `docs/ROADMAP.md`.
+Phase 0 is done: the eval set was finished on 2026-09-14, and spike S1 was dropped by ADR-020. Phase 1 (MCP only, used daily) is under way locally. Live status is in `docs/ROADMAP.md`.
 
 Do not write editor code until Phase 1 passes its gate (see PRD section 14). The one exception is the review console (ADR-009), a server-rendered screen for reviewing, navigating, editing and restoring. Keep it inside the scope limits that ADR sets: no rich editor, no table views beyond a plain table, no client-side application.
 

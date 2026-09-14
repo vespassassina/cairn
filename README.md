@@ -6,6 +6,8 @@ Source-available and self-hosted: free for any non-commercial use. Agents write 
 
 Search finds pages by keyword and by meaning, with a small model that runs inside Cairn: no API key, and nothing leaves your server. Search by meaning works for English only; other languages get keyword search (ADR-021, ADR-022).
 
+On a real 104-page wiki, with a set of 32 queries and their expected pages in `eval/queries.yaml`, search finds an answer in the top 5 for 97 percent of them (keyword alone: 88 percent), and returns nothing at all for the 9 questions the wiki does not answer. Run `pnpm eval` on your own Cairn to get your number.
+
 Three doors for agents, over one core:
 
 | Door | For | Context cost per session |

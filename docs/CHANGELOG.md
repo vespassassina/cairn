@@ -6,6 +6,14 @@ Entries link to the ADR when there is one. A change of direction that has no ADR
 
 ## 2026-09-14
 
+### The eval set is finished, and search has a published number
+
+The last Phase 0 item, and the launch checklist's. `eval/queries.yaml` had 16 queries with expected pages out of the 30 the PRD asks for, plus two placeholders about drones and 3D printing left over from before there was any content. The placeholders are gone, and 14 queries are added, written from the wiki's text with their expected pages chosen before any of them was run, because a query written while watching the results measures nothing. They cover what the first 14 did not: brand names, a misspelling, a question about two peptides together, and needs described without naming anything.
+
+The number, on the 104-page peptide wiki with SQLite and FTS5: **recall@5 of 0.97 with keyword and meaning together, 0.88 on keyword alone**, over 32 scored queries, and 9 of 9 for the questions the wiki does not answer, in both modes. Above the PRD's 0.8 target and its 0.9 stretch. It is now in the README, with the two cautions in PRD section 11: four conversational queries were used while choosing the vector margin in ADR-022, and one query is missed in both modes.
+
+That miss is a finding, and on the roadmap: "which peptide makes you really hungry" returns the appetite suppressants. Eighteen pages talk about appetite and nothing in the text marks the direction, so neither keyword nor vector search can tell wanting it from stopping it.
+
 ### A new page starts under the page you are reading
 
 The owner's direction (`docs/DIRECTIONS.md`). In the console, "New page" in the header started a page at the top level wherever you were, so making a child page meant finding the parent again in a long list. It now carries the page you are on: on a page, its history or one of its old versions, the button goes to `/new?parent=<that page>`, and the form starts with that parent chosen.

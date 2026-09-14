@@ -2,17 +2,12 @@
 # Write these before tuning search. Use things you have genuinely wanted to find.
 # recall@5 = share of queries where at least one expected page appears in the top 5.
 
+# q01 and q02 were placeholders about drones and 3D printing, written before
+# there was a workspace. Nothing in Cairn answers them, so they scored nothing
+# and made the set look larger than it was. Removed on 2026-09-14; n05 keeps a
+# 3D printing query, where it belongs, among the ones with no answer.
+
 queries:
-  - id: q01
-    query: "which ESC firmware did I flash on the 5 inch build"
-    expected: []   # page ids, filled once pages exist
-    lang: en
-    notes: "exact term recall"
-  - id: q02
-    query: "prints that failed on first layer"
-    expected: []
-    lang: en
-    notes: "synonym test: warping, adhesion"
 
   # q03 to q16: written by the agent on 2026-09-12 from the peptide wiki seed,
   # each checked against the wiki text. They measure search on real content
@@ -90,6 +85,80 @@ queries:
     notes: "product name only in a stack title"
 
   # q17 to q30: for the owner, from real searches
+
+  # q17 to q30: written by the agent on 2026-09-14 to finish the set of 30 the
+  # launch checklist asks for. Each was written from the wiki's text, and its
+  # expected pages chosen from that text, before any of them was run: a query
+  # written while watching the results measures nothing. They lean on the cases
+  # q03 to q16 do not cover: brand names, misspellings, a question about two
+  # peptides together, and needs described without naming anything.
+  - id: q17
+    query: "which peptide makes you really hungry"
+    expected: [pg_ghrp-6]
+    lang: en
+    notes: "18 pages mention appetite; only this one is about causing it"
+  - id: q18
+    query: "Vyleesi"
+    expected: [pg_pt-141]
+    lang: en
+    notes: "brand name, on one page"
+  - id: q19
+    query: "growth hormone without injections"
+    expected: [pg_mk-677]
+    lang: en
+    notes: "the need, not the name; the page says orally active"
+  - id: q20
+    query: "Khavinson peptide for the liver"
+    expected: [pg_livagen]
+    lang: en
+    notes: "a family of 16 near-identical pages, one organ apart"
+  - id: q21
+    query: "banned in sport by WADA"
+    expected: [pg_aicar]
+    lang: en
+    notes: "one page carries the term"
+  - id: q22
+    query: "healing a stress fracture"
+    expected: [pg_teriparatide]
+    lang: en
+    notes: "the term is on one page, inside a sentence about bone"
+  - id: q23
+    query: "can I take BPC-157 and TB-500 together"
+    expected: [pg_stack_bpc-157-tb-500, pg_bpc-157, pg_tb-500]
+    lang: en
+    notes: "a question about two things at once; the stack page is the best answer"
+  - id: q24
+    query: "peptide for IBD gut inflammation"
+    expected: [pg_kpv, pg_bpc-157]
+    lang: en
+  - id: q25
+    query: "stop hair loss"
+    expected: [pg_ahk-cu, pg_ptd-dbm, pg_zinc-thymulin]
+    lang: en
+    notes: "three pages, none of them titled anything about hair"
+  - id: q26
+    query: "keep fertility while on testosterone replacement"
+    expected: [pg_gonadorelin, pg_hcg]
+    lang: en
+  - id: q27
+    query: "GH peptide without the cortisol and prolactin spikes"
+    expected: [pg_ipamorelin]
+    lang: en
+    notes: "the distinguishing sentence is on the page, in those words"
+  - id: q28
+    query: "the one that damaged kidneys in trials"
+    expected: [pg_adipotide]
+    lang: en
+    notes: "five pages mention kidneys; one was pulled over them"
+  - id: q29
+    query: "telomerase"
+    expected: [pg_epithalon]
+    lang: en
+  - id: q30
+    query: "semaglutid"
+    expected: [pg_semaglutide]
+    lang: en
+    notes: "misspelling: one letter short of the title"
 
   # n01 to n06: questions the peptide wiki has no answer to, added by the agent
   # on 2026-09-12 (ADR-021). `expected: none` means the right result is no

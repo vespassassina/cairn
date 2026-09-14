@@ -276,7 +276,11 @@ Status 2026-09-12: Azure uses Container Apps and Blob Storage instead of Functio
 
 ## 11. Evaluation
 
-`eval/queries.yaml` holds 30 real queries with expected page ids. Written before any search tuning, by me, from things I have actually wanted to find.
+`eval/queries.yaml` holds the queries and the pages that answer them. Each was written from the content, and its expected pages chosen, before it was ever run: a query written while watching the results measures nothing.
+
+As of 2026-09-14 it holds 32 queries with expected pages, plus 9 questions the workspace does not answer, where returning nothing is the right result (ADR-021). Measured against the 104-page peptide wiki, on SQLite with FTS5: recall@5 of 0.97 with meaning and keyword together, 0.88 on keyword alone, and 9 of 9 for the questions with no answer in both. That is above the 0.8 target and the 0.9 stretch in section 10.
+
+Two cautions when reading it. The four conversational queries (h01 to h04) were used while choosing the vector margin in ADR-022, so they show what search by meaning adds rather than prove it generalises. And one query is still missed in both modes: "which peptide makes you really hungry" returns the appetite suppressants, because the wiki talks about appetite on 18 pages and nothing in the text marks the direction.
 
 Run after every change to chunking, indexing, weights or embedding model. No search change merges without a before and after number.
 

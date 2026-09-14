@@ -13,6 +13,12 @@ Rules:
 
 ## 2026-09-14
 
+### Finish the eval set and publish the number
+
+> "implement next"
+
+Said after the console change landed, with the roadmap's "next" rows in front of us. The oldest of them was the one Phase 0 item still open and the one blocking any claim about search, so that is what was done. Landed in: 14 new queries in `eval/queries.yaml`, the two placeholders removed, and recall@5 published in the README and PRD section 11.
+
 ### A new page starts under the page you are reading
 
 > "in cairn web, when i click create a new page and i am inside a page, it should default to that. note and then implement next"

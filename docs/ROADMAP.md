@@ -14,7 +14,7 @@ Status key: done, in progress, next, later, blocked.
 | Documentation logs | done | Directions, decisions, changelog, lessons. `docs/README.md` maps them |
 | Spike S2: MCP transport shape | done | Web-standard transport, one server per request. ADR-006 |
 | Spike S1: Hono on Azure Functions | dropped | ADR-020: Functions is no longer a target |
-| Eval query set, 30 real queries | in progress | 16 of 30: 14 written by the agent from the wiki, recall@5 1.00 on them, plus 6 with no answer (ADR-021). 14 left for the owner, from real searches |
+| Eval query set, 30 real queries | done | 2026-09-14: 32 queries with expected pages, plus 9 with no answer (ADR-021). The two placeholders about drones and 3D printing, which nothing answered, were removed. Every query was written from the content and scored before it was run |
 
 ## Phase 1: MCP only, used daily
 
@@ -32,6 +32,7 @@ Status key: done, in progress, next, later, blocked.
 | Daily use from Claude Code | in progress | Server added with `--scope user`. Watch agent writes in the console (ADR-011 consequence 4) |
 | Semantic search: sqlite-vec and a model in the container | done | ADR-022. English only. Hybrid recall@5 1.00 against keyword 0.83, no-answer 9 of 9 in both |
 | Search precision: OR matching over-matches | done | ADR-021. Most of the words, stemmed, one chunk per page first. No-answer queries 0 of 6 to 6 of 6, recall@5 unchanged at 1.00 |
+| Search does not know direction | later | Found while finishing the eval set on 2026-09-14. "Which peptide makes you really hungry" returns the appetite suppressants: 18 pages talk about appetite and nothing in the text says which way. Both modes miss it, and it is the only miss in the set. A fix probably means the model seeing more of the sentence around a match, not another weight |
 | Cosmos adapter | later, on a trigger | ADR-020: only if more than one instance, a slow cold restore, or the write-loss window matters |
 | Own-server deploy (Proxmox, NAS, Docker) | done | ADR-020. `deploy/docker/`, database on a mounted local volume. CI starts it with one; not yet run on Proxmox |
 | OAuth server | done | ADR-017. GitHub or any OpenID Connect provider, consent page, CLI login. 23 end-to-end tests. Proven with claude.ai after a deploy |
@@ -80,7 +81,7 @@ Added on 2026-09-14, from the owner's question of why anyone would choose Cairn 
 | Public wiki: read-only and indexable by search engines | later | The owner's direction of 2026-09-14: Cairn as a knowledge manager and also a free knowledge source. The owner marks a collection public; its pages are then served as plain HTML with no sign-in, with a title, description and canonical address on each, a `sitemap.xml` and `robots.txt`, so search engines index them. Private by default, and nothing private leaks: search, backlinks and links from a public page to a private one show nothing of it. Every other request still needs sign-in, so this amends ADR-017 and needs its own ADR. The content's licence, such as CC BY, is the owner's choice and separate from Cairn's code licence |
 | Static site export: share the wiki with no server running | later | The same direction. `cairn export` gains a site format: HTML pages with links rewritten to relative paths, an index per collection, and a sitemap, to put on GitHub Pages, an Azure Blob Storage static website, Amazon S3 static website hosting, Google Cloud Storage or Dropbox. It costs nothing to host and needs no Cairn online. Today's Markdown export can already go in a GitHub repository, which renders Markdown, but its wiki links point at ids and do not click through (ADR-016 consequence 4); rewriting them is the first step. Keeps every source as a visible citation with its link ("Bridges between Cairns" below). Pairs with the git mirror above |
 | Sharing with other people, each with their own permissions | later | PRD P2 item 6. Today a Cairn has one owner and the agents they approve; this changes the auth model (ADR-007, ADR-017) |
-| A published search-quality number from the eval set | next | The launch checklist's eval item, and the one claim about search Cairn can back with a number |
+| A published search-quality number from the eval set | done | 2026-09-14. recall@5 0.97 hybrid, 0.88 keyword, 9 of 9 no-answer, on the 104-page peptide wiki with SQLite and FTS5. In the README, with the cautions in PRD section 11 |
 
 ## Bridges between Cairns
 
@@ -104,7 +105,7 @@ Before publishing on GitHub and posting to Hacker News. From the review of 2026-
 
 | Item | Status | Notes |
 |---|---|---|
-| Eval set: 30 real queries with expected pages, and a recall@5 number | next | Blocks any claim about search |
+| Eval set: 30 real queries with expected pages, and a recall@5 number | done | 2026-09-14. 32 queries, recall@5 0.97 hybrid and 0.88 keyword, published in the README |
 | Two weeks of daily use, against the PRD kill criterion | in progress | |
 | Export (P0.7) | done | ADR-016. Markdown and JSON, whole or by root, lossless round trip |
 | One cloud target deployed, with a month of real cost | in progress | ADR-018. Deployed 2026-09-13; the month of cost runs from then. Cold start measured, about 30 s. Still to measure: the write-loss window (ADR-020) |
