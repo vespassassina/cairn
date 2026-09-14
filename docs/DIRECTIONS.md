@@ -13,6 +13,12 @@ Rules:
 
 ## 2026-09-14
 
+### A registry of public Cairns
+
+> "can we think of a registry for public cairns ? would that make sense? even an index on github, a reddit post, something to allow a search engine to pull the link and make a public one discoverable"
+
+Then, after the agent proposed three layers: "add them as roadmap". Landed in: three items in the roadmap section "Bridges between Cairns": a public Cairn describes itself at `/.well-known/cairn.json`, a registry on GitHub added to by pull request and checked by CI, and discovery by following citations. Posts on Reddit and similar sites are for announcing it, not the registry itself. Not built; each needs the public wiki first.
+
 ### Bridges, not islands: citations and links to the original
 
 > "let's also make sure we always keep citations correct and links to original content. this is the key for semantic internet across cairns. we are not going to be islands with no bridges"

@@ -6,6 +6,10 @@ Entries link to the ADR when there is one. A change of direction that has no ADR
 
 ## 2026-09-14
 
+### Roadmap: finding public Cairns
+
+The owner asked for a way to make public Cairns discoverable. Search engines need only a sitemap and links, so what a registry adds is discovery between Cairns, for people browsing by topic and for the bridges between Cairns. Three items join "Bridges between Cairns": each public Cairn describes itself in `/.well-known/cairn.json` and pings search engines through IndexNow; a registry repository on GitHub, one file per Cairn by pull request, checked by CI and published with GitHub Pages; and crawling by following the Cairns each one cites. A registry server that Cairns contact on their own was rejected: it needs someone to run and pay for it, attracts spam, and centralises the network. No code.
+
 ### Principle and roadmap: bridges between Cairns
 
 The owner's direction that citations stay correct and link to the original, so separate Cairns form a web of knowledge rather than islands. The PRD gains principle 6, "Bridges, not islands". A new roadmap section lists what that needs beyond ADR-027's sources, which already travel through export, import and sync: checking that sources still answer, a canonical address for every published page and a source pointing back when a page comes from another Cairn, citations as structured data on public pages, and an optional "cited by" notice between Cairns. No code.
