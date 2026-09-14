@@ -6,6 +6,19 @@ Entries link to the ADR when there is one. A change of direction that has no ADR
 
 ## 2026-09-14
 
+### Sync keeps the order of edits and merges both sides, as git does
+
+The owner's direction that sync keep order and settle conflicts the way git does, built after "then keep building" with defaults the agent chose (ADR-030, `docs/DIRECTIONS.md`).
+
+1. **Edit times.** Pages and rows gain `edited_at`, when their content was last edited, where it was edited. Each server's clock for it never repeats, and a record's time always moves forward by at least a millisecond, even past a time that came from a server whose clock runs ahead. `updated_at` stays the time this server stored the write. REST returns `edited_at` on pages and rows and takes an exact one on `PUT`, within a day of this server's clock; MCP does not show it, and ADR-030 says why. Stored in a new `edited_at` column, read as `updated_at` where it is empty.
+2. **Order across hops.** Sync sends each record with the time it was edited, and orders two versions by it, then by content hash on a tie. Before, a copy took the time it arrived, so an old edit relayed through a third Cairn could win over a newer one (`docs/LESSONS.md`).
+3. **Three-way merge.** When both sides changed a page or row, sync finds the version they last agreed on in each side's history, up to 50 revisions back, and merges: a body line by line with diff3, as git merges a file; title and parent as values; tags and sources as sets; row fields one by one; `verified_at` as the later time. A part both changed takes the newer edit, and the other stays in history with a note saying so. The merged record is written to each side it differs from. The newer edit still wins whole without a base, for tables, against a deletion, and for bodies too large to compare.
+4. **A half-written merge is retried.** When one of a merge's writes is refused, that record's base goes back to what it was, so the next run merges again instead of copying the unmerged side over the merged one.
+5. **Reports.** `cairn sync` prints `merged:` for a clean merge and `conflict:` with the number of parts that took the newer edit; `--dry-run` says which records will be merged. Page revisions over REST now include `parent_id`, which the merge needs to rebuild a revision's content.
+6. **Tests.** Unit tests for the merge, edit times in the services, the conformance suite and REST, and sync tests with two and three Cairns, including an edit relayed through a third that must lose to a newer one. 419 pass.
+
+Not built, and on the roadmap: history linked as one chain across instances, and a console list of sync conflicts. The Azure copy needs an image built from this change to keep edit times; until then it syncs as before.
+
 ### Roadmap: finding public Cairns
 
 The owner asked for a way to make public Cairns discoverable. Search engines need only a sitemap and links, so what a registry adds is discovery between Cairns, for people browsing by topic and for the bridges between Cairns. Three items join "Bridges between Cairns": each public Cairn describes itself in `/.well-known/cairn.json` and pings search engines through IndexNow; a registry repository on GitHub, one file per Cairn by pull request, checked by CI and published with GitHub Pages; and crawling by following the Cairns each one cites. A registry server that Cairns contact on their own was rejected: it needs someone to run and pay for it, attracts spam, and centralises the network. No code.

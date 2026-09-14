@@ -7,7 +7,7 @@ import { ValidationError } from "./errors.js";
  */
 
 /** How far ahead of this server's clock a given time may be, for clock skew. */
-const MAX_AHEAD_MS = 24 * 60 * 60 * 1000;
+export const MAX_AHEAD_MS = 24 * 60 * 60 * 1000;
 
 /**
  * A verification time as stored: an ISO 8601 timestamp in UTC, or null.

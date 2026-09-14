@@ -2,6 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { ApiError, type CairnClient } from "./client.js";
 import { orderTables, orderForImport, type ExportPage } from "./export-format.js";
+import { mergePage, mergeRow, type Prefer } from "./merge.js";
 
 /**
  * `cairn sync` (ADR-023): keep two Cairns the same.
@@ -9,8 +10,13 @@ import { orderTables, orderForImport, type ExportPage } from "./export-format.js
  * Every run reads every page, table and row from both servers and
  * compares each record with the hash both sides agreed on at the last sync.
  * A side that differs from it changed the record, and the change is copied
- * to the other side. When both changed, the newer edit wins, and the one it
- * replaces stays in that record's history on its side (ADR-008).
+ * to the other side, with the time it was edited there (ADR-030).
+ *
+ * When both changed a page or a row, `resolveMerges` finds the version they
+ * last agreed on in its history and merges the two edits, as git does: parts
+ * only one side changed keep that change, and parts both changed take the
+ * newer edit. Without that version, and for tables, the newer edit wins. The
+ * one replaced stays in that record's history on its side (ADR-008).
  *
  * `plan` is pure, so the rules are easy to test; `apply` does the writes
  * through the REST API, like any other client (ADR-013 rule 5).
@@ -35,6 +41,11 @@ export interface SyncRecord {
   hash: string;
   updatedAt: string;
   version: string;
+  /**
+   * When it was edited, where it was edited (ADR-030): what orders two
+   * edits. The update time, from a server older than edit times.
+   */
+  editedAt: string;
 }
 
 export type Snapshot = Map<string, SyncRecord>;
@@ -53,6 +64,12 @@ export interface SyncAction {
   target: SyncRecord | null;
   /** True when both sides changed it since the last sync. */
   conflict: boolean;
+  /**
+   * Set when the two edits were merged (ADR-030): the source is then the
+   * merged record, written to each side that differs from it. `parts` counts
+   * the parts both changed, which took the newer edit, from `newer`.
+   */
+  merge?: { parts: number; newer: Side };
 }
 
 export interface SyncPlan {
@@ -85,9 +102,10 @@ export async function record(
   content: Json,
   updatedAt: string,
   version: string,
+  editedAt: string = updatedAt,
 ): Promise<SyncRecord> {
   const key = kind === "row" ? `row:${tableId}/${id}` : `${kind}:${id}`;
-  return { key, kind, id, tableId, label, content, hash: await sha256(stable({ kind, content })), updatedAt, version };
+  return { key, kind, id, tableId, label, content, hash: await sha256(stable({ kind, content })), updatedAt, version, editedAt };
 }
 
 /**
@@ -104,6 +122,25 @@ function withVerified(verifiedAt: unknown): { verified_at?: string } {
   return typeof verifiedAt === "string" && verifiedAt !== "" ? { verified_at: verifiedAt } : {};
 }
 
+/** A page's content in the shape sync compares, from a page or a revision of one. */
+function pageContent(page: Json): Json {
+  return {
+    title: page["title"],
+    parent_id: page["parent_id"] ?? null,
+    tags: page["tags"] ?? [],
+    body: page["body"],
+    ...withSources(page["sources"]),
+    ...withVerified(page["verified_at"]),
+  };
+}
+
+function rowContent(row: Json): Json {
+  return { values: row["values"], ...withSources(row["sources"]) };
+}
+
+/** The edit time a server sent, or its update time if it is older than edit times. */
+const editedAt = (item: Json) => String(item["edited_at"] ?? item["updated_at"]);
+
 /** Every page, table and row on one server. */
 export async function readSide(client: CairnClient): Promise<Snapshot> {
   const snapshot: Snapshot = new Map();
@@ -116,15 +153,7 @@ export async function readSide(client: CairnClient): Promise<Snapshot> {
       `/export/pages?limit=100${cursor === null ? "" : `&cursor=${encodeURIComponent(cursor)}`}`,
     );
     for (const page of list(json?.["pages"])) {
-      const content = {
-        title: page["title"],
-        parent_id: page["parent_id"] ?? null,
-        tags: page["tags"] ?? [],
-        body: page["body"],
-        ...withSources(page["sources"]),
-        ...withVerified(page["verified_at"]),
-      };
-      add(await record("page", String(page["id"]), null, String(page["title"]), content, String(page["updated_at"]), String(page["version"])));
+      add(await record("page", String(page["id"]), null, String(page["title"]), pageContent(page), String(page["updated_at"]), String(page["version"]), editedAt(page)));
     }
     cursor = (json?.["cursor"] as string | null) ?? null;
   } while (cursor !== null);
@@ -143,7 +172,7 @@ export async function readSide(client: CairnClient): Promise<Snapshot> {
       );
       for (const row of list(page.json?.["rows"])) {
         const rid = String(row["id"]);
-        add(await record("row", rid, cid, `${name} / ${rid}`, { values: row["values"], ...withSources(row["sources"]) }, String(row["updated_at"]), String(row["version"])));
+        add(await record("row", rid, cid, `${name} / ${rid}`, rowContent(row), String(row["updated_at"]), String(row["version"]), editedAt(row)));
       }
       rowCursor = (page.json?.["cursor"] as string | null) ?? null;
     } while (rowCursor !== null);
@@ -151,7 +180,18 @@ export async function readSide(client: CairnClient): Promise<Snapshot> {
   return snapshot;
 }
 
-/** What to write where, by the rules in ADR-023 decision 1. */
+/**
+ * Which of two edits of one record is newer: the later edit time, and on a
+ * tie the larger hash, so both directions of a sync pick the same one.
+ */
+export function newer(a: SyncRecord, b: SyncRecord): Side {
+  const ta = Date.parse(a.editedAt);
+  const tb = Date.parse(b.editedAt);
+  if (ta !== tb) return ta > tb ? "a" : "b";
+  return a.hash >= b.hash ? "a" : "b";
+}
+
+/** What to write where, by the rules in ADR-023 decision 1 and ADR-030. */
 export function plan(a: Snapshot, b: Snapshot, base: Base): SyncPlan {
   const actions: SyncAction[] = [];
   const agreed: Base = {};
@@ -181,7 +221,7 @@ export function plan(a: Snapshot, b: Snapshot, base: Base): SyncPlan {
       conflict = ra !== null && rb !== null ? true : last !== null;
       if (ra === null) from = "b";
       else if (rb === null) from = "a";
-      else from = Date.parse(ra.updatedAt) >= Date.parse(rb.updatedAt) ? "a" : "b";
+      else from = newer(ra, rb);
     }
 
     const source = from === "a" ? ra : rb;
@@ -192,9 +232,86 @@ export function plan(a: Snapshot, b: Snapshot, base: Base): SyncPlan {
   return { actions, base: agreed };
 }
 
+/** How far back in a record's history to look for the version both sides last agreed on. */
+export const MAX_BASE_SEARCH = 50;
+
+const recordPath = (item: SyncRecord) =>
+  item.kind === "page"
+    ? `/pages/${encodeURIComponent(item.id)}`
+    : `/tables/${encodeURIComponent(item.tableId!)}/rows/${encodeURIComponent(item.id)}`;
+
+/**
+ * The content a record had when its hash was `hash`, from its history on
+ * one server, or null when that version is not there: pruned, or older than
+ * {@link MAX_BASE_SEARCH} writes.
+ */
+async function findBase(client: CairnClient, item: SyncRecord, hash: string): Promise<Json | null> {
+  const path = recordPath(item);
+  let revisions: Json[];
+  try {
+    revisions = list((await client.request("GET", `${path}/history?limit=${MAX_BASE_SEARCH}`)).json?.["revisions"]);
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) return null;
+    throw error;
+  }
+  // The newest is the record as it is now, which changed since the base.
+  for (const revision of revisions.slice(1)) {
+    if (revision["deleted"]) continue;
+    const { json } = await client.request("GET", `${path}/revisions/${encodeURIComponent(String(revision["version"]))}`);
+    if (!json) continue;
+    const content = item.kind === "page" ? pageContent(json) : rowContent(json);
+    if ((await record(item.kind, item.id, item.tableId, item.label, content, "", "")).hash === hash) return content;
+  }
+  return null;
+}
+
+/**
+ * Turns each conflict between two edits of a page or row into a merge
+ * (ADR-030): the version both sides last agreed on is found in the record's
+ * history on either side, and the merged record is written to each side
+ * that differs from it. A conflict that cannot be merged (no base found, a
+ * table, a deletion, a body too large) stays as it is: the newer edit wins.
+ * Reads only, so a dry run can say what would be merged.
+ */
+export async function resolveMerges(syncPlan: SyncPlan, clients: Record<Side, CairnClient>, base: Base): Promise<SyncPlan> {
+  const actions: SyncAction[] = [];
+  for (const action of syncPlan.actions) {
+    const last = base[action.key];
+    if (!action.conflict || action.op !== "put" || action.kind === "table" || action.target === null || last === undefined) {
+      actions.push(action);
+      continue;
+    }
+    const from = other(action.to);
+    const ra = from === "a" ? action.source! : action.target;
+    const rb = from === "a" ? action.target : action.source!;
+    const common = (await findBase(clients.a, ra, last)) ?? (await findBase(clients.b, rb, last));
+    const prefer: Prefer = from;
+    const merged = common === null ? null : ra.kind === "page" ? mergePage(common, ra.content, rb.content, prefer) : mergeRow(common, ra.content, rb.content, prefer);
+    if (merged === null) {
+      actions.push(action);
+      continue;
+    }
+    // After both edits it merges, so it orders after each of them.
+    const time = new Date(Math.max(Date.parse(ra.editedAt), Date.parse(rb.editedAt)) + 1).toISOString();
+    const label = ra.kind === "page" ? String(merged.value["title"]) : ra.label;
+    const result = await record(ra.kind, ra.id, ra.tableId, label, merged.value, time, "", time);
+    for (const [side, current] of [["a", ra], ["b", rb]] as const) {
+      if (current.hash === result.hash) continue;
+      actions.push({ ...action, to: side, source: result, target: current, merge: { parts: merged.conflicts, newer: from } });
+    }
+  }
+  return { actions, base: syncPlan.base };
+}
+
 export interface SyncReport {
   written: Record<Side, { pages: number; tables: number; rows: number; deleted: number }>;
-  conflicts: Array<{ key: string; label: string; kept_from: string }>;
+  /**
+   * Records both sides changed. `merged`: the edits were merged, and `parts`
+   * counts the parts both changed, which kept the newer edit.
+   */
+  conflicts: Array<{ key: string; label: string; kept_from: string; merged: boolean; parts: number }>;
+  /** Records both sides changed in different parts, merged with nothing lost. */
+  merged: Array<{ key: string; label: string }>;
   warnings: string[];
   skipped: string[];
   unchanged: number;
@@ -220,13 +337,18 @@ export async function apply(
       b: { pages: 0, tables: 0, rows: 0, deleted: 0 },
     },
     conflicts: [],
+    merged: [],
     warnings: [],
     skipped: [],
     unchanged: Object.keys(syncPlan.base).length,
   };
 
+  const reported = new Set<string>();
+  // A key whose write was skipped keeps the base from before this run, even
+  // when a merge wrote it to the other side: the next run merges again.
+  const failed = new Set<string>();
   const keepPrevious = (key: string) => {
-    if (previous[key] !== undefined) base[key] = previous[key];
+    failed.add(key);
   };
 
   const write = async (action: SyncAction, run: () => Promise<unknown>) => {
@@ -246,8 +368,16 @@ export async function apply(
       if (action.kind === "page") counts.pages += 1;
       else if (action.kind === "table") counts.tables += 1;
       else counts.rows += 1;
-      if (action.conflict) {
-        report.conflicts.push({ key: action.key, label: action.source!.label, kept_from: sides[other(action.to)].url });
+      if (action.conflict && !reported.has(action.key)) {
+        reported.add(action.key);
+        const { label } = action.source!;
+        if (action.merge === undefined) {
+          report.conflicts.push({ key: action.key, label, kept_from: sides[other(action.to)].url, merged: false, parts: 0 });
+        } else if (action.merge.parts === 0) {
+          report.merged.push({ key: action.key, label });
+        } else {
+          report.conflicts.push({ key: action.key, label, kept_from: sides[action.merge.newer].url, merged: true, parts: action.merge.parts });
+        }
       }
     } else {
       delete base[action.key];
@@ -258,6 +388,12 @@ export async function apply(
   const note = (action: SyncAction) => {
     const from = sides[other(action.to)].url;
     if (action.op === "delete") return `Synced from ${from}, where it was deleted`;
+    if (action.merge !== undefined) {
+      const { parts, newer: side } = action.merge;
+      if (parts === 0) return `Merged in sync with ${from}: both changed it since the last sync, in different parts`;
+      const kept = side === action.to ? "this server's edit" : `the edit from ${from}`;
+      return `Merged in sync with ${from}. Sync conflict: ${parts === 1 ? "1 part" : `${parts} parts`} changed on both kept the newer edit, ${kept}; the version this replaced is in this record's history`;
+    }
     if (!action.conflict) return `Synced from ${from}`;
     return `Synced from ${from}. Sync conflict: this was the newer edit; the one it replaced is in this record's history`;
   };
@@ -320,7 +456,7 @@ export async function apply(
           client.request("PUT", `/pages/${encodeURIComponent(source.id)}`, {
             // Always send the list and the time, empty too, so a removal
             // reaches the other side.
-            body: { sources: [], verified_at: null, ...source.content, parent_id: parent, change_note: note(action) },
+            body: { sources: [], verified_at: null, ...source.content, parent_id: parent, edited_at: source.editedAt, change_note: note(action) },
             ifMatch,
           }),
         );
@@ -329,7 +465,7 @@ export async function apply(
           client.request(
             "PUT",
             `/tables/${encodeURIComponent(source.tableId!)}/rows/${encodeURIComponent(source.id)}`,
-            { body: { sources: [], ...source.content, change_note: note(action) }, ifMatch },
+            { body: { sources: [], ...source.content, edited_at: source.editedAt, change_note: note(action) }, ifMatch },
           ),
         );
       }
@@ -378,6 +514,10 @@ export async function apply(
     keepPrevious(action.key);
   }
 
+  for (const key of failed) {
+    if (previous[key] !== undefined) base[key] = previous[key];
+    else delete base[key];
+  }
   return { report, base };
 }
 

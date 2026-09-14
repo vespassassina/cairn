@@ -13,6 +13,13 @@ Each entry answers four questions:
 
 ## 2026-09-14
 
+### Sync ordered edits by when a copy arrived, not when it was made
+
+1. **What happened.** Designing ADR-030 showed that with three Cairns, an edit made on A before one made on C, but relayed to B after it, looked newer on B and could win when B synced with C.
+2. **Cause.** `updated_at` meant two things: when this server stored a write, and when the content was edited. Sync wrote a copy through the ordinary `PUT`, which stamped the time of the copy, and then compared those times as if they were edit times. Two servers were enough to hide it, since a copy never competed with a third server's edit.
+3. **Fix.** `edited_at` holds the time of the edit and travels with sync; `updated_at` keeps the time of storing (ADR-030).
+4. **Lesson.** When data is copied between systems, keep the time an event happened apart from the time a copy of it was stored, and test ordering with three copies, not two.
+
 ### Three releases all said they were 0.1.0
 
 1. **What happened.** Explaining to the owner how to keep the CLI updated showed that `cairn -V` printed `0.1.0`, although `v0.1.3` was the newest release. The server's `/health` said the same.

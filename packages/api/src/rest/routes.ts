@@ -1,6 +1,6 @@
 import { Hono, type Context } from "hono";
 import { z } from "zod";
-import { MAX_SOURCES, NotFoundError, type Actor, type Page, type Paged, type Revision } from "@cairn/core";
+import { MAX_SOURCES, NotFoundError, type Actor, type Page, type Paged, type Revision, type Row } from "@cairn/core";
 import type { AppContext } from "../context.js";
 import {
   tableJson,
@@ -73,6 +73,10 @@ const SOURCES = z.array(z.string()).max(MAX_SOURCES).optional();
 // A verification time, or null for never (ADR-028). Core checks it is a time.
 const VERIFIED_AT = z.string().nullable().optional();
 
+// The exact edit time, sent by sync so an edit keeps the time it was made on
+// the other server (ADR-030). Core checks it is a time.
+const EDITED_AT = z.string().optional();
+
 const schemas = {
   createPage: z.object({
     title: z.string().min(1),
@@ -105,6 +109,7 @@ const schemas = {
     // Left out, the page keeps its verification time; on a create, it counts
     // as checked if it has sources.
     verified_at: VERIFIED_AT,
+    edited_at: EDITED_AT,
     change_note: CHANGE_NOTE,
   }),
   createTable: z.object({
@@ -136,6 +141,7 @@ const schemas = {
     sources: SOURCES,
     // Added to the row's sources instead, as `cairn upsert --source` does.
     add_sources: SOURCES,
+    edited_at: EDITED_AT,
     change_note: CHANGE_NOTE,
   }),
   query: z.object({
@@ -259,6 +265,19 @@ function revisionDetail(revision: Revision): Record<string, unknown> {
   return { ...base, table_id: revision.tableId, row_id: rowId };
 }
 
+/**
+ * A page or row as REST returns it: what every surface returns, plus the
+ * edit time sync orders by (ADR-030). MCP leaves it out; agents read
+ * `updated_at`.
+ */
+function restPage(page: Page): Record<string, unknown> {
+  return { ...pageSummary(page), edited_at: page.editedAt };
+}
+
+function restRow(row: Row): Record<string, unknown> {
+  return { ...rowJson(row), edited_at: row.editedAt };
+}
+
 /** The page as Markdown with a small header, the cheapest read for an agent. */
 function pageMarkdown(page: Page): string {
   return [
@@ -339,7 +358,7 @@ export function restRoutes(context: AppContext, callerFor: CallerFor): Hono {
       limit: limitParam(c, 50),
       cursor: c.req.query("cursor") ?? null,
     });
-    return c.json({ pages: page.items.map(pageSummary), cursor: page.cursor });
+    return c.json({ pages: page.items.map(restPage), cursor: page.cursor });
   });
 
   api.post("/pages", async (c) => {
@@ -357,7 +376,7 @@ export function restRoutes(context: AppContext, callerFor: CallerFor): Hono {
     );
     c.header("ETag", etag(page.version));
     c.header("Location", `/api/v1/pages/${encodeURIComponent(page.id)}`);
-    return c.json(pageSummary(page), 201);
+    return c.json(restPage(page), 201);
   });
 
   api.get("/pages/:id", async (c) => {
@@ -366,7 +385,7 @@ export function restRoutes(context: AppContext, callerFor: CallerFor): Hono {
     if (c.req.query("format") === "markdown") {
       return c.body(pageMarkdown(page), 200, { "content-type": "text/markdown; charset=utf-8" });
     }
-    return c.json({ ...pageSummary(page), body: page.body });
+    return c.json({ ...restPage(page), body: page.body });
   });
 
   // Create or replace a whole page at a given id: the import path, which
@@ -384,12 +403,13 @@ export function restRoutes(context: AppContext, callerFor: CallerFor): Hono {
         tags: input.tags,
         ...(input.sources === undefined ? {} : { sources: input.sources }),
         ...(input.verified_at === undefined ? {} : { verifiedAt: input.verified_at }),
+        ...(input.edited_at === undefined ? {} : { editedAt: input.edited_at }),
       },
       version,
       by(c, input.change_note),
     );
     c.header("ETag", etag(page.version));
-    return c.json(pageSummary(page), version === null ? 201 : 200);
+    return c.json(restPage(page), version === null ? 201 : 200);
   });
 
   api.patch("/pages/:id", async (c) => {
@@ -411,7 +431,7 @@ export function restRoutes(context: AppContext, callerFor: CallerFor): Hono {
       by(c, input.change_note),
     );
     c.header("ETag", etag(page.version));
-    return c.json(pageSummary(page));
+    return c.json(restPage(page));
   });
 
   api.delete("/pages/:id", async (c) => {
@@ -448,6 +468,7 @@ export function restRoutes(context: AppContext, callerFor: CallerFor): Hono {
     return c.json({
       ...revisionSummary(view.revision),
       title: view.snapshot.title,
+      parent_id: view.snapshot.parentId,
       tags: view.snapshot.tags,
       sources: view.snapshot.sources,
       verified_at: view.snapshot.verifiedAt,
@@ -512,7 +533,7 @@ export function restRoutes(context: AppContext, callerFor: CallerFor): Hono {
       limit: limitParam(c, 50),
       cursor: c.req.query("cursor") ?? null,
     });
-    return c.json({ rows: result.items.map(rowJson), cursor: result.cursor });
+    return c.json({ rows: result.items.map(restRow), cursor: result.cursor });
   });
 
   tables.post("/:cid/query", async (c) => {
@@ -523,7 +544,7 @@ export function restRoutes(context: AppContext, callerFor: CallerFor): Hono {
       limit: input.limit ?? 50,
       cursor: input.cursor ?? null,
     });
-    return c.json({ rows: result.items.map(rowJson), cursor: result.cursor });
+    return c.json({ rows: result.items.map(restRow), cursor: result.cursor });
   });
 
   tables.post("/:cid/rows", async (c) => {
@@ -539,13 +560,13 @@ export function restRoutes(context: AppContext, callerFor: CallerFor): Hono {
       "Location",
       `/api/v1/tables/${encodeURIComponent(c.req.param("cid"))}/rows/${encodeURIComponent(row.id)}`,
     );
-    return c.json(rowJson(row), 201);
+    return c.json(restRow(row), 201);
   });
 
   tables.get("/:cid/rows/:rid", async (c) => {
     const row = await context.tables.getRow(ws, c.req.param("cid"), c.req.param("rid"));
     c.header("ETag", etag(row.version));
-    return c.json(rowJson(row));
+    return c.json(restRow(row));
   });
 
   // With If-Match, an update. Without it, a create at this id, which is a
@@ -558,6 +579,11 @@ export function restRoutes(context: AppContext, callerFor: CallerFor): Hono {
         { field: "add_sources", message: "not with sources" },
       ]);
     }
+    if (input.edited_at !== undefined && input.add_sources !== undefined) {
+      throw new BadRequest("edited_at goes with a whole row, sent with sources, not with add_sources.", [
+        { field: "edited_at", message: "not with add_sources" },
+      ]);
+    }
     const target = { id: c.req.param("rid"), ...(version === null ? {} : { expectedVersion: version }) };
     const row =
       input.add_sources !== undefined
@@ -565,12 +591,16 @@ export function restRoutes(context: AppContext, callerFor: CallerFor): Hono {
         : await context.tables.upsertRow(
             ws,
             c.req.param("cid"),
-            { values: input.values as never, ...(input.sources === undefined ? {} : { sources: input.sources }) },
+            {
+              values: input.values as never,
+              ...(input.sources === undefined ? {} : { sources: input.sources }),
+              ...(input.edited_at === undefined ? {} : { editedAt: input.edited_at }),
+            },
             by(c, input.change_note),
             { id: c.req.param("rid"), expectedVersion: version },
           );
     c.header("ETag", etag(row.version));
-    return c.json(rowJson(row), version === null ? 201 : 200);
+    return c.json(restRow(row), version === null ? 201 : 200);
   });
 
   tables.delete("/:cid/rows/:rid", async (c) => {
@@ -686,7 +716,7 @@ export function restRoutes(context: AppContext, callerFor: CallerFor): Hono {
     return c.json({
       root: root ?? null,
       total: ordered.length,
-      pages: slice.map((page) => ({ ...pageSummary(page), body: page.body, created_at: page.createdAt })),
+      pages: slice.map((page) => ({ ...restPage(page), body: page.body, created_at: page.createdAt })),
       cursor: next,
     });
   });

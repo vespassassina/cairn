@@ -55,6 +55,7 @@ CREATE TABLE IF NOT EXISTS pages (
   body         TEXT NOT NULL,
   sources      TEXT NOT NULL DEFAULT '[]',
   verified_at  TEXT,
+  edited_at    TEXT,
   created_at   TEXT NOT NULL,
   updated_at   TEXT NOT NULL,
   updated_by   TEXT NOT NULL DEFAULT '${LEGACY_ACTOR}',
@@ -116,6 +117,7 @@ CREATE TABLE IF NOT EXISTS rows_ (
   id            TEXT NOT NULL,
   values_       TEXT NOT NULL,
   sources       TEXT NOT NULL DEFAULT '[]',
+  edited_at     TEXT,
   created_at    TEXT NOT NULL,
   updated_at    TEXT NOT NULL,
   updated_by    TEXT NOT NULL DEFAULT '${LEGACY_ACTOR}',
@@ -133,6 +135,7 @@ interface PageRecord {
   body: string;
   sources: string;
   verified_at: string | null;
+  edited_at: string | null;
   created_at: string;
   updated_at: string;
   updated_by: string;
@@ -157,6 +160,7 @@ interface RowRecord {
   id: string;
   values_: string;
   sources: string;
+  edited_at: string | null;
   created_at: string;
   updated_at: string;
   updated_by: string;
@@ -231,6 +235,7 @@ function toPage(record: PageRecord): Page {
     body: record.body,
     sources: JSON.parse(record.sources) as string[],
     verifiedAt: record.verified_at,
+    editedAt: record.edited_at ?? record.updated_at,
     createdAt: record.created_at,
     updatedAt: record.updated_at,
     updatedBy: JSON.parse(record.updated_by) as Actor,
@@ -259,6 +264,7 @@ function toRow(record: RowRecord): Row {
     tableId: record.collection_id,
     values: JSON.parse(record.values_) as Row["values"],
     sources: JSON.parse(record.sources) as string[],
+    editedAt: record.edited_at ?? record.updated_at,
     createdAt: record.created_at,
     updatedAt: record.updated_at,
     updatedBy: JSON.parse(record.updated_by) as Actor,
@@ -330,6 +336,11 @@ export class SqliteDocumentStore implements DocumentStore {
       if (table === "pages" && !columns.some((column) => column.name === "verified_at")) {
         this.db.exec("ALTER TABLE pages ADD COLUMN verified_at TEXT");
       }
+      // Pages and rows gained an edit time (ADR-030). Until a record is next
+      // written, its edit time reads as its update time.
+      if (table !== "collections" && !columns.some((column) => column.name === "edited_at")) {
+        this.db.exec(`ALTER TABLE ${table} ADD COLUMN edited_at TEXT`);
+      }
     }
     this.db.exec(SCHEMA);
   }
@@ -366,6 +377,7 @@ export class SqliteDocumentStore implements DocumentStore {
       body: input.body,
       sources: input.sources ?? [],
       verifiedAt: input.verifiedAt ?? null,
+      editedAt: input.editedAt ?? meta.at,
       createdAt: existing?.createdAt ?? meta.at,
       updatedAt: meta.at,
       updatedBy: meta.actor,
@@ -378,7 +390,7 @@ export class SqliteDocumentStore implements DocumentStore {
       ? this.db
           .prepare(
             `UPDATE pages SET title = ?, parent_id = ?, tags = ?, body = ?, sources = ?, verified_at = ?,
-             updated_at = ?, updated_by = ?, version = ?
+             edited_at = ?, updated_at = ?, updated_by = ?, version = ?
              WHERE workspace_id = ? AND id = ? AND version = ?`,
           )
           .run(
@@ -388,6 +400,7 @@ export class SqliteDocumentStore implements DocumentStore {
             page.body,
             JSON.stringify(page.sources),
             page.verifiedAt,
+            page.editedAt,
             page.updatedAt,
             JSON.stringify(page.updatedBy),
             page.version,
@@ -398,8 +411,8 @@ export class SqliteDocumentStore implements DocumentStore {
       : this.db
           .prepare(
             `INSERT OR IGNORE INTO pages
-             (workspace_id, id, title, parent_id, tags, body, sources, verified_at, created_at, updated_at, updated_by, version)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             (workspace_id, id, title, parent_id, tags, body, sources, verified_at, edited_at, created_at, updated_at, updated_by, version)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           )
           .run(
             workspaceId,
@@ -410,6 +423,7 @@ export class SqliteDocumentStore implements DocumentStore {
             page.body,
             JSON.stringify(page.sources),
             page.verifiedAt,
+            page.editedAt,
             page.createdAt,
             page.updatedAt,
             JSON.stringify(page.updatedBy),
@@ -646,6 +660,7 @@ export class SqliteDocumentStore implements DocumentStore {
       tableId,
       values: input.values,
       sources: input.sources ?? [],
+      editedAt: input.editedAt ?? meta.at,
       createdAt: existing?.createdAt ?? meta.at,
       updatedAt: meta.at,
       updatedBy: meta.actor,
@@ -655,12 +670,13 @@ export class SqliteDocumentStore implements DocumentStore {
     const applied = existing
       ? this.db
           .prepare(
-            `UPDATE rows_ SET values_ = ?, sources = ?, updated_at = ?, updated_by = ?, version = ?
+            `UPDATE rows_ SET values_ = ?, sources = ?, edited_at = ?, updated_at = ?, updated_by = ?, version = ?
              WHERE workspace_id = ? AND collection_id = ? AND id = ? AND version = ?`,
           )
           .run(
             JSON.stringify(row.values),
             JSON.stringify(row.sources),
+            row.editedAt,
             row.updatedAt,
             JSON.stringify(row.updatedBy),
             row.version,
@@ -672,8 +688,8 @@ export class SqliteDocumentStore implements DocumentStore {
       : this.db
           .prepare(
             `INSERT OR IGNORE INTO rows_
-             (workspace_id, collection_id, id, values_, sources, created_at, updated_at, updated_by, version)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             (workspace_id, collection_id, id, values_, sources, edited_at, created_at, updated_at, updated_by, version)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           )
           .run(
             workspaceId,
@@ -681,6 +697,7 @@ export class SqliteDocumentStore implements DocumentStore {
             id,
             JSON.stringify(row.values),
             JSON.stringify(row.sources),
+            row.editedAt,
             row.createdAt,
             row.updatedAt,
             JSON.stringify(row.updatedBy),

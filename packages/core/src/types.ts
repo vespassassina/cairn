@@ -62,6 +62,12 @@ export interface Page {
    * was last edited. Null when never (ADR-028).
    */
   verifiedAt: string | null;
+  /**
+   * When its content was last edited, where the edit was made: carried over
+   * by sync, so it orders edits across servers (ADR-030). `updatedAt` is when
+   * this server stored the write.
+   */
+  editedAt: string;
   createdAt: string;
   updatedAt: string;
   /** Who made the latest write, so a page view needs no history read. */
@@ -90,6 +96,11 @@ export interface PageInput {
    * the page has sources, otherwise null.
    */
   verifiedAt?: string | null;
+  /**
+   * The exact edit time, for sync (ADR-030). Omitted: this server's clock.
+   * Either way it ends up after the page's previous one.
+   */
+  editedAt?: string;
 }
 
 export type EdgeType = "link" | "mention" | "relation" | "parent" | "tag";
@@ -172,6 +183,8 @@ export interface Row {
   values: Record<string, FieldValue>;
   /** Where its values came from, as for a page (ADR-027). */
   sources: string[];
+  /** When its values were last edited, as for a page (ADR-030). */
+  editedAt: string;
   createdAt: string;
   updatedAt: string;
   updatedBy: Actor;
@@ -182,6 +195,8 @@ export interface RowInput {
   values: Record<string, FieldValue>;
   /** The whole list. Omitted on an update: the row keeps the sources it has. */
   sources?: string[];
+  /** The exact edit time, for sync, as for a page (ADR-030). */
+  editedAt?: string;
 }
 
 /**

@@ -40,9 +40,11 @@ import {
   parseInterval,
   plan,
   readSide,
+  resolveMerges,
   saveState,
   statePath,
   type Side,
+  type SyncAction,
   type SyncPlan,
   type SyncReport,
 } from "./sync.js";
@@ -113,8 +115,9 @@ Tables
 Your data
   cairn export <folder> [--root PAGE] [--tables]        Markdown files and JSON, readable without Cairn
   cairn import <folder> [--dry-run]                     read an export back in, keeping ids; safe to repeat
-  cairn sync <url-a> <url-b> [--every 5m] [--dry-run]   keep two Cairns the same; the newer edit wins,
-                                                        the one it replaced stays in history
+  cairn sync <url-a> <url-b> [--every 5m] [--dry-run]   keep two Cairns the same; edits made on both
+                                                        merge as in git, and where both changed the same
+                                                        part the newer wins, the other kept in history
 
 Several Cairns: a laptop and a cloud copy, say, kept as one
   cairn instances                                 the ones registered, in the order commands try them
@@ -309,7 +312,13 @@ function describeSyncPlan(syncPlan: SyncPlan, urls: Record<Side, string>): strin
   for (const action of syncPlan.actions) {
     const what = action.source ?? action.target!;
     const verb = action.op === "delete" ? "delete from" : "write to";
-    const why = action.conflict ? " (changed on both; the newer edit wins)" : "";
+    const why = !action.conflict
+      ? ""
+      : action.merge === undefined
+        ? " (changed on both; the newer edit wins)"
+        : action.merge.parts === 0
+          ? " (changed on both, in different parts; merged)"
+          : ` (changed on both; merged, and ${plural(action.merge.parts, "part")} changed on both take the newer edit)`;
     lines.push(`  ${verb} ${urls[action.to]}: ${what.kind} ${what.label}${why}`);
   }
   return `${lines.join("\n")}\n`;
@@ -333,8 +342,13 @@ function describeSyncReport(report: SyncReport, urls: Record<Side, string>): str
     const kept = conflict.key.startsWith("table:")
       ? "Tables keep no history, so the other schema was replaced"
       : "The other is in its history";
-    lines.push(`  conflict: ${conflict.label} changed on both; kept the newer edit, from ${conflict.kept_from}. ${kept}`);
+    lines.push(
+      conflict.merged
+        ? `  conflict: ${conflict.label} changed on both; merged, and ${plural(conflict.parts, "part")} changed on both kept the newer edit, from ${conflict.kept_from}. ${kept}`
+        : `  conflict: ${conflict.label} changed on both; kept the newer edit, from ${conflict.kept_from}. ${kept}`,
+    );
   }
+  for (const merged of report.merged) lines.push(`  merged: ${merged.label} changed on both, in different parts; both edits kept`);
   for (const warning of report.warnings) lines.push(`  warning: ${warning}`);
   for (const skipped of report.skipped) lines.push(`  skipped: ${skipped}`);
   lines.push(`  ${plural(report.unchanged, "record")} already the same`);
@@ -453,9 +467,10 @@ export async function run(argv: string[], io: Io): Promise<number> {
     const [snapshotA, snapshotB] = await Promise.all([readSide(clientA), readSide(clientB)]);
     const path = await statePath(credentials, urls.a, urls.b);
     const state = await loadState(path, urls.a, urls.b);
-    const syncPlan = plan(snapshotA, snapshotB, state.base);
+    const syncPlan = await resolveMerges(plan(snapshotA, snapshotB, state.base), { a: clientA, b: clientB }, state.base);
     if (dry) {
-      out({ dry_run: true, actions: syncPlan.actions.map((x) => ({ key: x.key, op: x.op, to: urls[x.to], conflict: x.conflict })) }, () =>
+      const merged = (x: SyncAction) => (x.merge === undefined ? {} : { merged: true, parts: x.merge.parts });
+      out({ dry_run: true, actions: syncPlan.actions.map((x) => ({ key: x.key, op: x.op, to: urls[x.to], conflict: x.conflict, ...merged(x) })) }, () =>
         describeSyncPlan(syncPlan, urls),
       );
       return null;

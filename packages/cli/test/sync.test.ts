@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { closeContext, createApp, createContext, OWNER, type AppContext } from "@cairn/api";
 import { run, type Io } from "../src/main.js";
-import { loadState, parseInterval, plan, record, type Snapshot, type SyncRecord } from "../src/sync.js";
+import { loadState, newer, parseInterval, plan, record, type Snapshot, type SyncRecord } from "../src/sync.js";
 
 /**
  * cairn sync (ADR-023): two real Cairns, driven through the command, must end
@@ -160,7 +160,7 @@ describe("cairn sync between two servers", () => {
     expect(stdout).toContain(`to ${B_URL}: 1 deleted`);
   });
 
-  it("lets the newer edit win a conflict, and keeps the other in history", async () => {
+  it("lets the newer edit win where both changed the same part, and keeps the other in history", async () => {
     await seed(a);
     await sync();
     await edit(a, "pg_bpc-157", "Older edit, on A.");
@@ -169,12 +169,82 @@ describe("cairn sync between two servers", () => {
     await sync();
     expect((await a.pages.get(a.workspaceId, "pg_bpc-157")).body).toBe("Newer edit, on B.");
     expect((await b.pages.get(b.workspaceId, "pg_bpc-157")).body).toBe("Newer edit, on B.");
-    expect(stdout).toContain(`conflict: BPC-157 changed on both; kept the newer edit, from ${B_URL}`);
+    expect(stdout).toContain(`conflict: BPC-157 changed on both; merged, and 1 part changed on both kept the newer edit, from ${B_URL}`);
+    // B already held the result, so only A was written.
+    expect(stdout).toContain(`to ${B_URL}: nothing to change`);
 
     const history = await a.pages.history(a.workspaceId, "pg_bpc-157");
     expect(history[0]!.note).toContain("Sync conflict");
     const replaced = await a.pages.revision(a.workspaceId, "pg_bpc-157", history[1]!.version);
     expect(replaced.snapshot.body).toBe("Older edit, on A.");
+  });
+
+  it("merges edits to different parts of a page, as git does (ADR-030)", async () => {
+    await seed(a);
+    await a.pages.create(a.workspaceId, { title: "Notes", body: "## Dosing\n\n250 mcg.\n\n## Evidence\n\nRodents.\n", tags: ["peptide"] }, BY, "pg_notes");
+    await sync();
+    const onA = await a.pages.get(a.workspaceId, "pg_notes");
+    await a.pages.update(a.workspaceId, onA.id, { ...onA, body: onA.body.replace("250 mcg.", "250 to 500 mcg."), sources: ["Smith 2021"] }, onA.version, BY);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    const onB = await b.pages.get(b.workspaceId, "pg_notes");
+    await b.pages.update(b.workspaceId, onB.id, { ...onB, body: onB.body.replace("Rodents.", "Rodents, and one human trial."), tags: ["peptide", "healing"] }, onB.version, BY);
+
+    expect(await sync()).toBe(0);
+    const want = "## Dosing\n\n250 to 500 mcg.\n\n## Evidence\n\nRodents, and one human trial.\n";
+    for (const side of [a, b]) {
+      const page = await side.pages.get(side.workspaceId, "pg_notes");
+      expect(page.body).toBe(want);
+      expect(page.tags).toEqual(["peptide", "healing"]);
+      expect(page.sources).toEqual(["Smith 2021"]);
+      expect((await side.pages.history(side.workspaceId, "pg_notes"))[0]!.note).toContain("Merged in sync with");
+    }
+    expect(stdout).toContain("merged: Notes changed on both, in different parts; both edits kept");
+    expect(stdout).not.toContain("conflict:");
+    // Both now agree, and on the edit time too, so the merge orders after both edits.
+    const [ea, eb] = [await a.pages.get(a.workspaceId, "pg_notes"), await b.pages.get(b.workspaceId, "pg_notes")];
+    expect(ea.editedAt).toBe(eb.editedAt);
+    expect(await sync()).toBe(0);
+    expect(stdout).toContain(`to ${A_URL}: nothing to change`);
+    expect(stdout).toContain(`to ${B_URL}: nothing to change`);
+  });
+
+  it("merges a row field by field", async () => {
+    await seed(a);
+    await sync();
+    const onA = await a.tables.getRow(a.workspaceId, "col_peptides", "row_bpc");
+    await a.tables.upsertRow(a.workspaceId, "col_peptides", { values: { ...onA.values, grams: 10 } }, BY, { id: onA.id, expectedVersion: onA.version });
+    const onB = await b.tables.getRow(b.workspaceId, "col_peptides", "row_bpc");
+    await b.tables.upsertRow(b.workspaceId, "col_peptides", { values: { ...onB.values, name: "BPC 157" } }, BY, { id: onB.id, expectedVersion: onB.version });
+    expect(await sync()).toBe(0);
+    for (const side of [a, b]) {
+      expect((await side.tables.getRow(side.workspaceId, "col_peptides", "row_bpc")).values).toEqual({ name: "BPC 157", grams: 10 });
+    }
+  });
+
+  it("carries the time an edit was made, so order holds across hops (ADR-030)", async () => {
+    const C_URL = "http://localhost:4003";
+    const c = await createContext({ database: ":memory:", workspaceId: "ws_c" });
+    apps.set(C_URL, createApp({ context: c, token: null, trust: { enabled: true, hosts: ["localhost"] } }));
+    try {
+      await seed(a);
+      await sync();
+      await cairn("sync", A_URL, C_URL);
+      const older = await edit(a, "pg_bpc-157", "Older edit, made on A.");
+      const newer = await edit(c, "pg_bpc-157", "Newer edit, made on C.");
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      // A's older edit reaches B only now, after C's edit was made.
+      await sync();
+      const onB = await b.pages.get(b.workspaceId, "pg_bpc-157");
+      expect(onB.editedAt).toBe(older.editedAt);
+      expect(Date.parse(onB.updatedAt)).toBeGreaterThan(Date.parse(newer.editedAt));
+
+      // Stored on B after C's edit, but made before it: C's edit wins.
+      expect(await cairn("sync", B_URL, C_URL)).toBe(0);
+      expect((await b.pages.get(b.workspaceId, "pg_bpc-157")).body).toBe("Newer edit, made on C.");
+      expect(stdout).toContain(`kept the newer edit, from ${C_URL}`);
+    } finally {
+      await closeContext(c);
+    }
   });
 
   it("lets an edit win over a deletion made on the other side", async () => {
@@ -295,6 +365,16 @@ describe("the sync rules", () => {
   const page = (id: string, body: string, updatedAt: string): Promise<SyncRecord> =>
     record("page", id, null, id, { title: id, parent_id: null, tags: [], body }, updatedAt, "v1");
   const snap = (...records: SyncRecord[]): Snapshot => new Map(records.map((r) => [r.key, r]));
+
+  it("orders two edits by the time they were made, then by hash, the same both ways round", async () => {
+    const early = await record("page", "pg_x", null, "x", { body: "early" }, "2026-01-05T00:00:00Z", "v1", "2026-01-01T00:00:00Z");
+    const late = await record("page", "pg_x", null, "x", { body: "late" }, "2026-01-02T00:00:00Z", "v1", "2026-01-02T00:00:00Z");
+    // Stored later, edited earlier: the edit time decides.
+    expect(newer(early, late)).toBe("b");
+    expect(newer(late, early)).toBe("a");
+    const tie = await record("page", "pg_x", null, "x", { body: "tie" }, "2026-01-02T00:00:00Z", "v1", "2026-01-02T00:00:00Z");
+    expect(newer(late, tie) === "a").toBe(newer(tie, late) === "b");
+  });
 
   it("copies the side that changed, and treats both changing as a conflict", async () => {
     const old = await page("pg_x", "old", "2026-01-01T00:00:00Z");

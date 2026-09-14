@@ -139,6 +139,21 @@ export function runDocumentStoreConformance(
         expect(read?.updatedBy).toEqual(AGENT);
       });
 
+      it("stores the edit time the service chose, apart from the update time (ADR-030)", async () => {
+        const page = await store.putPage(
+          WS,
+          "pg_edited",
+          { title: "Edited", body: "", parentId: null, tags: [], editedAt: "2026-01-02T03:04:05.006Z" },
+          null,
+          meta(),
+        );
+        expect(page.editedAt).toBe("2026-01-02T03:04:05.006Z");
+        expect((await store.getPage(WS, "pg_edited"))?.editedAt).toBe("2026-01-02T03:04:05.006Z");
+        // Without one, the time of the write.
+        const plain = await makePage("pg_edited_plain");
+        expect(plain.editedAt).toBe(plain.updatedAt);
+      });
+
       it("rejects a create when the page already exists", async () => {
         const page = await makePage("pg_create_twice");
         await expect(makePage("pg_create_twice")).rejects.toBeInstanceOf(
@@ -365,6 +380,10 @@ export function runDocumentStoreConformance(
         );
         const read = await store.getRow(WS, "col_prints", "row_1");
         expect(read).toEqual(row);
+        expect(read?.editedAt).toBe(row.updatedAt);
+        const timed = await store.putRow(WS, "col_prints", "row_1", { values: { title: "Bracket" }, editedAt: "2026-01-02T03:04:05.006Z" }, row.version, meta());
+        expect((await store.getRow(WS, "col_prints", "row_1"))?.editedAt).toBe(timed.editedAt);
+        expect(timed.editedAt).toBe("2026-01-02T03:04:05.006Z");
         expect(read?.values["grams"]).toBe(12.5);
         expect(read?.values["tags"]).toEqual(["pla"]);
         expect(read?.values["done"]).toBe(false);

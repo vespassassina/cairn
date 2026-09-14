@@ -5,6 +5,7 @@ import { readHistory, sweepOrphans, writeWithRevision } from "../history/revisio
 import { chunkPage, DEFAULT_CHUNK_OPTIONS, type ChunkOptions } from "../indexer/chunk.js";
 import { extractReferences } from "../indexer/extract.js";
 import { normalizeVerifiedAt } from "../freshness.js";
+import { editTime } from "../edit-time.js";
 import { normalizeSources } from "../sources.js";
 import type { DocumentStore } from "../ports/document-store.js";
 import type { SearchIndex } from "../ports/search-index.js";
@@ -275,11 +276,12 @@ export class PageService {
     const at = new Date().toISOString();
     // A new page has nothing to keep; the check against it comes in putPage.
     const current = expectedVersion === null ? null : await this.store.getPage(workspaceId, id);
-    const { verified, verifiedAt, ...rest } = input;
+    const { verified, verifiedAt, editedAt, ...rest } = input;
     const sources = input.sources === undefined ? (current?.sources ?? []) : normalizeSources(input.sources);
     input = {
       ...rest,
       sources,
+      editedAt: editTime(current?.editedAt, editedAt),
       verifiedAt: verified
         ? at
         : verifiedAt !== undefined

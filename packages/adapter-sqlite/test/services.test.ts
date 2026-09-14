@@ -715,4 +715,72 @@ describe("PageService and TableService on sqlite", () => {
       }
     });
   });
+
+  describe("edit times (ADR-030)", () => {
+    const later = (x: string, y: string) => Date.parse(y) > Date.parse(x);
+
+    it("gives every write a later time than the last, even within one millisecond", async () => {
+      const first = await pages.create(WS, { title: "One", body: "x" }, OWNER);
+      const second = await pages.create(WS, { title: "Two", body: "x" }, OWNER);
+      const edited = await pages.update(WS, first.id, { title: "One", body: "y" }, first.version, OWNER);
+      expect(later(first.editedAt, second.editedAt)).toBe(true);
+      expect(later(second.editedAt, edited.editedAt)).toBe(true);
+      expect((await pages.get(WS, first.id)).editedAt).toBe(edited.editedAt);
+      expect(edited.editedAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+    });
+
+    it("takes an exact time from sync, but never one before the record's own", async () => {
+      const page = await pages.create(WS, { title: "Synced", body: "x", editedAt: "2026-01-02T03:04:05.006+01:00" }, OWNER);
+      expect(page.editedAt).toBe("2026-01-02T02:04:05.006Z");
+      // Stored now, edited then: the two times are kept apart.
+      expect(page.updatedAt).not.toBe(page.editedAt);
+      const older = await pages.update(WS, page.id, { title: "Synced", body: "y", editedAt: "2025-01-01T00:00:00Z" }, page.version, OWNER);
+      expect(older.editedAt).toBe("2026-01-02T02:04:05.007Z");
+      const own = await pages.update(WS, page.id, { title: "Synced", body: "z" }, older.version, OWNER);
+      expect(later(older.editedAt, own.editedAt)).toBe(true);
+    });
+
+    it("refuses an edit time that is not a time, or is far in the future", async () => {
+      await expect(pages.create(WS, { title: "T", body: "x", editedAt: "yesterday" }, OWNER)).rejects.toThrow(ValidationError);
+      await expect(pages.create(WS, { title: "T", body: "x", editedAt: "2999-01-01T00:00:00Z" }, OWNER)).rejects.toThrow(ValidationError);
+    });
+
+    it("keeps rows in order the same way", async () => {
+      const table = await tables.create(WS, { name: "Log", fields: [{ name: "title", type: "text" }] }, OWNER);
+      const row = await tables.upsertRow(WS, table.id, { values: { title: "a" }, editedAt: "2026-02-01T00:00:00Z" }, OWNER);
+      expect(row.editedAt).toBe("2026-02-01T00:00:00.000Z");
+      const next = await tables.upsertRow(WS, table.id, { values: { title: "b" } }, OWNER, { id: row.id, expectedVersion: row.version });
+      expect(later(row.editedAt, next.editedAt)).toBe(true);
+      // A restore is a new edit, with a new time.
+      const restored = await tables.restoreRow(WS, table.id, row.id, row.version, next.version, OWNER);
+      expect(later(next.editedAt, restored.editedAt)).toBe(true);
+    });
+
+    it("adds the column to a database made before it, reading each record's update time", async () => {
+      const dir = await mkdtemp(join(tmpdir(), "cairn-edited-"));
+      const location = join(dir, "cairn.db");
+      try {
+        const before = new SqliteDocumentStore({ location });
+        await before.init();
+        const index = new SqliteSearchIndex();
+        await index.init();
+        const made = await new PageService(before, index).create(WS, { title: "Kept", body: "x" }, OWNER, "pg_kept");
+        await before.close();
+        const raw = new DatabaseSync(location);
+        raw.exec("ALTER TABLE pages DROP COLUMN edited_at");
+        raw.exec("ALTER TABLE rows_ DROP COLUMN edited_at");
+        raw.close();
+
+        const after = new SqliteDocumentStore({ location });
+        await after.init();
+        const kept = await after.getPage(WS, "pg_kept");
+        expect(kept?.editedAt).toBe(made.updatedAt);
+        const edited = await new PageService(after, index).update(WS, "pg_kept", { title: "Kept", body: "y" }, kept!.version, OWNER);
+        expect(later(made.updatedAt, edited.editedAt)).toBe(true);
+        await after.close();
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    });
+  });
 });

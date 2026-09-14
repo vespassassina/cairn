@@ -13,6 +13,12 @@ Rules:
 
 ## 2026-09-14
 
+### Keep building: ordered history and merge in sync
+
+> "then keep building"
+
+Said after the roadmap items above were added, with the next roadmap item "Ordered history and three-way merge in sync". The owner did not choose among the options the direction below raised, so **the agent chose them**: edit times on each page and row, from a clock that never repeats, carried by sync, instead of a hybrid logical clock; a three-way merge line by line, as git does, instead of by section; and the newer edit for a part both sides changed, with the other kept in history. Linking revisions across instances and a console list of conflicts were left for later. Landed in: ADR-030, and the roadmap items "History as one chain across instances" and "Sync conflicts to review in the console".
+
 ### A registry of public Cairns
 
 > "can we think of a registry for public cairns ? would that make sense? even an index on github, a reddit post, something to allow a search engine to pull the link and make a public one discoverable"
@@ -47,7 +53,7 @@ Followed by the ten features proposed in answer to the question below, in the sa
 
 > "for sync to work we need to use very granular timestamps. no doc shall conflict and order should always be maintained. also in case of conflicts, how do we solve ? take the newest and merge ? newest and link the older keeping the chain in order ? how does git do it we could do the same"
 
-Said while ADR-029 was being built. Landed in: a new roadmap item, "Ordered history and three-way merge in sync", marked next, with a hybrid logical clock for order, revisions linked across instances, and a three-way merge by section. The question of how git does it was answered in the conversation: git orders by parent links, not clocks, and merges three ways against the common ancestor. Not built yet; needs an ADR.
+Said while ADR-029 was being built. Landed in: a new roadmap item, "Ordered history and three-way merge in sync", marked next, with a hybrid logical clock for order, revisions linked across instances, and a three-way merge by section. The question of how git does it was answered in the conversation: git orders by parent links, not clocks, and merges three ways against the common ancestor. Built in ADR-030 after "then keep building" (above), with the choices the agent made listed there.
 
 ### Why Cairn and not Obsidian on GitHub
 

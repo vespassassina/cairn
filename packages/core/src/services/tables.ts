@@ -14,6 +14,7 @@ import {
 import { extractRowReferences } from "../indexer/extract.js";
 import { validateRow, validateSchema } from "../query/validate.js";
 import { normalizeSources } from "../sources.js";
+import { editTime } from "../edit-time.js";
 import { sourceChanges } from "./pages.js";
 import type {
   Table,
@@ -210,14 +211,10 @@ export class TableService {
     const id = options.id ?? newRowId();
     const expectedVersion =
       options.expectedVersion !== undefined ? options.expectedVersion : null;
+    const current = expectedVersion === null ? null : await this.store.getRow(workspaceId, tableId, id);
     // Omitted sources on an update keep the row's own, as for pages (ADR-027).
-    const sources =
-      input.sources !== undefined
-        ? normalizeSources(input.sources)
-        : expectedVersion === null
-          ? []
-          : ((await this.store.getRow(workspaceId, tableId, id))?.sources ?? []);
-    input = { ...input, sources };
+    const sources = input.sources !== undefined ? normalizeSources(input.sources) : (current?.sources ?? []);
+    input = { ...input, sources, editedAt: editTime(current?.editedAt, input.editedAt) };
 
     const row = await writeWithRevision(
       this.store,

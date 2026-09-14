@@ -456,6 +456,62 @@ describe("freshness (ADR-028)", () => {
   });
 });
 
+describe("edit times (ADR-030)", () => {
+  it("returns edited_at, takes an exact one on PUT, and gives revisions their parent", async () => {
+    const parent = await call("/pages", { method: "POST", body: { title: "Peptides", body: "Hub." } });
+    const created = await call("/pages", {
+      method: "POST",
+      body: { title: "Thymosin", body: "v1", parent_id: parent.json["id"] },
+    });
+    expect(Date.parse(String(created.json["edited_at"]))).not.toBeNaN();
+    const id = String(created.json["id"]);
+
+    const synced = await call(`/pages/${id}`, {
+      method: "PUT",
+      headers: { "if-match": created.headers.get("etag")! },
+      body: { title: "Thymosin", body: "v2", parent_id: parent.json["id"], edited_at: "2026-09-14T08:00:00.123Z" },
+    });
+    expect(synced.status).toBe(200);
+    // Before the page's own edit time, so moved just past it.
+    expect(Date.parse(String(synced.json["edited_at"]))).toBeGreaterThan(Date.parse(String(created.json["edited_at"])));
+    expect((await call(`/pages/${id}`)).json["edited_at"]).toBe(synced.json["edited_at"]);
+    const exported = await call("/export/pages");
+    const row = (exported.json["pages"] as Array<Record<string, unknown>>).find((page) => page["id"] === id);
+    expect(row?.["edited_at"]).toBe(synced.json["edited_at"]);
+
+    const revision = await call(`/pages/${id}/revisions/${String(created.json["version"])}`);
+    expect(revision.json["parent_id"]).toBe(parent.json["id"]);
+
+    const bad = await call(`/pages/${id}`, {
+      method: "PUT",
+      headers: { "if-match": synced.headers.get("etag")! },
+      body: { title: "Thymosin", body: "v3", edited_at: "soon" },
+    });
+    expect(bad.status).toBe(422);
+  });
+
+  it("takes an exact edit time for a row, with the whole row only", async () => {
+    const table = await call("/tables", { method: "POST", body: { name: "Doses", fields: [{ name: "name", type: "text" }] } });
+    const cid = String(table.json["id"]);
+    const put = await call(`/tables/${cid}/rows/row_1`, {
+      method: "PUT",
+      body: { values: { name: "BPC-157" }, sources: [], edited_at: "2026-09-01T10:00:00Z" },
+    });
+    expect(put.status).toBe(201);
+    expect(put.json["edited_at"]).toBe("2026-09-01T10:00:00.000Z");
+    expect((await call(`/tables/${cid}/rows/row_1`)).json["edited_at"]).toBe("2026-09-01T10:00:00.000Z");
+    const listed = await call(`/tables/${cid}/rows`);
+    expect((listed.json["rows"] as Array<Record<string, unknown>>)[0]!["edited_at"]).toBe("2026-09-01T10:00:00.000Z");
+
+    const mixed = await call(`/tables/${cid}/rows/row_1`, {
+      method: "PUT",
+      headers: { "if-match": put.headers.get("etag")! },
+      body: { values: { name: "BPC-157" }, add_sources: ["Smith 2021"], edited_at: "2026-09-02T10:00:00Z" },
+    });
+    expect(mixed.status).toBe(400);
+  });
+});
+
 describe("sources (ADR-027)", () => {
   const PAPER = "https://pubmed.ncbi.nlm.nih.gov/12345/";
   const CITE = "Smith 2021, J Pept Sci";
