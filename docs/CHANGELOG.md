@@ -6,6 +6,16 @@ Entries link to the ADR when there is one. A change of direction that has no ADR
 
 ## 2026-09-14
 
+### `cairn login` says how to sign in to the Cairn you meant
+
+The owner ran `cairn login` to sign in to Azure, with no `CAIRN_URL` set, and got "http://localhost:8787 does not use OAuth sign-in (HTTP 404). On localhost no sign-in is needed." That was true, and no help: it did not say that the CLI had picked localhost because no Cairn was named, or how to name one (`docs/LESSONS.md`).
+
+1. **None named, localhost tried:** the error says so, and shows both ways to name the Cairn meant: `CAIRN_URL=https://your-address cairn login`, or registering it and `cairn login --instance <name>`.
+2. **Localhost named:** it says a Cairn on this machine needs no sign-in, and that a server started with a token takes `CAIRN_TOKEN`.
+3. **Another address with no sign-in:** it says to check that the address is a Cairn's, and that a Cairn run with a service token takes `CAIRN_TOKEN`. Before, the message talked about localhost here too.
+4. **No answer, or a server error:** "could not reach" with the address, and for a 5xx "try again in a minute", where before any failure read as "does not use OAuth sign-in".
+5. **Docs:** `docs/CLI.md` showed a bare `cairn login` for a deployed Cairn, which works only with `CAIRN_URL` already set. It now shows the address, or `--instance`. `cairn --help` says which server `login` signs in to.
+
 ### Edit times and merging deployed to Azure
 
 The owner deployed the image built from the ADR-030 change (`ghcr.io/vespassassina/cairn@sha256:26d7b601...`, revision `cairn--0000014`) and ran `cairn sync` between the laptop and Azure, dry run first. Checked afterwards, read-only: `/health` answers 0.1.4, the container app runs that digest, and a second dry run found the two copies the same, 186 records.

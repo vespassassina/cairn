@@ -19,7 +19,7 @@ import {
   type Manifest,
 } from "./export-format.js";
 import { checkInstance, firstReachable, instancesPath, isLoopback, loadInstances, reachable, saveInstances, type Instance } from "./instances.js";
-import { credentialsPath, login, logout, storedToken } from "./login.js";
+import { credentialsPath, login, logout, NoSignIn, storedToken } from "./login.js";
 import {
   describeInterval,
   LAUNCHD_LABEL,
@@ -130,7 +130,8 @@ Several Cairns: a laptop and a cloud copy, say, kept as one
   With instances registered, every command goes to the first that answers; --instance NAME picks one.
 
 Signing in (only for a server that uses OAuth; localhost needs none)
-  cairn login                             sign in through your browser; tokens are kept for this server
+  cairn login                             sign in through your browser to the server CAIRN_URL
+                                          or --instance names; tokens are kept for that server
   cairn whoami                            who the server thinks you are
   cairn logout                            revoke and forget this server's sign-in
 
@@ -359,6 +360,31 @@ function written(json: Json | null): string {
   return `ok ${String(json?.["id"])} version ${String(json?.["version"])}\n`;
 }
 
+/**
+ * What to do when `cairn login` finds no sign-in. The usual case is a person
+ * who meant their cloud Cairn and named none, so the CLI tried localhost.
+ */
+function noSignIn(error: NoSignIn, named: boolean): string {
+  const { baseUrl, status } = error;
+  const elsewhere =
+    "To sign in to another Cairn, name it:\n" +
+    "  CAIRN_URL=https://your-address cairn login\n" +
+    "or register it once and sign in by its name:\n" +
+    "  cairn instances add cloud https://your-address\n" +
+    "  cairn login --instance cloud";
+  if (status === null) {
+    return named
+      ? `could not reach ${baseUrl}. Check the address and that it is running; a Cairn on Azure can take about 30 seconds to start.`
+      : `cairn login signs in to one Cairn. None was named, so it tried ${baseUrl}, which did not answer.\n${elsewhere}`;
+  }
+  if (isLoopback(baseUrl)) {
+    return named
+      ? `${baseUrl} needs no sign-in: a Cairn on this machine trusts it, so other commands work without one. If one asks for a token, set CAIRN_TOKEN to the one the server was started with.`
+      : `cairn login signs in to one Cairn. None was named, so it tried ${baseUrl}, which is on this machine and needs no sign-in.\n${elsewhere}`;
+  }
+  return `${baseUrl} has no browser sign-in (HTTP ${status}). Check that the address is a Cairn's. A Cairn run with a service token rather than GitHub sign-in takes CAIRN_TOKEN instead of cairn login.`;
+}
+
 export async function run(argv: string[], io: Io): Promise<number> {
   let flags: Flags;
   let positionals: string[];
@@ -428,7 +454,8 @@ export async function run(argv: string[], io: Io): Promise<number> {
       io.stdout(`signed in to ${baseUrl}. Tokens are in ${credentialsPath(io.env)}\n`);
       return 0;
     } catch (error) {
-      io.stderr(`error: ${error instanceof Error ? error.message : String(error)}\n`);
+      const chosen = flags.instance !== undefined || io.env["CAIRN_URL"] !== undefined;
+      io.stderr(`error: ${error instanceof NoSignIn ? noSignIn(error, chosen) : error instanceof Error ? error.message : String(error)}\n`);
       return 1;
     }
   }

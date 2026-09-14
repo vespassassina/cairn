@@ -139,15 +139,48 @@ describe("cairn login", () => {
     expect(await cairn(["overview"])).toBe(1);
   });
 
-  it("explains that localhost needs no sign-in", async () => {
-    const local = createApp({ context, token: null, trust: { enabled: true, hosts: ["localhost"] } });
-    stdout = "";
-    stderr = "";
-    const code = await run(["login"], {
-      ...io({ CAIRN_URL: "http://localhost:8787" }),
-      fetch: (request) => local.fetch(request),
+  describe("when there is no sign-in to do", () => {
+    const local = () => createApp({ context, token: null, trust: { enabled: true, hosts: ["localhost"] } });
+    const login = async (env: Record<string, string>, fetcher: (request: Request) => Promise<Response>) => {
+      stdout = "";
+      stderr = "";
+      const base = io();
+      const { CAIRN_URL: _unused, ...rest } = base.env;
+      return run(["login"], { ...base, env: { ...rest, ...env }, fetch: fetcher });
+    };
+
+    it("says how to name another Cairn when none was named and it tried localhost", async () => {
+      const app = local();
+      expect(await login({}, (request) => app.fetch(request))).toBe(1);
+      expect(stderr).toContain("None was named, so it tried http://localhost:8787, which is on this machine and needs no sign-in.");
+      expect(stderr).toContain("  CAIRN_URL=https://your-address cairn login");
+      expect(stderr).toContain("  cairn login --instance cloud");
     });
-    expect(code).toBe(1);
-    expect(stderr).toContain("does not use OAuth");
+
+    it("says localhost needs none when it was named", async () => {
+      const app = local();
+      expect(await login({ CAIRN_URL: "http://localhost:8787" }, (request) => app.fetch(request))).toBe(1);
+      expect(stderr).toBe(
+        "error: http://localhost:8787 needs no sign-in: a Cairn on this machine trusts it, so other commands work without one. If one asks for a token, set CAIRN_TOKEN to the one the server was started with.\n",
+      );
+    });
+
+    it("says to check an address elsewhere that has no sign-in", async () => {
+      const code = await login({ CAIRN_URL: "https://example.test" }, async () => new Response("<html>", { status: 200 }));
+      expect(code).toBe(1);
+      expect(stderr).toContain("https://example.test has no browser sign-in (HTTP 200). Check that the address is a Cairn's.");
+    });
+
+    it("says when the server did not answer, or failed", async () => {
+      const refused = async () => {
+        throw new TypeError("fetch failed");
+      };
+      expect(await login({ CAIRN_URL: "https://example.test" }, refused)).toBe(1);
+      expect(stderr).toContain("could not reach https://example.test. Check the address and that it is running");
+      expect(await login({}, refused)).toBe(1);
+      expect(stderr).toContain("None was named, so it tried http://localhost:8787, which did not answer.");
+      expect(await login({ CAIRN_URL: "https://example.test" }, async () => new Response("", { status: 503 }))).toBe(1);
+      expect(stderr).toContain("answered HTTP 503 when asked how to sign in. If it was starting, try again in a minute.");
+    });
   });
 });

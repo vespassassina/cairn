@@ -13,6 +13,13 @@ Each entry answers four questions:
 
 ## 2026-09-14
 
+### `cairn login` told the owner localhost needs no sign-in, when they meant Azure
+
+1. **What happened.** Following the deploy steps, the owner ran `cairn login` to sign in to Azure and got "http://localhost:8787 does not use OAuth sign-in (HTTP 404). On localhost no sign-in is needed." They could not tell what to do next.
+2. **Cause.** Without `CAIRN_URL` or `--instance`, the CLI uses localhost, and the error described localhost without saying it had been chosen by default. `docs/CLI.md` showed a bare `cairn login` for a deployed Cairn, which works only with `CAIRN_URL` already set. The same message was used for any failure, including a server elsewhere that did not answer.
+3. **Fix.** `cairn login` now says when it tried localhost because nothing was named, and shows both ways to name a Cairn; other failures have their own messages. The docs show the address with the command.
+4. **Lesson.** When a command acted on a default the person did not choose, the error must say it used the default and how to choose. And a command in the docs that depends on an environment variable should show it on the same line.
+
 ### Sync ordered edits by when a copy arrived, not when it was made
 
 1. **What happened.** Designing ADR-030 showed that with three Cairns, an edit made on A before one made on C, but relayed to B after it, looked newer on B and could win when B synced with C.

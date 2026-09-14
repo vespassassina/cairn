@@ -13,6 +13,12 @@ Rules:
 
 ## 2026-09-14
 
+### Fix the login error message
+
+> "correct and improve the login error message."
+
+After `cairn login` failed for the owner with "http://localhost:8787 does not use OAuth sign-in (HTTP 404). On localhost no sign-in is needed." while they meant to sign in to Azure. Landed in: the changelog entry "`cairn login` says how to sign in to the Cairn you meant", and `docs/CLI.md`.
+
 ### Keep building: ordered history and merge in sync
 
 > "then keep building"

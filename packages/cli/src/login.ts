@@ -65,12 +65,34 @@ interface Metadata {
   revocation_endpoint?: string;
 }
 
-async function metadata(baseUrl: string, fetcher: Fetch): Promise<Metadata> {
-  const response = await fetcher(new Request(`${serverKey(baseUrl)}/.well-known/oauth-authorization-server`));
-  if (!response.ok) {
-    throw new Error(`${baseUrl} does not use OAuth sign-in (HTTP ${response.status}). On localhost no sign-in is needed.`);
+/**
+ * The server has no sign-in to offer: it answered without OAuth metadata, or
+ * did not answer. `cairn login` explains what to do instead, which depends on
+ * how the address was chosen, so the message is written there.
+ */
+export class NoSignIn extends Error {
+  constructor(
+    readonly baseUrl: string,
+    /** The HTTP status it answered with, or null when it did not answer. */
+    readonly status: number | null,
+  ) {
+    super(status === null ? `could not reach ${baseUrl}` : `${baseUrl} has no browser sign-in (HTTP ${status})`);
   }
-  return (await response.json()) as Metadata;
+}
+
+async function metadata(baseUrl: string, fetcher: Fetch): Promise<Metadata> {
+  let response: Response;
+  try {
+    response = await fetcher(new Request(`${serverKey(baseUrl)}/.well-known/oauth-authorization-server`));
+  } catch {
+    throw new NoSignIn(baseUrl, null);
+  }
+  if (response.status >= 500) {
+    throw new Error(`${baseUrl} answered HTTP ${response.status} when asked how to sign in. If it was starting, try again in a minute.`);
+  }
+  const body = response.ok ? ((await response.json().catch(() => null)) as Metadata | null) : null;
+  if (!body || typeof body.authorization_endpoint !== "string") throw new NoSignIn(baseUrl, response.status);
+  return body;
 }
 
 async function tokenRequest(fetcher: Fetch, endpoint: string, params: Record<string, string>) {

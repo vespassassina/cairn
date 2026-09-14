@@ -271,13 +271,15 @@ Keep the token out of shell history and shared files where you can. A password m
 
 ### Signing in to a deployed Cairn
 
-A Cairn on Azure asks everyone to sign in (ADR-017). Instead of a token:
+A Cairn on Azure asks everyone to sign in (ADR-017). Instead of a token, sign in to it by its address:
 
 ```
-cairn login
-cairn whoami
-cairn logout
+CAIRN_URL=https://your-address cairn login
+CAIRN_URL=https://your-address cairn whoami
+CAIRN_URL=https://your-address cairn logout
 ```
+
+Or register it once and use its name, which also works the same on Windows: `cairn instances add azure https://your-address`, then `cairn login --instance azure` (see "Several Cairns as one" above). With `CAIRN_URL` already set in your shell, a plain `cairn login` does the same. With neither, it tries `http://localhost:8787`, which needs no sign-in, and says how to name the Cairn you meant.
 
 `cairn login` opens your browser, you sign in and approve the CLI, and it keeps the tokens for that server in `~/.config/cairn/credentials.json` (on Windows, `%APPDATA%\cairn\credentials.json`), readable only by you. They refresh by themselves. `cairn logout` revokes them on the server and forgets them. On a machine with no browser, it prints the address to open elsewhere.
 
