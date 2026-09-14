@@ -74,6 +74,8 @@ Write (every write is a revision the owner can review and undo)
   cairn move <page-or-table-id> --parent PAGE|root --version V   change its place in the tree
   All writes take --note "why", shown to the owner, and --source S (repeatable):
   a URL or short citation for where the facts came from, added to the page's or row's sources.
+  append, replace-section and write take --verified: you re-checked the page's facts and they
+  still hold. To mark a page verified with no other change: cairn append <page-id> --verified --note "why"
 
 Tables
   cairn tables                            names, ids, fields and where each sits
@@ -112,6 +114,7 @@ const OPTIONS = {
   parent: { type: "string" },
   tag: { type: "string", multiple: true },
   source: { type: "string", multiple: true },
+  verified: { type: "boolean" },
   note: { type: "string" },
   text: { type: "string" },
   file: { type: "string" },
@@ -446,6 +449,7 @@ export async function run(argv: string[], io: Io): Promise<number> {
           `${String(json?.["version"])}  ${String(json?.["at"])}  ${by(json?.["by"])}\n` +
           list(json?.["sources_added"] as unknown).map((source) => `+ source: ${String(source)}\n`).join("") +
           list(json?.["sources_removed"] as unknown).map((source) => `- source: ${String(source)}\n`).join("") +
+          (json?.["verified"] ? "verified: the page's facts were re-checked\n" : "") +
           `${json?.["diff"] ? String(json["diff"]) : "(first version, nothing to compare)"}\n`,
         );
         return 0;
@@ -495,13 +499,16 @@ export async function run(argv: string[], io: Io): Promise<number> {
       case "replace-section":
       case "write": {
         const id = need(args[0], "page id");
-        const text = (await content(flags, io, true))!;
+        // An append that only adds sources or marks the page verified needs no text.
+        const bare = command === "append" && Boolean(flags.verified || flags.source);
+        const text = (await content(flags, io, !bare)) ?? "";
         const mode = command === "append" ? "append" : command === "write" ? "replace_body" : "replace_section";
         const body = {
           mode,
           content: text,
           ...(mode === "replace_section" ? { section: need(flags.section, "--section") } : {}),
           ...(flags.source ? { sources: flags.source } : {}),
+          ...(flags.verified ? { verified: true } : {}),
           ...(note ? { change_note: note } : {}),
         };
         const path = `/pages/${encodeURIComponent(id)}`;
@@ -743,7 +750,14 @@ export async function run(argv: string[], io: Io): Promise<number> {
               parent = null;
             }
           }
-          const desired = { title: page.title, body: page.body, parent_id: parent, tags: page.tags, sources: page.sources ?? [] };
+          const desired = {
+            title: page.title,
+            body: page.body,
+            parent_id: parent,
+            tags: page.tags,
+            sources: page.sources ?? [],
+            verified_at: page.verified_at ?? null,
+          };
           const path = `/pages/${encodeURIComponent(page.id)}`;
           const current = await maybe(client, path);
           if (current === null) {
@@ -757,7 +771,8 @@ export async function run(argv: string[], io: Io): Promise<number> {
             now["body"] === desired.body &&
             (now["parent_id"] ?? null) === desired.parent_id &&
             stable(now["tags"]) === stable(desired.tags) &&
-            stable(now["sources"] ?? []) === stable(desired.sources);
+            stable(now["sources"] ?? []) === stable(desired.sources) &&
+            (now["verified_at"] ?? null) === desired.verified_at;
           if (same) {
             pageTally.unchanged += 1;
             continue;

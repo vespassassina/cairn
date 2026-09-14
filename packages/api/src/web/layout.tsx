@@ -9,7 +9,7 @@ import { ASSET_VERSION, documentTitle, HEAD_TAGS } from "./assets.js";
  * everything it has a component for, `cairn-*` only for what it does not.
  */
 
-export type Section = "collections" | "recent" | "tables" | "search" | "none";
+export type Section = "collections" | "recent" | "tables" | "freshness" | "search" | "none";
 
 export const Layout: FC<{
   title: string;
@@ -39,6 +39,9 @@ export const Layout: FC<{
             </a>
             <a href="/t" aria-current={section === "tables" ? "page" : undefined}>
               Tables
+            </a>
+            <a href="/freshness" aria-current={section === "freshness" ? "page" : undefined}>
+              Freshness
             </a>
           </nav>
           <form action="/search" method="get" role="search">
@@ -92,6 +95,32 @@ const DATE = new Intl.DateTimeFormat("en-GB", {
 export const When: FC<{ at: string }> = ({ at }) => (
   <time datetime={at}>{DATE.format(new Date(at))}</time>
 );
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** How long ago, in words: "today", "5 days ago", "3 months ago". */
+export function ageOf(at: string, now: number = Date.now()): string {
+  const days = Math.floor((now - Date.parse(at)) / DAY_MS);
+  if (days < 1) return "today";
+  if (days < 2) return "yesterday";
+  if (days < 14) return `${days} days ago`;
+  if (days < 60) return `${Math.floor(days / 7)} weeks ago`;
+  if (days < 730) return `${Math.floor(days / 30.44)} months ago`;
+  return `${Math.floor(days / 365.25)} years ago`;
+}
+
+/** When a page's facts were last confirmed (ADR-028), or that they never were. */
+export const Verified: FC<{ at: string | null }> = ({ at }) =>
+  at === null ? (
+    <span class="cairn-unverified">Never verified</span>
+  ) : (
+    <span>
+      Verified{" "}
+      <time datetime={at} title={DATE.format(new Date(at))}>
+        {ageOf(at)}
+      </time>
+    </span>
+  );
 
 /**
  * A diff with a little context around each change. Every line carries a

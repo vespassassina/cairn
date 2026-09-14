@@ -635,4 +635,84 @@ describe("PageService and TableService on sqlite", () => {
       }
     });
   });
+
+  describe("freshness (ADR-028)", () => {
+    const URL = "https://pubmed.ncbi.nlm.nih.gov/12345/";
+
+    it("counts a page created with sources as verified, and one without as never", async () => {
+      const cited = await pages.create(WS, { title: "BPC-157", body: "x", sources: [URL] }, AGENT);
+      expect(cited.verifiedAt).toBe(cited.updatedAt);
+      const bare = await pages.create(WS, { title: "Notes", body: "x" }, AGENT);
+      expect(bare.verifiedAt).toBeNull();
+      expect((await pages.get(WS, bare.id)).verifiedAt).toBeNull();
+    });
+
+    it("keeps the time through ordinary edits, and moves it only when a write says verified", async () => {
+      const page = await pages.create(WS, { title: "BPC-157", body: "x", sources: [URL] }, AGENT);
+      const edited = await pages.update(WS, page.id, { title: "BPC-157", body: "typo fixed" }, page.version, OWNER);
+      expect(edited.verifiedAt).toBe(page.verifiedAt);
+      const checked = await pages.update(WS, page.id, { title: "BPC-157", body: "typo fixed", verified: true }, edited.version, AGENT);
+      expect(checked.verifiedAt).toBe(checked.updatedAt);
+    });
+
+    it("marks in history the revisions that verified, and restores an old time with old text", async () => {
+      const page = await pages.create(WS, { title: "BPC-157", body: "v1" }, AGENT);
+      const checked = await pages.update(WS, page.id, { title: "BPC-157", body: "v1", verified: true }, page.version, AGENT);
+      // A write takes well under a millisecond here, and the view tells a
+      // verifying write by its time, so leave a gap no real edit would lack.
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      const edited = await pages.update(WS, page.id, { title: "BPC-157", body: "v2" }, checked.version, AGENT);
+      expect((await pages.revision(WS, page.id, page.version)).verified).toBe(false);
+      expect((await pages.revision(WS, page.id, checked.version)).verified).toBe(true);
+      // An edit that carries the time over is not itself a verification.
+      expect((await pages.revision(WS, page.id, edited.version)).verified).toBe(false);
+
+      const restored = await pages.restore(WS, page.id, page.version, edited.version, OWNER);
+      expect(restored.body).toBe("v1");
+      expect(restored.verifiedAt).toBeNull();
+      expect((await pages.revision(WS, page.id, restored.version)).verified).toBe(false);
+    });
+
+    it("takes an exact time for import and sync, and refuses one that is not a time or is in the future", async () => {
+      const page = await pages.create(
+        WS,
+        { title: "Imported", body: "x", sources: [URL], verifiedAt: "2026-01-02T03:04:05+01:00" },
+        OWNER,
+      );
+      expect(page.verifiedAt).toBe("2026-01-02T02:04:05.000Z");
+      const cleared = await pages.update(WS, page.id, { title: "Imported", body: "x", verifiedAt: null }, page.version, OWNER);
+      expect(cleared.verifiedAt).toBeNull();
+      await expect(pages.create(WS, { title: "T", body: "x", verifiedAt: "last Tuesday" }, OWNER)).rejects.toThrow(
+        ValidationError,
+      );
+      await expect(pages.create(WS, { title: "T", body: "x", verifiedAt: "2999-01-01T00:00:00Z" }, OWNER)).rejects.toThrow(
+        ValidationError,
+      );
+    });
+
+    it("adds the column to a database made before it, with every page never verified", async () => {
+      const dir = await mkdtemp(join(tmpdir(), "cairn-verified-"));
+      const location = join(dir, "cairn.db");
+      try {
+        const before = new SqliteDocumentStore({ location });
+        await before.init();
+        const index = new SqliteSearchIndex();
+        await index.init();
+        await new PageService(before, index).create(WS, { title: "Kept", body: "x", sources: [URL] }, OWNER, "pg_kept");
+        await before.close();
+        const raw = new DatabaseSync(location);
+        raw.exec("ALTER TABLE pages DROP COLUMN verified_at");
+        raw.close();
+
+        const after = new SqliteDocumentStore({ location });
+        await after.init();
+        const kept = await after.getPage(WS, "pg_kept");
+        expect(kept?.sources).toEqual([URL]);
+        expect(kept?.verifiedAt).toBeNull();
+        await after.close();
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    });
+  });
 });

@@ -214,6 +214,19 @@ describe("cairn sync between two servers", () => {
     expect(stdout).toContain(`to ${B_URL}: nothing to change`);
   });
 
+  it("copies a verification made on one side (ADR-028)", async () => {
+    await seed(a);
+    await sync();
+    const page = await a.pages.get(a.workspaceId, "pg_bpc-157");
+    const checked = await a.pages.update(a.workspaceId, page.id, { ...page, verified: true }, page.version, BY);
+    expect(await sync()).toBe(0);
+    expect((await b.pages.get(b.workspaceId, "pg_bpc-157")).verifiedAt).toBe(checked.verifiedAt);
+    expect((await b.pages.get(b.workspaceId, "pg_cat_healing")).verifiedAt).toBeNull();
+    expect(await sync()).toBe(0);
+    expect(stdout).toContain(`to ${A_URL}: nothing to change`);
+    expect(stdout).toContain(`to ${B_URL}: nothing to change`);
+  });
+
   it("settles two Cairns that already hold the same pages without writing", async () => {
     // A migration done earlier by export and import: same content, no state.
     await seed(a);

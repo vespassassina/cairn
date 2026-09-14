@@ -4,6 +4,7 @@ import { diffLines, type Diff } from "../history/diff.js";
 import { readHistory, sweepOrphans, writeWithRevision } from "../history/revisions.js";
 import { chunkPage, DEFAULT_CHUNK_OPTIONS, type ChunkOptions } from "../indexer/chunk.js";
 import { extractReferences } from "../indexer/extract.js";
+import { normalizeVerifiedAt } from "../freshness.js";
 import { normalizeSources } from "../sources.js";
 import type { DocumentStore } from "../ports/document-store.js";
 import type { SearchIndex } from "../ports/search-index.js";
@@ -36,6 +37,8 @@ export interface PageRevisionView {
   /** Sources this revision added, and ones it dropped (ADR-027). */
   sourcesAdded: string[];
   sourcesRemoved: string[];
+  /** Whether this revision confirmed the page's facts (ADR-028). */
+  verified: boolean;
 }
 
 function snapshotOf(input: PageInput): PageSnapshot {
@@ -45,6 +48,7 @@ function snapshotOf(input: PageInput): PageSnapshot {
     tags: input.tags ?? [],
     body: input.body,
     sources: input.sources ?? [],
+    verifiedAt: input.verifiedAt ?? null,
   };
 }
 
@@ -200,6 +204,8 @@ export class PageService {
       tagsChanged:
         before !== null && JSON.stringify(before.tags) !== JSON.stringify(snapshot.tags),
       ...sourceChanges(before?.sources, snapshot.sources),
+      // Set by this write, not carried over or restored from an older one.
+      verified: snapshot.verifiedAt === revision.createdAt,
     };
   }
 
@@ -215,7 +221,8 @@ export class PageService {
     expectedVersion: Version,
     context: WriteContext,
   ): Promise<Page> {
-    // A revision from before ADR-027 has no sources: the page keeps its own.
+    // A revision from before ADR-027 has no sources, and one from before
+    // ADR-028 no verification time: the page keeps its own.
     const { snapshot } = await this.revision(workspaceId, id, version);
     return this.update(workspaceId, id, snapshot, expectedVersion, {
       actor: context.actor,
@@ -265,7 +272,25 @@ export class PageService {
     expectedVersion: ExpectedVersion,
     context: WriteContext,
   ): Promise<Page> {
-    input = { ...input, sources: await this.sourcesFor(workspaceId, id, input.sources, expectedVersion) };
+    const at = new Date().toISOString();
+    // A new page has nothing to keep; the check against it comes in putPage.
+    const current = expectedVersion === null ? null : await this.store.getPage(workspaceId, id);
+    const { verified, verifiedAt, ...rest } = input;
+    const sources = input.sources === undefined ? (current?.sources ?? []) : normalizeSources(input.sources);
+    input = {
+      ...rest,
+      sources,
+      verifiedAt: verified
+        ? at
+        : verifiedAt !== undefined
+          ? normalizeVerifiedAt(verifiedAt)
+          : expectedVersion === null
+            ? // A page written with its sources counts as checked (ADR-028).
+              sources.length > 0
+              ? at
+              : null
+            : (current?.verifiedAt ?? null),
+    };
     const page = await writeWithRevision(
       this.store,
       {
@@ -275,27 +300,13 @@ export class PageService {
         tableId: null,
         expectedVersion,
         snapshot: snapshotOf(input),
+        at,
       },
       context,
       (meta) => this.store.putPage(workspaceId, id, input, expectedVersion, meta),
     );
     await this.index(page);
     return page;
-  }
-
-  /**
-   * The list a write stores. Given: that list, cleaned. Omitted: the page's
-   * current list, so a move or a retitle keeps its sources (ADR-027).
-   */
-  private async sourcesFor(
-    workspaceId: WorkspaceId,
-    id: Id,
-    sources: string[] | undefined,
-    expectedVersion: ExpectedVersion,
-  ): Promise<string[]> {
-    if (sources !== undefined) return normalizeSources(sources);
-    if (expectedVersion === null) return [];
-    return (await this.store.getPage(workspaceId, id))?.sources ?? [];
   }
 
   private async index(page: Page): Promise<void> {

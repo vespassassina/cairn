@@ -57,6 +57,11 @@ export interface Page {
   body: string;
   /** Where its facts came from: URLs or short citations (ADR-027). */
   sources: string[];
+  /**
+   * When someone last confirmed its facts still hold, separate from when it
+   * was last edited. Null when never (ADR-028).
+   */
+  verifiedAt: string | null;
   createdAt: string;
   updatedAt: string;
   /** Who made the latest write, so a page view needs no history read. */
@@ -74,6 +79,17 @@ export interface PageInput {
    * so a write that does not mention them never drops them (ADR-027).
    */
   sources?: string[];
+  /**
+   * True: this write confirms the page's facts, so `verifiedAt` becomes the
+   * time of the write (ADR-028).
+   */
+  verified?: boolean;
+  /**
+   * The exact value, for import, sync and restore. Omitted on an update: the
+   * page keeps the one it has. Omitted on a create: the time of the write if
+   * the page has sources, otherwise null.
+   */
+  verifiedAt?: string | null;
 }
 
 export type EdgeType = "link" | "mention" | "relation" | "parent" | "tag";
@@ -185,6 +201,8 @@ export interface PageSnapshot {
   body: string;
   /** Missing in revisions written before ADR-027. */
   sources?: string[];
+  /** Missing in revisions written before ADR-028. */
+  verifiedAt?: string | null;
 }
 
 export interface RowSnapshot {

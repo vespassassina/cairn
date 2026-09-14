@@ -34,6 +34,7 @@ export function pageSummary(page: Page): Record<string, unknown> {
     parent_id: page.parentId,
     tags: page.tags,
     sources: page.sources,
+    verified_at: page.verifiedAt,
     updated_at: page.updatedAt,
     updated_by: { kind: page.updatedBy.kind, name: page.updatedBy.label },
     version: page.version,
@@ -112,6 +113,23 @@ export function sourceChangesJson(view: { sourcesAdded: string[]; sourcesRemoved
   };
 }
 
+/**
+ * When each page was last verified, keyed by id, for search hits (ADR-028).
+ * One point read per distinct page; a page deleted since it was indexed is
+ * left out.
+ */
+export async function verifiedTimes(
+  context: AppContext,
+  pageIds: readonly string[],
+): Promise<Map<string, string | null>> {
+  const times = new Map<string, string | null>();
+  for (const id of new Set(pageIds)) {
+    const page = await context.store.getPage(context.workspaceId, id);
+    if (page) times.set(id, page.verifiedAt);
+  }
+  return times;
+}
+
 /** A compact unified-style diff: only changed lines and a little context. */
 export function renderDiff(diff: Diff | null, context = 2): string | null {
   if (!diff) return null;
@@ -147,6 +165,8 @@ export interface PageEdit {
   tags?: string[] | undefined;
   /** Added to the page's sources; the ones it has are kept (ADR-027). */
   sources?: string[] | undefined;
+  /** The page's facts were re-checked and still hold (ADR-028). */
+  verified?: boolean | undefined;
 }
 
 /** The heading named in a replace_section edit is not on the page. */
@@ -178,7 +198,8 @@ export async function editPage(
   if (edit.mode === "replace_body") {
     body = edit.content;
   } else if (edit.mode === "append") {
-    // Appending nothing leaves the body alone: an edit that only adds sources.
+    // Appending nothing leaves the body alone: an edit that only adds sources
+    // or marks the page verified.
     body =
       edit.content.trim() === ""
         ? page.body
@@ -204,6 +225,7 @@ export async function editPage(
       parentId: page.parentId,
       tags: edit.tags ?? page.tags,
       ...(sources === undefined ? {} : { sources }),
+      ...(edit.verified ? { verified: true } : {}),
     },
     expectedVersion,
     write,

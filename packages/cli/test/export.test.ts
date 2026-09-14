@@ -216,6 +216,22 @@ describe("cairn export and import", () => {
     expect(stdout).toContain("rows         0 created, 0 updated, 1 unchanged");
   });
 
+  it("carries when a page was verified through export and import (ADR-028)", async () => {
+    const ws = source.workspaceId;
+    const page = await source.pages.get(ws, "pg_bpc-157");
+    await source.pages.update(ws, page.id, { ...page, verifiedAt: "2026-03-01T10:00:00Z" }, page.version, BY);
+    await cairn(source, "export", folder);
+    const file = (await readdir(join(folder, "pages"), { recursive: true })).find((name) => name.endsWith("bpc-157.md"))!;
+    expect(await readFile(join(folder, "pages", file), "utf8")).toContain('verified: "2026-03-01T10:00:00.000Z"');
+    expect(await readFile(join(folder, "pages", "longevity.md"), "utf8")).not.toContain("verified");
+
+    expect(await cairn(target, "import", folder)).toBe(0);
+    expect((await target.pages.get(target.workspaceId, "pg_bpc-157")).verifiedAt).toBe("2026-03-01T10:00:00.000Z");
+    expect((await target.pages.get(target.workspaceId, "pg_cat_longevity")).verifiedAt).toBeNull();
+    expect(await cairn(target, "import", folder)).toBe(0);
+    expect(stdout).toContain("pages        0 created, 0 updated, 4 unchanged");
+  });
+
   it("shows the plan without writing anything on a dry run", async () => {
     await cairn(source, "export", folder);
     expect(await cairn(target, "import", folder, "--dry-run")).toBe(0);

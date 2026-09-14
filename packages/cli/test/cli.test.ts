@@ -188,6 +188,19 @@ describe("cairn", () => {
     expect(stdout).toContain("source: the owner, 2026-09-14");
   });
 
+  it("marks a page verified with --verified, with or without new text (ADR-028)", async () => {
+    const { id } = await createLog();
+    expect((await context.pages.get(context.workspaceId, id)).verifiedAt).toBeNull();
+    expect(await cairn("append", id, "--verified", "--note", "Re-read the datasheet: still right")).toBe(0);
+    const page = await context.pages.get(context.workspaceId, id);
+    expect(page.verifiedAt).toBe(page.updatedAt);
+    expect(page.body).toBe("## Firmware\n\nOld firmware.\n\n## Motors\n\n2207 1750kv.");
+    expect(await cairn("read", id)).toBe(0);
+    expect(stdout).toContain(`verified: ${page.verifiedAt}`);
+    expect(await cairn("revision", id, page.version)).toBe(0);
+    expect(stdout).toContain("verified: the page's facts were re-checked");
+  });
+
   it("prints its version, which matches the package", async () => {
     const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { version: string };
     expect(VERSION).toBe(pkg.version);

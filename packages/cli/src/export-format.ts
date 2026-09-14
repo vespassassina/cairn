@@ -14,7 +14,8 @@
  *
  * Sources (ADR-027) are a `sources` line in a page's front matter and a
  * `sources` list on a row, written only when there are some. Readers ignore
- * keys they do not know, so this needed no new version.
+ * keys they do not know, so this needed no new version. A page's verification
+ * time (ADR-028) is a `verified` line, the same way, only when it has one.
  *
  * Ids travel in the front matter, not the file name, so links survive an
  * import and files can be renamed freely. Derived data (links, search chunks)
@@ -40,6 +41,8 @@ export interface ExportPage {
   body: string;
   /** Where its facts came from (ADR-027). Absent when there are none. */
   sources?: string[];
+  /** When its facts were last confirmed (ADR-028). Absent or null when never. */
+  verified_at?: string | null;
   updated_at?: string;
   updated_by?: { kind: string; name: string };
   version?: string;
@@ -131,6 +134,7 @@ export function pageFile(page: ExportPage): string {
     ["tags", page.tags],
   ];
   if (page.sources && page.sources.length > 0) header.push(["sources", page.sources]);
+  if (page.verified_at) header.push(["verified", page.verified_at]);
   if (page.updated_at) header.push(["updated", page.updated_at]);
   if (page.updated_by) header.push(["updated_by", `${page.updated_by.kind}: ${page.updated_by.name}`]);
   if (page.version) header.push(["version", page.version]);
@@ -165,6 +169,7 @@ export function parsePageFile(text: string, file: string): ExportPage {
   const parent = fields.get("parent");
   const tags = fields.get("tags");
   const sources = fields.get("sources");
+  const verified = fields.get("verified");
   const body = match[2]!;
 
   return {
@@ -173,6 +178,7 @@ export function parsePageFile(text: string, file: string): ExportPage {
     parent_id: typeof parent === "string" && parent !== "" ? parent : null,
     tags: Array.isArray(tags) ? tags.map(String) : [],
     ...(Array.isArray(sources) && sources.length > 0 ? { sources: sources.map(String) } : {}),
+    ...(typeof verified === "string" && verified !== "" ? { verified_at: verified } : {}),
     // pageFile ends every body with one newline; give back what was stored.
     body: body.endsWith("\n") ? body.slice(0, -1) : body,
   };

@@ -13,6 +13,27 @@ Each entry answers four questions:
 
 ## 2026-09-14
 
+### A test assumed two writes could not share a millisecond
+
+1. **What happened.** The history test for freshness failed every run: an edit made straight after a verification was reported as a verification too.
+2. **Cause.** History tells a verifying write by its snapshot's `verified_at` being equal to the revision's time. The in-memory SQLite database finishes a write in well under a millisecond, so the edit's time equalled the carried-over verification time. No real person or agent writes that fast.
+3. **Fix.** The test waits 5 ms between the two writes, with a comment saying why, and ADR-028 names the limit in its consequences.
+4. **Lesson.** Any rule that compares timestamps needs a test with two writes back to back. Decide whether same-millisecond writes matter, and write the answer down, rather than finding out from a flaky test.
+
+### The MCP instructions test reads any snake_case word as a tool name
+
+1. **What happened.** Adding "verified_at" to the server instructions failed the test that checks every tool the instructions name exists.
+2. **Cause.** The test finds tool names with a pattern for snake_case words, so a field name looks like a tool. `change_note` and `version_conflict` were already excluded for the same reason.
+3. **Fix.** `verified_at` added to the test's list of words that name a field, not a tool.
+4. **Lesson.** When the instructions mention a new field, add it to that list in the same change. The failure is the test doing its job, not a bug in it.
+
+### An unquoted glob in zsh, again
+
+1. **What happened.** `grep -rln "putPage" packages --include=*.ts` failed with "no matches found" while exploring for freshness, the same failure logged earlier the same day.
+2. **Cause.** zsh expands `*.ts` itself and stops when nothing in the current folder matches, before grep runs.
+3. **Fix.** Quoted the pattern: `--include="*.ts"`.
+4. **Lesson.** Quote every glob meant for another program, every time. Logging a lesson did not stop the repeat; typing the quotes by habit does.
+
 ### An insertion script deleted the line it inserted before
 
 1. **What happened.** Adding tests for sources, three CLI test files stopped parsing: "`await` is only allowed within async functions", pointing at the body of an existing test.

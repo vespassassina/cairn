@@ -39,7 +39,10 @@ once only if it would have mattered. If it says to sign in, ask the user to run
    `--source` with a URL or a short citation ("Smith 2021, J Pept Sci", "the owner,
    2026-09-14"). Repeat it for more than one. Sources are added to the page's or
    row's list, which the owner sees beside it.
-5. Link pages with `[[page-id]]` in the body.
+5. `cairn read` shows when a page was last `verified`. When you re-check a page's
+   facts and they still hold, add `--verified` to the edit, or run
+   `cairn append <page-id> --verified --note "why"` to change nothing else.
+6. Link pages with `[[page-id]]` in the body.
 
 ```
 cairn create --title "Title" --tag topic --note "why" --source <url> --text "Markdown body"

@@ -15,6 +15,7 @@ import {
   revisionSummary,
   rowJson,
   sourceChangesJson,
+  verifiedTimes,
   toFieldDefs,
   writeRow,
 } from "../operations.js";
@@ -76,6 +77,11 @@ const SOURCES = z
     "Where this came from: URLs or short citations (\"Smith 2021, J Pept Sci\"). Added to the record's list.",
   );
 
+const VERIFIED = z
+  .boolean()
+  .optional()
+  .describe("true if you re-checked the page's facts and they still hold. Works with empty content in append mode.");
+
 export function registerTools(server: McpServer, context: AppContext, actor: Actor): void {
   const ws = context.workspaceId;
   const by = (note: string | undefined) => ({ actor, note: note ?? null });
@@ -104,6 +110,7 @@ export function registerTools(server: McpServer, context: AppContext, actor: Act
         const budgeted = budgetList(result.hits, (hit) =>
           `${hit.headingPath.join(" > ")}${hit.snippet}`,
         );
+        const verified = await verifiedTimes(context, budgeted.items.map((hit) => hit.pageId));
         return json({
           mode: result.mode,
           hits: budgeted.items.map((hit) => ({
@@ -111,6 +118,8 @@ export function registerTools(server: McpServer, context: AppContext, actor: Act
             heading_path: hit.headingPath,
             snippet: hit.snippet,
             score: Number(hit.score.toFixed(4)),
+            // Only when set, so a wiki nobody has verified costs nothing more.
+            verified_at: verified.get(hit.pageId) ?? undefined,
           })),
           truncated: result.truncated || budgeted.truncated,
           cursor: result.cursor,
@@ -213,16 +222,17 @@ export function registerTools(server: McpServer, context: AppContext, actor: Act
         title: z.string().optional(),
         tags: z.array(z.string()).optional(),
         sources: SOURCES,
+        verified: VERIFIED,
         change_note: CHANGE_NOTE,
       },
     },
-    async ({ page_id, version, mode, content, section, title, tags, sources, change_note }): Promise<ToolResult> => {
+    async ({ page_id, version, mode, content, section, title, tags, sources, verified, change_note }): Promise<ToolResult> => {
       try {
         const updated = await editPage(
           context,
           page_id,
           version,
-          { mode, content, section, title, tags, sources },
+          { mode, content, section, title, tags, sources, verified },
           by(change_note),
         );
         return json(pageSummary(updated));
@@ -558,11 +568,13 @@ export function registerTools(server: McpServer, context: AppContext, actor: Act
             title: view.snapshot.title,
             tags: view.snapshot.tags,
             sources: view.snapshot.sources,
+            verified_at: view.snapshot.verifiedAt,
             body: body.text,
             truncated: body.truncated,
             title_changed: view.titleChanged || undefined,
             tags_changed: view.tagsChanged || undefined,
             ...sourceChangesJson(view),
+            verified: view.verified || undefined,
             diff: renderDiff(view.diff),
           });
         }

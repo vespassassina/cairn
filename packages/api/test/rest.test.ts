@@ -405,6 +405,57 @@ describe("the paths from before tables were called tables (ADR-026)", () => {
   });
 });
 
+describe("freshness (ADR-028)", () => {
+  it("marks a page verified on PATCH, sets an exact time on PUT, and shows it everywhere", async () => {
+    const created = await call("/pages", {
+      method: "POST",
+      body: { title: "Ipamorelin", body: "A growth hormone secretagogue." },
+    });
+    expect(created.json["verified_at"]).toBeNull();
+    const id = String(created.json["id"]);
+    expect((await call(`/pages/${id}?format=markdown`)).text).toContain("verified: never");
+
+    const checked = await call(`/pages/${id}`, {
+      method: "PATCH",
+      headers: { "if-match": created.headers.get("etag")! },
+      body: { content: "", verified: true, change_note: "Checked against the 2019 trial" },
+    });
+    expect(checked.status).toBe(200);
+    expect(checked.json["verified_at"]).toBe(checked.json["updated_at"]);
+    const revision = await call(`/pages/${id}/revisions/${String(checked.json["version"])}`);
+    expect(revision.json["verified"]).toBe(true);
+    expect((await call(`/pages/${id}?format=markdown`)).text).toContain(`verified: ${String(checked.json["verified_at"])}`);
+
+    const hits = await eventually(async () => {
+      const { json } = await call("/search?q=secretagogue");
+      const found = json["hits"] as Array<Record<string, unknown>>;
+      expect(found.length).toBeGreaterThan(0);
+      return found;
+    });
+    expect(hits[0]!["verified_at"]).toBe(checked.json["verified_at"]);
+
+    const kept = await call(`/pages/${id}`, {
+      method: "PUT",
+      headers: { "if-match": checked.headers.get("etag")! },
+      body: { title: "Ipamorelin", body: "Edited, not re-checked." },
+    });
+    expect(kept.json["verified_at"]).toBe(checked.json["verified_at"]);
+
+    const set = await call(`/pages/${id}`, {
+      method: "PUT",
+      headers: { "if-match": kept.headers.get("etag")! },
+      body: { title: "Ipamorelin", body: "Edited, not re-checked.", verified_at: "2026-03-01T10:00:00Z" },
+    });
+    expect(set.json["verified_at"]).toBe("2026-03-01T10:00:00.000Z");
+    const bad = await call(`/pages/${id}`, {
+      method: "PUT",
+      headers: { "if-match": set.headers.get("etag")! },
+      body: { title: "Ipamorelin", body: "x", verified_at: "soon" },
+    });
+    expect(bad.status).toBe(422);
+  });
+});
+
 describe("sources (ADR-027)", () => {
   const PAPER = "https://pubmed.ncbi.nlm.nih.gov/12345/";
   const CITE = "Smith 2021, J Pept Sci";

@@ -129,7 +129,7 @@ Five rules govern the boundary (ADR-005).
 
 One logical store with three document families, partitioned by workspace.
 
-1. **Pages.** Title, parent, tags, BlockNote JSON blocks embedded in the document, sources, version token. One point read per page. Sources are where the page's facts came from: URLs or short citations, added to by each write (ADR-027). Rows carry them too.
+1. **Pages.** Title, parent, tags, BlockNote JSON blocks embedded in the document, sources, version token. One point read per page. Sources are where the page's facts came from: URLs or short citations, added to by each write (ADR-027). Rows carry them too. `verified_at` is when the page's facts were last confirmed, null for never, set by a write that says it re-checked them (ADR-028).
 2. **Tables.** A schema document plus one document per row. Field types in v1: text, number, date, select, multi-select, checkbox, URL, relation. A relation links to pages, or to the rows of a table, its own included, and can hold a list (ADR-024). A table sits under a page in the tree, or at the top. Until ADR-026 tables were called collections; a collection is now a top-level page and everything under it, one wiki, a view of the tree rather than a stored family.
 3. **Edges.** One document per link, partitioned by source page. A mirrored reverse edge partitioned by target so backlinks are a single-partition query. Edge types: link, mention, relation, parent, tag.
 
@@ -180,7 +180,7 @@ Cairn contains one small OAuth 2.1 authorization server that delegates login to 
 | `get_history` | Revisions of a page or row, newest first, with actor, time and change note (ADR-008). |
 | `get_revision` | One revision's content, and its diff against the version it replaced. |
 
-Write tools (`create_page`, `update_page`, `upsert_row`) accept an optional `change_note` so an agent can say why it made a change. It is shown in the review console's recent changes. They also accept `sources`, URLs or short citations for where the facts came from, added to the page's or row's list and shown beside it in the console (ADR-027).
+Write tools (`create_page`, `update_page`, `upsert_row`) accept an optional `change_note` so an agent can say why it made a change. It is shown in the review console's recent changes. They also accept `sources`, URLs or short citations for where the facts came from, added to the page's or row's list and shown beside it in the console (ADR-027). `update_page` takes `verified: true` when the agent re-checked the page's facts and they still hold; `get_page` and search hits return `verified_at` (ADR-028).
 
 Server instructions: at initialize, Cairn also tells the client when to use it: search before answering, save durable knowledge without being asked, prefer updating an existing page, and give every write a change note (ADR-011). Tools alone are available but never required, so without this Claude uses Cairn only when asked. The instructions end with a live summary of what the workspace holds: tables with row counts, top-level pages with their size, and common tags, so Claude knows which questions Cairn can answer (ADR-012).
 

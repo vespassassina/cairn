@@ -15,6 +15,7 @@ import {
   revisionSummary,
   rowJson,
   sourceChangesJson,
+  verifiedTimes,
   writeRow,
 } from "../operations.js";
 import { workspaceSummary } from "../mcp/summary.js";
@@ -69,6 +70,9 @@ const OPERATORS = ["eq", "ne", "lt", "lte", "gt", "gte", "contains", "in", "exis
 // total; this only keeps a request from sending thousands.
 const SOURCES = z.array(z.string()).max(MAX_SOURCES).optional();
 
+// A verification time, or null for never (ADR-028). Core checks it is a time.
+const VERIFIED_AT = z.string().nullable().optional();
+
 const schemas = {
   createPage: z.object({
     title: z.string().min(1),
@@ -86,6 +90,8 @@ const schemas = {
     tags: z.array(z.string()).optional(),
     // Added to the page's sources.
     sources: SOURCES,
+    // True: the page's facts were re-checked and still hold.
+    verified: z.boolean().optional(),
     change_note: CHANGE_NOTE,
   }),
   deleteBody: z.object({ change_note: CHANGE_NOTE }).default({}),
@@ -96,6 +102,9 @@ const schemas = {
     tags: z.array(z.string()).default([]),
     // The whole list. Left out, the page keeps the sources it has.
     sources: SOURCES,
+    // Left out, the page keeps its verification time; on a create, it counts
+    // as checked if it has sources.
+    verified_at: VERIFIED_AT,
     change_note: CHANGE_NOTE,
   }),
   createTable: z.object({
@@ -259,6 +268,7 @@ function pageMarkdown(page: Page): string {
     `version: ${page.version}`,
     `tags: ${JSON.stringify(page.tags)}`,
     ...(page.sources.length > 0 ? [`sources: ${JSON.stringify(page.sources)}`] : []),
+    `verified: ${page.verifiedAt ?? "never"}`,
     `updated: ${page.updatedAt} by ${page.updatedBy.kind} ${JSON.stringify(page.updatedBy.label)}`,
     "---",
     "",
@@ -305,6 +315,7 @@ export function restRoutes(context: AppContext, callerFor: CallerFor): Hono {
       limit: limitParam(c, 10),
       cursor: c.req.query("cursor") ?? null,
     });
+    const verified = await verifiedTimes(context, result.hits.map((hit) => hit.pageId));
     return c.json({
       mode: result.mode,
       hits: result.hits.map((hit) => ({
@@ -312,6 +323,7 @@ export function restRoutes(context: AppContext, callerFor: CallerFor): Hono {
         heading_path: hit.headingPath,
         snippet: hit.snippet,
         score: Number(hit.score.toFixed(4)),
+        verified_at: verified.get(hit.pageId) ?? null,
       })),
       truncated: result.truncated,
       cursor: result.cursor,
@@ -371,6 +383,7 @@ export function restRoutes(context: AppContext, callerFor: CallerFor): Hono {
         parentId: input.parent_id ?? null,
         tags: input.tags,
         ...(input.sources === undefined ? {} : { sources: input.sources }),
+        ...(input.verified_at === undefined ? {} : { verifiedAt: input.verified_at }),
       },
       version,
       by(c, input.change_note),
@@ -393,6 +406,7 @@ export function restRoutes(context: AppContext, callerFor: CallerFor): Hono {
         title: input.title,
         tags: input.tags,
         sources: input.sources,
+        verified: input.verified,
       },
       by(c, input.change_note),
     );
@@ -436,10 +450,12 @@ export function restRoutes(context: AppContext, callerFor: CallerFor): Hono {
       title: view.snapshot.title,
       tags: view.snapshot.tags,
       sources: view.snapshot.sources,
+      verified_at: view.snapshot.verifiedAt,
       body: view.snapshot.body,
       title_changed: view.titleChanged || undefined,
       tags_changed: view.tagsChanged || undefined,
       ...sourceChangesJson(view),
+      verified: view.verified || undefined,
       diff: renderDiff(view.diff),
     });
   });

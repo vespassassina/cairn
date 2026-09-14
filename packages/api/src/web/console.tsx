@@ -27,7 +27,7 @@ import {
 import { OWNER, type AppContext } from "../context.js";
 import { moveRecord } from "../operations.js";
 import { ASSET_VERSION, CONSOLE_CSS, CONSOLE_JS, documentTitle, FAVICON_SVG, HEAD_TAGS, ICON_180_PNG, ICON_512_PNG, MANIFEST } from "./assets.js";
-import { ActorPill, Banner, DiffView, Layout, When } from "./layout.js";
+import { ActorPill, ageOf, Banner, DiffView, Layout, Verified, When } from "./layout.js";
 import { createMarkdownRenderer, pageHref, type LinkResolver } from "./markdown.js";
 import { isSameOrigin, SESSION_COOKIE, sessionValue, timingSafeEqual } from "./session.js";
 import type { OAuthServer } from "../oauth/server.js";
@@ -411,6 +411,8 @@ const PageEditor: FC<{
   parentId?: string | null | undefined;
   pages?: Page[] | undefined;
   preview?: string | undefined;
+  /** On an existing page: the box to mark it verified, and when it last was (ADR-028). */
+  verify?: { checked: boolean; at: string | null } | undefined;
   cancel: string;
 }> = (props) => (
   <form method="post" action={props.action} class="cairn-editor" data-dirty-guard>
@@ -440,6 +442,17 @@ const PageEditor: FC<{
       {props.body}
     </textarea>
     <SourcesField value={props.sources} />
+    {props.verify ? (
+      <p class="cairn-verify">
+        <label>
+          <input type="checkbox" name="verified" value="1" checked={props.verify.checked} /> I re-checked
+          this page's facts and they still hold
+        </label>{" "}
+        <span class="ak-small">
+          (<Verified at={props.verify.at} />)
+        </span>
+      </p>
+    ) : null}
     <label for="note">What changed, and why (optional)</label>
     <input class="ak-input" id="note" name="note" value={props.note} maxlength={500} />
     <div class="cairn-actions">
@@ -488,6 +501,9 @@ const RevisionTimeline: FC<{
           </span>{" "}
           {revision.version === currentVersion ? (
             <span class="ak-pill ak-pill-ok">current</span>
+          ) : null}{" "}
+          {(revision.snapshot as PageSnapshot).verifiedAt === revision.createdAt ? (
+            <span class="ak-chip">verified</span>
           ) : null}
           <p>
             <ActorPill actor={revision.actor} />
@@ -1096,7 +1112,8 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
               <div>
                 <h1>{page.title}</h1>
                 <p class="ak-small">
-                  Updated <When at={page.updatedAt} /> by <ActorPill actor={page.updatedBy} />
+                  Updated <When at={page.updatedAt} /> by <ActorPill actor={page.updatedBy} /> ·{" "}
+                  <Verified at={page.verifiedAt} />
                 </p>
               </div>
               <div class="ak-row">
@@ -1176,6 +1193,7 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
           sources={page.sources.join("\n")}
           note=""
           version={page.version}
+          verify={{ checked: false, at: page.verifiedAt }}
           cancel={pageHref(page.id)}
         />
       </Layout>,
@@ -1192,6 +1210,7 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
       parentId: page.parentId,
       tags: parseTags(text(form, "tags")),
       sources: parseSources(form) ?? page.sources,
+      verified: Boolean(form["verified"]),
     };
     const note = text(form, "note");
     const version = text(form, "version");
@@ -1212,6 +1231,7 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
             note={note}
             version={props.version}
             preview={props.preview}
+            verify={{ checked: input.verified, at: page.verifiedAt }}
             cancel={pageHref(page.id)}
           />
         </Layout>,
@@ -1333,6 +1353,11 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
           <p class="ak-small">This is the first recorded version.</p>
         )}
         <SourceChanges added={view.sourcesAdded} removed={view.sourcesRemoved} />
+        {view.verified ? (
+          <p class="ak-small">
+            <span class="ak-chip">verified</span> This change confirmed the page's facts still hold.
+          </p>
+        ) : null}
         <details class="ak-disclosure">
           <summary>The page as it was at this version</summary>
           <article class="ak-prose">{raw(renderMarkdown(view.snapshot.body, titles))}</article>
@@ -1435,6 +1460,75 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
   });
 
   // Search.
+
+  // Freshness (ADR-028): pages whose facts were confirmed longest ago come
+  // first, after the ones never confirmed, so the owner knows what to re-check.
+  app.get("/freshness", async (c) => {
+    const pages = await allPages(context);
+    const byId = new Map(pages.map((page) => [page.id, page]));
+    const never = pages
+      .filter((page) => page.verifiedAt === null)
+      .sort((a, b) => a.updatedAt.localeCompare(b.updatedAt));
+    const verified = pages
+      .filter((page) => page.verifiedAt !== null)
+      .sort((a, b) => a.verifiedAt!.localeCompare(b.verifiedAt!));
+    const collectionOf = (page: Page) => ancestorsOf(page.id, byId)[0] ?? page;
+
+    return render(
+      c,
+      <Layout title="Freshness" section="freshness">
+        <header class="ak-pagehead">
+          <div>
+            <p class="ak-eyebrow">Review</p>
+            <h1>Freshness</h1>
+            <p class="ak-small">
+              When each page's facts were last confirmed, least recent first. Editing a page does
+              not count: marking it verified does, in the editor or from an agent.
+            </p>
+          </div>
+        </header>
+        <p>
+          {pages.length} pages: {verified.length} verified, {never.length} never verified
+          {verified[0] ? <>. The oldest check was {ageOf(verified[0].verifiedAt!)}.</> : "."}
+        </p>
+        {pages.length === 0 ? (
+          <p class="ak-empty">No pages yet.</p>
+        ) : (
+          <div class="ak-tblwrap">
+            <table class="ak-table">
+              <thead>
+                <tr>
+                  <th>Page</th>
+                  <th>Collection</th>
+                  <th>Verified</th>
+                  <th>Updated</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[...never, ...verified].map((page) => {
+                  const root = collectionOf(page);
+                  return (
+                    <tr>
+                      <td>
+                        <a href={pageHref(page.id)}>{page.title}</a>
+                      </td>
+                      <td>{root.id === page.id ? <span class="ak-soft">itself</span> : <a href={pageHref(root.id)}>{root.title}</a>}</td>
+                      <td>
+                        <Verified at={page.verifiedAt} />
+                      </td>
+                      <td>
+                        <When at={page.updatedAt} />
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Layout>,
+    );
+  });
 
   app.get("/search", async (c) => {
     const q = (c.req.query("q") ?? "").trim();

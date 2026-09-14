@@ -682,6 +682,57 @@ describe("sources (ADR-027)", () => {
   });
 });
 
+describe("freshness (ADR-028)", () => {
+  it("shows whether a page was verified, and marks it from the editor", async () => {
+    const page = await context.pages.create(context.workspaceId, { title: "Selank", body: "A heptapeptide." }, AGENT);
+    expect((await get(`/p/${page.id}`)).html).toContain("Never verified");
+
+    const editor = await get(`/p/${page.id}/edit`);
+    expect(editor.html).toContain('name="verified"');
+    const result = await post(`/p/${page.id}/edit`, {
+      title: "Selank",
+      body: "A heptapeptide.",
+      tags: "",
+      verified: "on",
+      version: page.version,
+      note: "Checked against the 2008 trial",
+    });
+    expect(result.status).toBe(303);
+    const saved = await context.pages.get(context.workspaceId, page.id);
+    expect(saved.verifiedAt).toBe(saved.updatedAt);
+
+    const { html } = await get(`/p/${page.id}`);
+    expect(html).toContain("Verified <time");
+    expect(html).not.toContain("Never verified");
+    const history = await get(`/p/${page.id}/v/${saved.version}`);
+    expect(history.html).toContain("This change confirmed the page");
+  });
+
+  it("does not count an edit without the box ticked", async () => {
+    const page = await context.pages.create(context.workspaceId, { title: "Log", body: "x" }, AGENT);
+    await post(`/p/${page.id}/edit`, { title: "Log", body: "y", tags: "", version: page.version });
+    expect((await context.pages.get(context.workspaceId, page.id)).verifiedAt).toBeNull();
+  });
+
+  it("lists pages never verified first, then the least recently verified", async () => {
+    const old = await context.pages.create(
+      context.workspaceId,
+      { title: "Checked long ago", body: "x", verifiedAt: "2025-01-01T00:00:00Z" },
+      AGENT,
+    );
+    await context.pages.create(context.workspaceId, { title: "Checked just now", body: "x", sources: ["Smith 2021"] }, AGENT);
+    await context.pages.create(context.workspaceId, { title: "Never checked", body: "x" }, AGENT);
+
+    const { status, html } = await get("/freshness");
+    expect(status).toBe(200);
+    expect(html).toContain("3 pages: 2 verified, 1 never verified");
+    const order = ["Never checked", "Checked long ago", "Checked just now"].map((title) => html.indexOf(title));
+    expect(order.every((at) => at > 0)).toBe(true);
+    expect(order).toEqual([...order].sort((a, b) => a - b));
+    expect(old.verifiedAt).toBe("2025-01-01T00:00:00.000Z");
+  });
+});
+
 describe("collections are the home page (ADR-026)", () => {
   beforeEach(async () => {
     const ws = context.workspaceId;

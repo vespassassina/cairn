@@ -13,6 +13,12 @@ Rules:
 
 ## 2026-09-14
 
+### Freshness: when a page was last verified
+
+> "done, do next"
+
+Said after deploying provenance to Azure. The next roadmap item was "Freshness: `verified_at` on pages", when a fact was last confirmed, separate from last edited. Asked four questions, the owner chose the recommended answer each time: a page is marked verified by a flag on a write (`verified: true`), with an empty append for a check that changes nothing else, and no new tool; a page created with sources counts as verified at creation, one without starts never verified; the console shows the age everywhere ("Verified 3 months ago", "Never verified") with a list of the least recently verified pages, and no staleness threshold; and pages only, not rows. Landed in: ADR-028 and the matching changelog entry.
+
 ### The table inside Peptides is Peptides Index
 
 > "rename the inner peptide table to Peptides Index"

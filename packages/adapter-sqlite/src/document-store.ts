@@ -54,6 +54,7 @@ CREATE TABLE IF NOT EXISTS pages (
   tags         TEXT NOT NULL,
   body         TEXT NOT NULL,
   sources      TEXT NOT NULL DEFAULT '[]',
+  verified_at  TEXT,
   created_at   TEXT NOT NULL,
   updated_at   TEXT NOT NULL,
   updated_by   TEXT NOT NULL DEFAULT '${LEGACY_ACTOR}',
@@ -131,6 +132,7 @@ interface PageRecord {
   tags: string;
   body: string;
   sources: string;
+  verified_at: string | null;
   created_at: string;
   updated_at: string;
   updated_by: string;
@@ -228,6 +230,7 @@ function toPage(record: PageRecord): Page {
     tags: JSON.parse(record.tags) as string[],
     body: record.body,
     sources: JSON.parse(record.sources) as string[],
+    verifiedAt: record.verified_at,
     createdAt: record.created_at,
     updatedAt: record.updated_at,
     updatedBy: JSON.parse(record.updated_by) as Actor,
@@ -323,6 +326,10 @@ export class SqliteDocumentStore implements DocumentStore {
       if (table !== "collections" && !columns.some((column) => column.name === "sources")) {
         this.db.exec(`ALTER TABLE ${table} ADD COLUMN sources TEXT NOT NULL DEFAULT '[]'`);
       }
+      // Pages gained a verification time (ADR-028).
+      if (table === "pages" && !columns.some((column) => column.name === "verified_at")) {
+        this.db.exec("ALTER TABLE pages ADD COLUMN verified_at TEXT");
+      }
     }
     this.db.exec(SCHEMA);
   }
@@ -358,6 +365,7 @@ export class SqliteDocumentStore implements DocumentStore {
       tags: input.tags ?? [],
       body: input.body,
       sources: input.sources ?? [],
+      verifiedAt: input.verifiedAt ?? null,
       createdAt: existing?.createdAt ?? meta.at,
       updatedAt: meta.at,
       updatedBy: meta.actor,
@@ -369,7 +377,7 @@ export class SqliteDocumentStore implements DocumentStore {
     const applied = existing
       ? this.db
           .prepare(
-            `UPDATE pages SET title = ?, parent_id = ?, tags = ?, body = ?, sources = ?,
+            `UPDATE pages SET title = ?, parent_id = ?, tags = ?, body = ?, sources = ?, verified_at = ?,
              updated_at = ?, updated_by = ?, version = ?
              WHERE workspace_id = ? AND id = ? AND version = ?`,
           )
@@ -379,6 +387,7 @@ export class SqliteDocumentStore implements DocumentStore {
             JSON.stringify(page.tags),
             page.body,
             JSON.stringify(page.sources),
+            page.verifiedAt,
             page.updatedAt,
             JSON.stringify(page.updatedBy),
             page.version,
@@ -389,8 +398,8 @@ export class SqliteDocumentStore implements DocumentStore {
       : this.db
           .prepare(
             `INSERT OR IGNORE INTO pages
-             (workspace_id, id, title, parent_id, tags, body, sources, created_at, updated_at, updated_by, version)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             (workspace_id, id, title, parent_id, tags, body, sources, verified_at, created_at, updated_at, updated_by, version)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           )
           .run(
             workspaceId,
@@ -400,6 +409,7 @@ export class SqliteDocumentStore implements DocumentStore {
             JSON.stringify(page.tags),
             page.body,
             JSON.stringify(page.sources),
+            page.verifiedAt,
             page.createdAt,
             page.updatedAt,
             JSON.stringify(page.updatedBy),

@@ -6,6 +6,22 @@ Entries link to the ADR when there is one. A change of direction that has no ADR
 
 ## 2026-09-14
 
+### Pages say when their facts were last verified (ADR-028)
+
+The roadmap's freshness item. A page's update time moves with a typo fix and says nothing about whether its facts still hold. The owner chose a verification time set by a flag on a write, set at creation when the page has sources, shown as an age with no staleness threshold, on pages only.
+
+1. **Core:** `Page.verifiedAt`, null for never. A write with `verified: true` sets it to the write's own time; an exact `verifiedAt` (import, sync, restore) must be an ISO 8601 time at most a day ahead and is stored in UTC; otherwise an update keeps it and a create sets it only when the page has sources. Revisions snapshot it, and a revision view says whether that revision verified the page: its snapshot's time equals its own.
+2. **SQLite:** a nullable `verified_at` column on `pages`, added to an existing database on start.
+3. **MCP:** `update_page` takes `verified`, which works with empty append content; `get_page` returns `verified_at`, `get_revision` returns `verified_at` and `verified`, and search hits carry `verified_at` only when it is set. The server instructions gain one sentence: when you re-check a page and it still holds, pass `verified: true`.
+4. **REST:** `PATCH` takes `verified: true`, `PUT` takes an exact `verified_at` or null, and page responses, search hits and revision views carry it. The Markdown view has a `verified:` line.
+5. **CLI:** `--verified` on `append`, `replace-section` and `write`; a bare `cairn append <page-id> --verified --note "why"` needs no text. `cairn revision` says when a revision verified the page. The skill says both.
+6. **Console:** "Verified 3 months ago" or "Never verified" on every page, a checkbox in the editor, a "verified" chip in history, and a new Freshness screen in the navigation listing pages never verified first, then the least recently verified.
+7. **Export, import and sync:** a `verified` line in a page's front matter when set, still format version 2; import sets it exactly; sync hashes it only when set, so the first sync after upgrading copies nothing, and sends it with every page write so a change reaches the other side.
+
+Context cost, measured with `pnpm context-cost`: MCP from about 3,091 tokens a session to 3,138. The skill description is unchanged, at about 115 tokens.
+
+14 tests added, across core services, REST, MCP, the console, the CLI, export and sync. 380 tests pass, 1 skipped, and the CLI smoke test passes. The console was checked by eye on a scratch database: the Freshness list, the editor checkbox, the page's meta line and the history chip.
+
 ### The Peptides table is now Peptides Index
 
 The owner's answer to the name clash left open on 2026-09-13: the Peptides collection held a table also called Peptides. The table `col_peptides` was renamed Peptides Index, and the collection's front page (`pg_peptides`) now says "The Peptides Index table has one row per peptide", as a revision with a change note. The id did not change, so the Stacks table's links to its rows, and every `[[col_peptides/...]]` link, still work. The peptide wiki seed (`examples/peptide-wiki/seed.ts`) uses the new name, so reseeding does not rename it back.

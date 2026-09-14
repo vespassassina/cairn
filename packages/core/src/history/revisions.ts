@@ -37,6 +37,8 @@ export async function writeWithRevision<T>(
     expectedVersion: ExpectedVersion;
     snapshot: PageSnapshot | RowSnapshot;
     deleted?: boolean;
+    /** The time of the write, when the snapshot already names it. */
+    at?: string;
   },
   context: WriteContext,
   write: (meta: WriteMeta) => Promise<T>,
@@ -44,7 +46,7 @@ export async function writeWithRevision<T>(
   const meta: WriteMeta = {
     version: newVersion(),
     actor: context.actor,
-    at: new Date().toISOString(),
+    at: target.at ?? new Date().toISOString(),
   };
 
   await store.putRevision(target.workspaceId, {

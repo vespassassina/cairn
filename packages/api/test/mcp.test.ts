@@ -103,7 +103,8 @@ describe("transport and auth", () => {
     const { body: listed } = await rpc("tools/list");
     const names = new Set((listed.result.tools as Array<{ name: string }>).map((t) => t.name));
     const mentioned = instructions.match(/\b[a-z]+_[a-z_]+\b/g) ?? [];
-    const tools = mentioned.filter((word) => word !== "version_conflict" && word !== "change_note");
+    // Words that name an error or a field, not a tool.
+    const tools = mentioned.filter((word) => !["version_conflict", "change_note", "verified_at"].includes(word));
     expect(tools.length).toBeGreaterThan(0);
     for (const name of tools) expect(names.has(name), name).toBe(true);
     expect(names.has("search")).toBe(true);
@@ -513,6 +514,60 @@ describe("sources (ADR-027)", () => {
     });
     expect(body.result.isError).toBe(true);
     expect(body.result.content[0].text).toContain("sources");
+  });
+});
+
+describe("freshness (ADR-028)", () => {
+  const PAPER = "https://pubmed.ncbi.nlm.nih.gov/12345/";
+
+  it("marks a page verified with an update that changes nothing else, and shows it in history", async () => {
+    const created = await callTool("create_page", {
+      title: "Thymosin beta-4",
+      body: "# Thymosin beta-4\n\nStudied for wound repair.",
+      change_note: "Started a page",
+    });
+    expect(created.data["verified_at"]).toBeNull();
+
+    const checked = await callTool("update_page", {
+      page_id: created.data["id"],
+      version: created.data["version"],
+      mode: "append",
+      content: "",
+      verified: true,
+      change_note: "Re-read the 2021 review: still right",
+    });
+    expect(checked.isError).toBe(false);
+    expect(checked.data["verified_at"]).toBe(checked.data["updated_at"]);
+
+    const read = await callTool("get_page", { page_id: created.data["id"] });
+    expect(read.data["body"]).toBe("# Thymosin beta-4\n\nStudied for wound repair.");
+    expect(read.data["verified_at"]).toBe(checked.data["verified_at"]);
+
+    const revision = await callTool("get_revision", {
+      page_id: created.data["id"],
+      version: checked.data["version"],
+    });
+    expect(revision.data["verified"]).toBe(true);
+    const first = await callTool("get_revision", {
+      page_id: created.data["id"],
+      version: created.data["version"],
+    });
+    expect(first.data).not.toHaveProperty("verified");
+  });
+
+  it("counts a page created with sources as verified, and says so in search hits only when set", async () => {
+    const cited = await callTool("create_page", {
+      title: "Selank",
+      body: "An anxiolytic heptapeptide, sold as a nasal spray.",
+      sources: [PAPER],
+    });
+    expect(cited.data["verified_at"]).toBe(cited.data["updated_at"]);
+    await callTool("create_page", { title: "Semax", body: "A nootropic heptapeptide, also a nasal spray." });
+
+    const found = await callTool("search", { query: "heptapeptide" });
+    const hits = found.data["hits"] as Array<Record<string, unknown>>;
+    expect(hits.find((hit) => hit["page_id"] === cited.data["id"])!["verified_at"]).toBe(cited.data["verified_at"]);
+    expect(hits.find((hit) => hit["page_id"] !== cited.data["id"])).not.toHaveProperty("verified_at");
   });
 });
 

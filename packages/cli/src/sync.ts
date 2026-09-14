@@ -99,6 +99,11 @@ function withSources(sources: unknown): { sources?: string[] } {
   return Array.isArray(sources) && sources.length > 0 ? { sources: sources.map(String) } : {};
 }
 
+/** A page's verification time (ADR-028), on the same terms: only when set. */
+function withVerified(verifiedAt: unknown): { verified_at?: string } {
+  return typeof verifiedAt === "string" && verifiedAt !== "" ? { verified_at: verifiedAt } : {};
+}
+
 /** Every page, table and row on one server. */
 export async function readSide(client: CairnClient): Promise<Snapshot> {
   const snapshot: Snapshot = new Map();
@@ -117,6 +122,7 @@ export async function readSide(client: CairnClient): Promise<Snapshot> {
         tags: page["tags"] ?? [],
         body: page["body"],
         ...withSources(page["sources"]),
+        ...withVerified(page["verified_at"]),
       };
       add(await record("page", String(page["id"]), null, String(page["title"]), content, String(page["updated_at"]), String(page["version"])));
     }
@@ -312,8 +318,9 @@ export async function apply(
         }
         await write(action, () =>
           client.request("PUT", `/pages/${encodeURIComponent(source.id)}`, {
-            // Always send the list, empty too, so a removal reaches the other side.
-            body: { sources: [], ...source.content, parent_id: parent, change_note: note(action) },
+            // Always send the list and the time, empty too, so a removal
+            // reaches the other side.
+            body: { sources: [], verified_at: null, ...source.content, parent_id: parent, change_note: note(action) },
             ifMatch,
           }),
         );
