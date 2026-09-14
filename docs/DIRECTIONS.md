@@ -13,6 +13,12 @@ Rules:
 
 ## 2026-09-14
 
+### Publish a wiki: read-only, indexable, or as a static site
+
+> "add to comments and docs that the wiki can be made public (readonly) and indexable by search engines. it can even be just exported and dumped in github or a blob storage or s3 static website or google cloud or dropbox to be shared on the web. cairn can be a knowledge manager as well as a free knowledge source."
+
+Read as the roadmap and docs. Landed in: two roadmap items, "Public wiki: read-only and indexable by search engines" and "Static site export", replacing the public half of the phone-console item, and the PRD's users and P2 list. Not built; the public wiki needs an ADR amending ADR-017.
+
 ### The CLI's version, and how to update it
 
 > "fix both"

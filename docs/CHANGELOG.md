@@ -6,6 +6,10 @@ Entries link to the ADR when there is one. A change of direction that has no ADR
 
 ## 2026-09-14
 
+### Roadmap: a wiki can be published, served or as a static site
+
+The owner's direction that Cairn be a free knowledge source as well as a knowledge manager. Two roadmap items: a public wiki, where a collection the owner marks public is served read-only with no sign-in and made indexable (titles, descriptions, a sitemap, `robots.txt`), private by default and leaking nothing private; and a static site export, HTML with working links for GitHub Pages, blob storage, S3 or Google Cloud Storage static websites, or Dropbox. The phone-console item keeps only the phone half. The PRD names readers on the web as later users and adds publishing to P2. No code.
+
 ### One version for a release, and how to update the CLI
 
 `cairn -V` printed `0.1.0` in `v0.1.1`, `v0.1.2` and `v0.1.3`, and the server reported `0.1.0` on `/health`, because nothing tied the numbers in the code to the release tag. Nobody could tell from the command whether they were up to date.

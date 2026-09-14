@@ -62,6 +62,8 @@ What no one combines: typed tables next to the wiki, a revision for every write 
 
 **Tertiary: small team (2 to 10 people).** Shares a workspace. Needs auth and basic permissions, not real-time co-editing.
 
+**Later: readers on the web.** Cairn is a knowledge manager, and it can also be a free knowledge source: the owner publishes a collection, such as the peptide wiki, for anyone to read and for search engines to index. Either Cairn serves it read-only with no sign-in, or an export as a static site is put on GitHub Pages, a blob storage or S3 static website, Google Cloud Storage or Dropbox, with no server at all. Not built; see the roadmap items "Public wiki" and "Static site export" (owner's direction of 2026-09-14).
+
 ## 5. User stories
 
 ### Claude as client
@@ -253,6 +255,7 @@ Status 2026-09-12: Azure uses Container Apps and Blob Storage instead of Functio
 4. **Client-side embeddings** in the browser via Transformers.js with a pinned model.
 5. **Import** from Notion export and Obsidian vaults. The Obsidian half, both ways, is now a roadmap item of its own ("Against a notes app kept in git").
 6. **Permissions** beyond workspace membership: per-page sharing, read-only guests.
+7. **Publishing:** a collection served read-only to anyone and indexable by search engines, or exported as a static site for any static host. On the roadmap since 2026-09-14.
 
 ## 10. Success metrics
 
