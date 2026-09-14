@@ -6,6 +6,15 @@ Entries link to the ADR when there is one. A change of direction that has no ADR
 
 ## 2026-09-14
 
+### One version for a release, and how to update the CLI
+
+`cairn -V` printed `0.1.0` in `v0.1.1`, `v0.1.2` and `v0.1.3`, and the server reported `0.1.0` on `/health`, because nothing tied the numbers in the code to the release tag. Nobody could tell from the command whether they were up to date.
+
+1. **One source:** the root `package.json` now holds the release's version. `pnpm set-version <version>` writes it into the CLI's `package.json`, the CLI's `VERSION` and the server's `SERVER_INFO`.
+2. **Checks:** a test fails when those four disagree, and the release job refuses a tag that is not `v` followed by that version.
+3. **Set to 0.1.4** for the next tag, which carries freshness (ADR-028) and named instances (ADR-029).
+4. **Docs:** `docs/CLI.md` gains "Update it", for a downloaded executable and for an npm install from the repository; `docs/LOCAL.md` lists `pnpm set-version` and how a release is cut.
+
 ### Roadmap: features that answer Obsidian kept in git
 
 The owner asked why anyone would choose Cairn over Obsidian with its vault in a GitHub repository, then asked for the proposed features to go on the roadmap. A new roadmap section, "Against a notes app kept in git", holds all ten in the owner's order, each with the ADR or PRD limit it runs into: an Obsidian bridge, a git mirror, an agent activity digest with approvals, stale-page reviews, quick capture, a graph view, templates and attachments, a phone-friendly console with an optional public page, sharing, and a published search-quality number. The PRD's landscape gains Obsidian in git as the comparison most readers will make, and Obsidian import leaves Phase 3 for the new section. No code.

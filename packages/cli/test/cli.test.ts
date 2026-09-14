@@ -67,9 +67,9 @@ describe("cairn", () => {
 
   it("names itself and the agent in the user agent, so writes are attributed", async () => {
     const { id } = await createLog();
-    expect(seen.at(-1)!.headers.get("user-agent")).toBe("cairn-cli/0.1.0 (claude-code)");
+    expect(seen.at(-1)!.headers.get("user-agent")).toBe(`cairn-cli/${VERSION} (claude-code)`);
     const page = await context.pages.get(context.workspaceId, id);
-    expect(page.updatedBy).toMatchObject({ kind: "agent", id: "api:dev", label: "cairn-cli/0.1.0 (claude-code)" });
+    expect(page.updatedBy).toMatchObject({ kind: "agent", id: "api:dev", label: `cairn-cli/${VERSION} (claude-code)` });
   });
 
   it("creates, reads as Markdown, and searches", async () => {
@@ -117,7 +117,7 @@ describe("cairn", () => {
 
     expect(await cairn("history", id)).toBe(0);
     expect(stdout).toContain('"Real firmware"');
-    expect(stdout).toContain("agent: cairn-cli/0.1.0 (claude-code)");
+    expect(stdout).toContain(`agent: cairn-cli/${VERSION} (claude-code)`);
 
     expect(await cairn("revision", id, next)).toBe(0);
     expect(stdout).toContain("+ BLHeli_32");

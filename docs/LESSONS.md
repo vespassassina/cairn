@@ -13,6 +13,13 @@ Each entry answers four questions:
 
 ## 2026-09-14
 
+### Three releases all said they were 0.1.0
+
+1. **What happened.** Explaining to the owner how to keep the CLI updated showed that `cairn -V` printed `0.1.0`, although `v0.1.3` was the newest release. The server's `/health` said the same.
+2. **Cause.** The version was written by hand in three places, `packages/cli/package.json`, the CLI's `VERSION` and the server's `SERVER_INFO`, and the release job built whatever they said. Tagging `v0.1.1` to `v0.1.3` changed none of them, and nothing checked.
+3. **Fix.** The root `package.json` holds the version, `pnpm set-version` writes the other three, a test fails when they disagree, and the release job fails when the tag does not match.
+4. **Lesson.** A number written in more than one place drifts unless something fails when it does. For anything a release stamps, check the stamp in the release job itself, not in the checklist.
+
 ### CLI tests read the owner's real sign-ins
 
 1. **What happened.** Adding named instances meant any CLI test with no `CAIRN_URL` could route to whatever the owner had registered on this machine. Checking why showed the older tests already read `~/.config/cairn/credentials.json` when they built the CLI's environment.

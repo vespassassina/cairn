@@ -157,7 +157,10 @@ pnpm build:cli      standalone CLI executables for every OS, into dist/cli (docs
 pnpm build:server   the server bundled into one file, dist/server/server.mjs, as the container runs it
 pnpm smoke:cli      run a built executable against a real server
 pnpm sync:artifactkit   re-embed artifactkit after changing it, then commit
+pnpm set-version 0.1.5  set the release version everywhere it is written, before tagging
 ```
+
+A release is a tag, `v` and the version, pushed after `pnpm set-version` and a commit. The release job refuses a tag that does not match the version in `package.json`, and a test fails when the CLI, the server and `package.json` disagree.
 
 Run `pnpm reindex` after changing chunking, and `pnpm eval` before and after
 any search change (CLAUDE.md hard rule 7).

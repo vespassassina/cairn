@@ -179,6 +179,15 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+      - name: the tag matches the version
+        # pnpm set-version writes it; a release whose files say another
+        # version cannot tell anyone whether they are up to date.
+        run: |
+          version=$(node -p "require('./package.json').version")
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match version $version in package.json. Run pnpm set-version first"
+            exit 1
+          fi
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:

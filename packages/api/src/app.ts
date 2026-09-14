@@ -41,7 +41,7 @@ export interface Caller {
   identity: string | null;
 }
 
-const SERVER_INFO = { name: "cairn", version: "0.1.0" };
+const SERVER_INFO = { name: "cairn", version: "0.1.4" };
 
 /**
  * A fresh server and transport per request.

@@ -1,5 +1,6 @@
 {
   "name": "cairn",
+  "version": "0.1.4",
   "license": "PolyForm-Noncommercial-1.0.0",
   "repository": {
     "type": "git",
@@ -24,7 +25,8 @@
     "smoke:cli": "node scripts/smoke-cli.mjs",
     "context-cost": "pnpm --filter @cairn/api context-cost",
     "sync:artifactkit": "node scripts/sync-artifactkit.mjs",
-    "build:server": "node scripts/build-server.mjs"
+    "build:server": "node scripts/build-server.mjs",
+    "set-version": "node scripts/set-version.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.10.5",

@@ -171,6 +171,30 @@ cairn overview
 
 `cairn -V` prints the version. `cairn overview` needs a running server; without one it says it cannot reach Cairn, which also proves the executable runs.
 
+## Update it
+
+`cairn -V` says which version you have; the newest is at the top of https://github.com/vespassassina/cairn/releases. Before `v0.1.4`, every build said `0.1.0`, so an older one cannot tell you.
+
+1. **An executable you downloaded:** download it again over the old one. The `latest` address always gives the newest release, so on an Apple silicon Mac:
+
+   ```
+   curl -L -o ~/.local/bin/cairn https://github.com/vespassassina/cairn/releases/latest/download/cairn-darwin-arm64
+   chmod +x ~/.local/bin/cairn
+   ```
+
+   Use the file for your machine from the table in section 1. On Windows, download `cairn-windows-x64.exe` again and move it over `%LOCALAPPDATA%\Programs\cairn\cairn.exe`.
+2. **Installed with npm from this repository:** npm links to the folder rather than copying it, so pulling and building updates the command in place. This is also the way to run code from `main` that is not released yet.
+
+   ```
+   git pull
+   pnpm install
+   pnpm build
+   ```
+
+   With nvm, a global install belongs to one Node version: after switching versions, run `npm install -g ./packages/cli` again.
+
+A job installed with `cairn sync install` runs the same file, so it uses the new version from its next run. Nothing needs installing again.
+
 ## Your data: export and import
 
 ```

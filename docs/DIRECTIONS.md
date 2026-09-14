@@ -13,6 +13,12 @@ Rules:
 
 ## 2026-09-14
 
+### The CLI's version, and how to update it
+
+> "fix both"
+
+In answer to the agent's finding, while explaining how to install and update the CLI, that `cairn -V` printed `0.1.0` in every release and that `docs/CLI.md` said nothing about updating. Landed in: the changelog entry "One version for a release, and how to update the CLI", with 0.1.4 set for the next tag.
+
 ### Put the features that answer Obsidian on the roadmap
 
 > "add these in our docs and roadmap"
