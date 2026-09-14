@@ -10,7 +10,7 @@ import { restRoutes } from "./rest/routes.js";
 import { NO_LOCAL_TRUST, trustedForMcp, type LocalTrust } from "./trust.js";
 import type { OAuthServer } from "./oauth/server.js";
 import { registerConsole } from "./web/console.js";
-import { registerPublicWiki } from "./web/public.js";
+import { registerPublicWiki, type SelfDescription } from "./web/public.js";
 import { SESSION_COOKIE } from "./web/session.js";
 
 /**
@@ -34,6 +34,8 @@ export interface AppOptions {
   publicOrigin?: string | null;
   /** The licence published pages carry (ADR-032). Null shows none. */
   contentLicence?: string | null;
+  /** How this Cairn describes itself at /.well-known/cairn.json (ADR-034). */
+  selfDescription?: SelfDescription;
 }
 
 /** How a request got in, for attribution and for GET /api/v1/me. */
@@ -218,6 +220,7 @@ export function createApp(options: AppOptions): Hono {
     context: options.context,
     publicOrigin: options.publicOrigin ?? null,
     contentLicence: options.contentLicence ?? null,
+    selfDescription: options.selfDescription ?? null,
   });
 
   return app;

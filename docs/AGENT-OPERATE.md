@@ -62,6 +62,10 @@ A setting that is wrong stops the server with a message naming the setting and t
 | `CAIRN_MODEL_DOWNLOAD` | `true`; `false` in the image, which ships the model | `false` never downloads the model; search by meaning then stays off unless it is already there |
 | `CAIRN_VECTOR_MARGIN` | `0.065` | How far a match by meaning must stand out from its neighbours to count (ADR-022). Change it only with `pnpm eval` before and after |
 | `CAIRN_CONTENT_LICENCE` | none | The licence shown on published pages, such as `CC BY 4.0` (ADR-032). It covers the owner's text, not Cairn's code |
+| `CAIRN_NAME` | `Cairn` | The name this Cairn gives itself at `/.well-known/cairn.json` (ADR-034) |
+| `CAIRN_DESCRIPTION` | none | A sentence describing this Cairn, at `/.well-known/cairn.json` |
+| `CAIRN_LANGUAGE` | `en` | The language tag it reports at `/.well-known/cairn.json` |
+| `CAIRN_TOPICS` | none | What it is about, comma-separated, at `/.well-known/cairn.json` |
 | `CAIRN_REPLICA_URL` | set by the Azure template; none on Docker | Where Litestream streams the database: `abs://` on Azure, `s3://` elsewhere. With an empty data folder, Cairn restores from it on start |
 
 ### Docker only

@@ -6,6 +6,12 @@ Entries link to the ADR when there is one. A change of direction that has no ADR
 
 ## 2026-09-14
 
+### A public Cairn describes itself
+
+The next step past the published wiki (ADR-032), and the first item on "Bridges between Cairns" (`docs/ROADMAP.md`, ADR-034): every other discovery item, the registry, discovery by following citations, "cited by" notices, needs a machine-readable place a Cairn says what it is, and now there is one.
+
+`GET /.well-known/cairn.json`, on the published surface, no sign-in: a format version, the Cairn's name, description, language and topics from new owner settings (`CAIRN_NAME`, `CAIRN_DESCRIPTION`, `CAIRN_LANGUAGE`, `CAIRN_TOPICS`), the content licence it already carries, the roots of its published subtrees with their addresses, its sitemap, and `cites`. That last field is always empty today: nothing yet tells a citation in a page's `sources` (ADR-027) apart from an ordinary web link, so filling it in is later work, and the ADR says so rather than letting the field imply it works. Built from the same published set as `/w`, so it names nothing that is not already public.
+
 ### A lost refresh no longer ends the sign-in
 
 The owner's Cairn MCP sign-in stopped working, nowhere near the 30 day refresh lifetime, and they asked whether the token could last longer (`docs/DIRECTIONS.md`, ADR-033). It could, but that was not the fault. Refresh tokens rotate on every use, so a Cairn used daily never expires by time. What ended the sign-in was a refresh token presented twice, which the server read as a stolen token and answered by revoking the whole family.

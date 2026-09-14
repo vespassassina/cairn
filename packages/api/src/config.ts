@@ -45,6 +45,19 @@ export interface Config {
    * no licence at all.
    */
   contentLicence: string | null;
+  /** How this Cairn describes itself at /.well-known/cairn.json (ADR-034). */
+  selfDescription: SelfDescriptionConfig;
+}
+
+export interface SelfDescriptionConfig {
+  /** Shown at /.well-known/cairn.json. Defaults to "Cairn" so it is never empty. */
+  name: string;
+  /** In the owner's words, or null when not set. */
+  description: string | null;
+  /** BCP 47 language tag, such as "en". */
+  language: string;
+  /** What this Cairn is about, or null when not set. */
+  topics: string[] | null;
 }
 
 export interface EmbeddingsConfig {
@@ -77,6 +90,11 @@ export interface ConfigFile {
   database?: string;
   /** The licence published pages carry, such as "CC BY 4.0" (ADR-032). */
   contentLicence?: string;
+  /** How this Cairn describes itself at /.well-known/cairn.json (ADR-034). */
+  name?: string;
+  description?: string;
+  language?: string;
+  topics?: string[];
   port?: number;
   workspace?: string;
   embeddings?: {
@@ -277,6 +295,19 @@ export function loadConfig(
     oauth,
     embeddings,
     contentLicence: (env["CAIRN_CONTENT_LICENCE"] ?? file.contentLicence ?? "").trim() || null,
+    selfDescription: loadSelfDescription(env, file),
+  };
+}
+
+function loadSelfDescription(env: NodeJS.ProcessEnv, file: ConfigFile): SelfDescriptionConfig {
+  const topics = (env["CAIRN_TOPICS"]?.split(",") ?? file.topics ?? [])
+    .map((topic) => topic.trim())
+    .filter((topic) => topic !== "");
+  return {
+    name: (env["CAIRN_NAME"] ?? file.name ?? "").trim() || "Cairn",
+    description: (env["CAIRN_DESCRIPTION"] ?? file.description ?? "").trim() || null,
+    language: (env["CAIRN_LANGUAGE"] ?? file.language ?? "").trim() || "en",
+    topics: topics.length > 0 ? topics : null,
   };
 }
 

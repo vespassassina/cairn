@@ -13,6 +13,12 @@ Rules:
 
 ## 2026-09-14
 
+### Which roadmap item next: a Cairn describes itself
+
+> "next item"
+
+Asked to choose from the roadmap's "Bridges between Cairns" section, the owner picked "A public Cairn describes itself" over the static site export and the Obsidian bridge. Landed in: ADR-034, `/.well-known/cairn.json`.
+
 ### Make the sign-in survive a lost refresh
 
 > "can we make the token last longer ?"

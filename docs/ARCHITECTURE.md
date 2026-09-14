@@ -16,6 +16,7 @@ Agent without a shell    Agent with a shell      Browser (owner)
   |    /api/v1     REST, changes feed   /  operations.ts      |
   |    /           review console (ADR-009)                    |
   |    /w          published wiki, no sign-in (ADR-032)        |
+  |    /.well-known/cairn.json  self-description (ADR-034)     |
   |    entry/node.ts   (one container everywhere, ADR-020)     |
   +-----------------------------------------------------------+
         |
@@ -58,7 +59,7 @@ Local: nothing (ADR-010). Anywhere else, OAuth (ADR-017):
 1. `packages/api/src/oauth/` holds a small OAuth 2.1 server: discovery documents, dynamic client registration, authorize with a consent page, tokens, revocation. Sign-in is delegated to GitHub or any OpenID Connect provider; an allowlist decides who gets in.
 2. Access tokens are HS256 JWTs, checked on every MCP and REST request with no store read. The console uses a session cookie from the same sign-in, and writes are attributed to the signed-in person.
 3. Clients, codes and refresh tokens live in the `AuthStore` port, apart from content, with its own conformance suite. SQLite implements it in the same file. Refresh tokens rotate and are single use; a repeat within 60 seconds is answered with the tokens already issued, and after that it revokes the sign-in (ADR-033).
-4. The one exception to sign-in is the published wiki (ADR-032): `/w`, `/sitemap.xml` and `/robots.txt` serve pages an owner marked public, read-only, to anyone. `packages/core/src/publish.ts` works out which pages those are by walking each page's ancestors, and `packages/api/src/web/public.tsx` reads nothing outside that set.
+4. The one exception to sign-in is the published wiki (ADR-032): `/w`, `/sitemap.xml`, `/robots.txt` and `/.well-known/cairn.json` (ADR-034) serve pages an owner marked public, read-only, to anyone. `packages/core/src/publish.ts` works out which pages those are by walking each page's ancestors, and `packages/api/src/web/public.tsx` reads nothing outside that set. `cairn.json` describes the Cairn itself, from settings the owner sets (`CAIRN_NAME` and the like), for a registry or a crawler to read.
 
 ## Export and import
 

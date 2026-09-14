@@ -21,6 +21,11 @@ import { createMarkdownRenderer, type LinkResolver } from "./markdown.js";
  * There is no search, no history, no tables and no actor name on this surface
  * (ADR-032 decisions 3 and 4). Each of those is a way for private text to
  * reach a stranger, and none of them is worth that risk.
+ *
+ * `/.well-known/cairn.json` (ADR-034) describes the Cairn itself, for a
+ * registry or a crawler that follows citations between Cairns. It is built
+ * from the same published set as everything else here, so it names no page
+ * that is not published.
  */
 
 export interface PublicWikiOptions {
@@ -29,6 +34,16 @@ export interface PublicWikiOptions {
   publicOrigin?: string | null;
   /** The licence the owner puts on published pages (ADR-032 decision 7). */
   contentLicence?: string | null;
+  /** How this Cairn describes itself at /.well-known/cairn.json (ADR-034). */
+  selfDescription?: SelfDescription | null;
+}
+
+/** The owner's settings for /.well-known/cairn.json (ADR-034). None are secret. */
+export interface SelfDescription {
+  name: string;
+  description: string | null;
+  language: string;
+  topics: string[] | null;
 }
 
 const renderMarkdown = createMarkdownRenderer();
@@ -67,6 +82,12 @@ function resolverFor(pages: readonly Page[]): LinkResolver {
     href: (id) => (titles.has(id) ? wikiHref(id) : null),
     plainWhenUnknown: true,
   };
+}
+
+/** The top of each published subtree: everything else hangs below one of these. */
+function rootsOf(pages: readonly Page[]): Page[] {
+  const ids = new Set(pages.map((page) => page.id));
+  return pages.filter((page) => page.parentId === null || !ids.has(page.parentId));
 }
 
 /** The published pages above this one, outermost first. */
@@ -193,10 +214,9 @@ export function registerPublicWiki(app: Hono, options: PublicWikiOptions): void 
 
   app.get("/w", async (c) => {
     const pages = await published(context);
-    const ids = new Set(pages.map((page) => page.id));
-    // The top of each published subtree: everything else hangs below one of
-    // these, so this is the shortest honest list of what is here.
-    const roots = pages.filter((page) => page.parentId === null || !ids.has(page.parentId));
+    // The shortest honest list of what is here: everything else hangs below
+    // one of these roots.
+    const roots = rootsOf(pages);
     const childrenOf = (id: string) => pages.filter((page) => page.parentId === id);
 
     return render(
@@ -333,6 +353,31 @@ export function registerPublicWiki(app: Hono, options: PublicWikiOptions): void 
       { "content-type": "text/plain; charset=utf-8" },
     ),
   );
+
+  // What this Cairn is, for a registry or a crawler that follows citations
+  // between Cairns (ADR-034). No sign-in, same as the rest of this surface.
+  // `collections` is built from the published set, so it names nothing that
+  // is not already on /w.
+  app.get("/.well-known/cairn.json", async (c) => {
+    const pages = await published(context);
+    const base = origin(c);
+    const self = options.selfDescription ?? { name: "Cairn", description: null, language: "en", topics: null };
+    const body: Record<string, unknown> = {
+      cairn: "1",
+      name: self.name,
+      ...(self.description ? { description: self.description } : {}),
+      language: self.language,
+      ...(licence ? { licence } : {}),
+      ...(self.topics ? { topics: self.topics } : {}),
+      collections: rootsOf(pages).map((root) => ({ title: root.title, url: `${base}${wikiHref(root.id)}` })),
+      sitemap: `${base}/sitemap.xml`,
+      // Which Cairns this one cites. Always empty today: nothing yet tells a
+      // citation in `sources` apart from an ordinary web link (ADR-034
+      // consequence 3, roadmap "Bridges between Cairns").
+      cites: [],
+    };
+    return c.body(JSON.stringify(body, null, 2), 200, { "content-type": "application/json; charset=utf-8" });
+  });
 }
 
 function escapeXml(value: string): string {

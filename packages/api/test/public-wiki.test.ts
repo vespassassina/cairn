@@ -256,3 +256,43 @@ describe("what search engines are told", () => {
     expect(page.headers.get("x-content-type-options")).toBe("nosniff");
   });
 });
+
+describe("what a Cairn says about itself (ADR-034)", () => {
+  it("describes itself with defaults when nothing is configured", async () => {
+    const { parent, secret } = await aSmallWiki();
+    const response = await stranger("/.well-known/cairn.json");
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toContain("application/json");
+    const body = JSON.parse(response.body);
+    expect(body).toMatchObject({ cairn: "1", name: "Cairn", language: "en", licence: "CC BY 4.0", cites: [] });
+    expect(body.description).toBeUndefined();
+    expect(body.topics).toBeUndefined();
+    expect(body.collections).toEqual([{ title: "Peptides", url: `http://localhost/w/${parent.id}` }]);
+    expect(body.sitemap).toBe("http://localhost/sitemap.xml");
+    expect(JSON.stringify(body)).not.toContain(secret.id);
+  });
+
+  it("carries the owner's name, description, language and topics when set", async () => {
+    app = createApp({
+      context,
+      token: TOKEN,
+      contentLicence: "CC BY 4.0",
+      selfDescription: { name: "Peptide Notes", description: "Research notes.", language: "en", topics: ["peptides", "biohacking"] },
+    });
+    cookie = await signIn();
+    await aSmallWiki();
+    const body = JSON.parse((await stranger("/.well-known/cairn.json")).body);
+    expect(body).toMatchObject({
+      name: "Peptide Notes",
+      description: "Research notes.",
+      language: "en",
+      topics: ["peptides", "biohacking"],
+    });
+  });
+
+  it("lists no collections and needs no sign-in when nothing is published", async () => {
+    const response = await stranger("/.well-known/cairn.json");
+    expect(response.status).toBe(200);
+    expect(JSON.parse(response.body).collections).toEqual([]);
+  });
+});

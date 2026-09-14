@@ -40,6 +40,7 @@ async function main(): Promise<void> {
     oauth,
     publicOrigin: config.oauth ? new URL(config.oauth.publicUrl).origin : null,
     contentLicence: config.contentLicence,
+    selfDescription: config.selfDescription,
   });
 
   const [primary, ...optional] = listenAddresses(config.host);
