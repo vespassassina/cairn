@@ -1,4 +1,5 @@
-import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
 import { dirname, join, relative, sep } from "node:path";
 import { parseArgs } from "node:util";
 import { ApiError, CairnClient, type Fetch } from "./client.js";
@@ -17,7 +18,21 @@ import {
   type ExportPage,
   type Manifest,
 } from "./export-format.js";
+import { checkInstance, firstReachable, instancesPath, isLoopback, loadInstances, reachable, saveInstances, type Instance } from "./instances.js";
 import { credentialsPath, login, logout, storedToken } from "./login.js";
+import {
+  describeInterval,
+  LAUNCHD_LABEL,
+  launchdPath,
+  launchdPlist,
+  PASSED_ENV,
+  schtasksArgs,
+  SYSTEMD_UNIT,
+  systemdDir,
+  systemdUnits,
+  WINDOWS_TASK,
+  type Job,
+} from "./schedule.js";
 import {
   apply,
   loadState,
@@ -52,6 +67,16 @@ export interface Io {
   stdin: () => Promise<string | null>;
   /** Opens a URL in the user's browser, for cairn login. */
   openBrowser?: (url: string) => Promise<void>;
+  /** Runs a program and waits for it, with no shell, for cairn sync install. */
+  exec?: (command: string, args: string[]) => Promise<{ code: number; output: string }>;
+  /** Starts an instance's own start command in the background, for cairn start. */
+  launch?: (command: string, log: string) => Promise<void>;
+  /** How to run this CLI again, for a scheduled job. Throws when it cannot. */
+  self?: () => Promise<string[]>;
+  platform?: string;
+  home?: string;
+  uid?: number;
+  sleep?: (ms: number) => Promise<void>;
 }
 
 const HELP = `cairn ${VERSION}: a wiki and tables your agents can write to, with every change reviewable.
@@ -91,6 +116,16 @@ Your data
   cairn sync <url-a> <url-b> [--every 5m] [--dry-run]   keep two Cairns the same; the newer edit wins,
                                                         the one it replaced stays in history
 
+Several Cairns: a laptop and a cloud copy, say, kept as one
+  cairn instances                                 the ones registered, in the order commands try them
+  cairn instances add <name> <url> [--first] [--start "command"]
+  cairn instances remove <name>
+  cairn start                                     start the first if it is down, then sync them all
+  cairn sync [--every 1h] [--dry-run]             sync the first that answers with each of the others
+  cairn sync install [--every 1h] [--dry-run]     run that sync on a schedule, as a background job
+  cairn sync uninstall
+  With instances registered, every command goes to the first that answers; --instance NAME picks one.
+
 Signing in (only for a server that uses OAuth; localhost needs none)
   cairn login                             sign in through your browser; tokens are kept for this server
   cairn whoami                            who the server thinks you are
@@ -100,7 +135,8 @@ Options
   --json          print the raw API response
   -V, cairn version   print the CLI version
   --limit N, --cursor C
-  CAIRN_URL       server, default http://localhost:8787
+  --instance NAME     use this registered instance
+  CAIRN_URL       server, default http://localhost:8787; takes precedence over instances
   CAIRN_TOKEN     a service token; takes precedence over cairn login
 `;
 
@@ -134,7 +170,19 @@ const OPTIONS = {
   force: { type: "boolean" },
   "dry-run": { type: "boolean" },
   every: { type: "string" },
+  instance: { type: "string" },
+  first: { type: "boolean" },
+  start: { type: "string" },
 } as const;
+
+/** Commands that choose their own servers, so never probe for one. */
+const OWN_SERVERS = new Set(["instances", "start", "sync"]);
+
+/** How long cairn start waits for an instance it started. */
+const START_WAIT_MS = 90_000;
+
+/** The default for a scheduled sync: long enough to let a cloud copy sleep between runs. */
+const DEFAULT_EVERY_MS = 3_600_000;
 
 type Flags = ReturnType<typeof parse>["values"];
 
@@ -318,7 +366,41 @@ export async function run(argv: string[], io: Io): Promise<number> {
   }
 
   const agent = io.env["CAIRN_AGENT"] ?? (io.env["CLAUDECODE"] ? "claude-code" : undefined);
-  const baseUrl = io.env["CAIRN_URL"] ?? "http://localhost:8787";
+  const credentials = credentialsPath(io.env);
+  const registry = instancesPath(credentials);
+  const registered = await loadInstances(registry);
+  const names = () => registered.map((instance) => instance.name).join(", ") || "none";
+  const named = (name: string): Instance => {
+    const found = registered.find((instance) => instance.name === name);
+    if (!found) throw new UsageError(`no instance called "${name}". Registered: ${names()}`);
+    return found;
+  };
+
+  // Which server: --instance, then CAIRN_URL, then the first registered
+  // instance that answers (ADR-029), then localhost.
+  let baseUrl = io.env["CAIRN_URL"] ?? "http://localhost:8787";
+  try {
+    if (flags.instance !== undefined) {
+      baseUrl = named(flags.instance).url;
+    } else if (io.env["CAIRN_URL"] === undefined && registered.length > 0 && !OWN_SERVERS.has(command)) {
+      if (command === "login" || command === "logout") {
+        throw new UsageError(`which instance? cairn ${command} --instance <name>, one of: ${names()}`);
+      }
+      const { instance, skipped } = await firstReachable(registered, io.fetch);
+      if (!instance) {
+        io.stderr(`error: none of your instances answered: ${registered.map((x) => `${x.name} (${x.url})`).join(", ")}\n`);
+        return 1;
+      }
+      if (skipped.length > 0) {
+        io.stderr(`using ${instance.name} (${instance.url}): ${skipped.map((x) => x.name).join(", ")} did not answer\n`);
+      }
+      baseUrl = instance.url;
+    }
+  } catch (error) {
+    if (!(error instanceof UsageError)) throw error;
+    io.stderr(`${error.message}\nRun cairn --help.\n`);
+    return 2;
+  }
   const loginIo = {
     fetch: io.fetch,
     env: io.env,
@@ -353,6 +435,190 @@ export async function run(argv: string[], io: Io): Promise<number> {
   const out = (json: Json | null, text: () => string) =>
     io.stdout(flags.json ? `${JSON.stringify(json, null, 2)}\n` : text());
   const note = flags.note;
+
+  const reason = (error: unknown) =>
+    error instanceof ApiError ? `${error.code}: ${error.message}` : error instanceof Error ? error.message : String(error);
+
+  const clientFor = async (url: string) =>
+    new CairnClient({
+      baseUrl: url,
+      token: (await storedToken(url, loginIo).catch(() => null)) ?? undefined,
+      userAgent: `cairn-cli/${VERSION} sync${agent ? ` (${agent})` : ""}`,
+      fetch: io.fetch,
+    });
+
+  /** One sync between two servers (ADR-023). Null on a dry run. */
+  const syncPair = async (urls: Record<Side, string>, dry: boolean): Promise<SyncReport | null> => {
+    const [clientA, clientB] = await Promise.all([clientFor(urls.a), clientFor(urls.b)]);
+    const [snapshotA, snapshotB] = await Promise.all([readSide(clientA), readSide(clientB)]);
+    const path = await statePath(credentials, urls.a, urls.b);
+    const state = await loadState(path, urls.a, urls.b);
+    const syncPlan = plan(snapshotA, snapshotB, state.base);
+    if (dry) {
+      out({ dry_run: true, actions: syncPlan.actions.map((x) => ({ key: x.key, op: x.op, to: urls[x.to], conflict: x.conflict })) }, () =>
+        describeSyncPlan(syncPlan, urls),
+      );
+      return null;
+    }
+    const { report, base } = await apply(
+      syncPlan,
+      {
+        a: { url: urls.a, client: clientA, snapshot: snapshotA },
+        b: { url: urls.b, client: clientB, snapshot: snapshotB },
+      },
+      state.base,
+    );
+    await saveState(path, { servers: [urls.a, urls.b], last_sync: new Date().toISOString(), base });
+    out(report as unknown as Json, () => describeSyncReport(report, urls));
+    return report;
+  };
+
+  /**
+   * Every registered instance, through a hub (ADR-029): the first that
+   * answers syncs with each of the others in turn. When the hub took changes
+   * from one of them, the ones before it are synced again, so a change made
+   * anywhere reaches everywhere in one run. False when a sync failed.
+   */
+  const syncAll = async (dry: boolean): Promise<boolean> => {
+    const answers = await Promise.all(registered.map((instance) => reachable(instance.url, io.fetch)));
+    const up = registered.filter((_, index) => answers[index]);
+    for (const [index, instance] of registered.entries()) {
+      if (!answers[index]) io.stderr(`skipped ${instance.name} (${instance.url}): not answering\n`);
+    }
+    const [hub, ...others] = up;
+    if (!hub || others.length === 0) {
+      io.stderr(`${up.length === 0 ? "no instance" : `only ${hub!.name}`} answered, so there is nothing to sync\n`);
+      return true;
+    }
+    let ok = true;
+    let lastInto = -1;
+    const one = async (index: number) => {
+      const remote = others[index]!;
+      try {
+        const report = await syncPair({ a: hub.url, b: remote.url }, dry);
+        const into = report?.written.a;
+        if (into && into.pages + into.tables + into.rows + into.deleted > 0) lastInto = index;
+      } catch (error) {
+        ok = false;
+        io.stderr(`error: syncing ${hub.name} with ${remote.name} failed: ${reason(error)}\n`);
+      }
+    };
+    for (let index = 0; index < others.length; index++) await one(index);
+    const again = lastInto;
+    for (let index = 0; index < again; index++) await one(index);
+    return ok;
+  };
+
+  const exec = async (program: string, programArgs: string[]) => {
+    if (!io.exec) throw new Error("this build of cairn cannot run programs");
+    return io.exec(program, programArgs);
+  };
+  const platform = io.platform ?? process.platform;
+  const home = io.home ?? homedir();
+  const domain = `gui/${io.uid ?? process.getuid?.() ?? 0}`;
+
+  const jobInstalled = async (): Promise<boolean> => {
+    if (platform === "win32") return (await exec("schtasks", ["/Query", "/TN", WINDOWS_TASK]).catch(() => ({ code: 1 }))).code === 0;
+    const path = platform === "darwin" ? launchdPath(home) : join(systemdDir(home, io.env), `${SYSTEMD_UNIT}.timer`);
+    return readFile(path).then(
+      () => true,
+      () => false,
+    );
+  };
+
+  const installJob = async (): Promise<number> => {
+    if (registered.length < 2) {
+      throw new UsageError("register two or more instances first: cairn instances add <name> <url>");
+    }
+    let everyMs = DEFAULT_EVERY_MS;
+    if (flags.every !== undefined) {
+      try {
+        everyMs = parseInterval(flags.every);
+      } catch (error) {
+        throw new UsageError(error instanceof Error ? error.message : String(error));
+      }
+    }
+    if (!io.self) throw new Error("this build of cairn cannot install a job");
+    let program: string[];
+    try {
+      program = await io.self();
+    } catch (error) {
+      throw new UsageError(error instanceof Error ? error.message : String(error));
+    }
+    // Where to find the same instances and sign-ins; never a token.
+    const env: Record<string, string> = {};
+    for (const key of PASSED_ENV) if (io.env[key]) env[key] = io.env[key]!;
+    const log = join(dirname(credentials), "logs", "sync.log");
+    const job: Job = { program, everyMs, env, log };
+    const dry = flags["dry-run"] === true;
+    const every = describeInterval(everyMs);
+
+    if (platform === "darwin") {
+      const path = launchdPath(home);
+      const text = launchdPlist(job);
+      if (dry) {
+        io.stdout(`dry run, nothing installed. It would write ${path}:\n\n${text}`);
+        return 0;
+      }
+      await mkdir(dirname(path), { recursive: true });
+      await mkdir(dirname(log), { recursive: true });
+      await writeFile(path, text, "utf8");
+      await exec("launchctl", ["bootout", `${domain}/${LAUNCHD_LABEL}`]);
+      const loaded = await exec("launchctl", ["bootstrap", domain, path]);
+      if (loaded.code !== 0) throw new Error(`launchctl could not load ${path}: ${loaded.output.trim()}`);
+      io.stdout(`installed: cairn sync at login and every ${every}, as ${LAUNCHD_LABEL}. Output in ${log}\nRemove it with: cairn sync uninstall\n`);
+      return 0;
+    }
+    if (platform === "win32") {
+      const taskArgs = schtasksArgs(job);
+      if (dry) {
+        io.stdout(`dry run, nothing installed. It would run:\n  schtasks ${taskArgs.join(" ")}\n`);
+        return 0;
+      }
+      if (Object.keys(env).length > 0) {
+        io.stderr(`note: a scheduled task cannot carry ${Object.keys(env).join(" or ")}; the job uses the default config folder\n`);
+      }
+      const created = await exec("schtasks", taskArgs);
+      if (created.code !== 0) throw new Error(`schtasks could not create the task: ${created.output.trim()}`);
+      io.stdout(`installed: cairn sync every ${every}, as the scheduled task "${WINDOWS_TASK}"\nRemove it with: cairn sync uninstall\n`);
+      return 0;
+    }
+    const dir = systemdDir(home, io.env);
+    const units = systemdUnits(job);
+    if (dry) {
+      io.stdout(
+        `dry run, nothing installed. It would write ${join(dir, `${SYSTEMD_UNIT}.service`)}:\n\n${units.service}\n` +
+          `and ${join(dir, `${SYSTEMD_UNIT}.timer`)}:\n\n${units.timer}`,
+      );
+      return 0;
+    }
+    await mkdir(dir, { recursive: true });
+    await mkdir(dirname(log), { recursive: true });
+    await writeFile(join(dir, `${SYSTEMD_UNIT}.service`), units.service, "utf8");
+    await writeFile(join(dir, `${SYSTEMD_UNIT}.timer`), units.timer, "utf8");
+    await exec("systemctl", ["--user", "daemon-reload"]);
+    const enabled = await exec("systemctl", ["--user", "enable", "--now", `${SYSTEMD_UNIT}.timer`]);
+    if (enabled.code !== 0) throw new Error(`systemctl could not start the timer: ${enabled.output.trim()}`);
+    io.stdout(`installed: cairn sync a minute after boot and every ${every}, as ${SYSTEMD_UNIT}.timer. Output in ${log}\nRemove it with: cairn sync uninstall\n`);
+    return 0;
+  };
+
+  const uninstallJob = async (): Promise<number> => {
+    if (platform === "darwin") {
+      await exec("launchctl", ["bootout", `${domain}/${LAUNCHD_LABEL}`]);
+      await rm(launchdPath(home), { force: true });
+    } else if (platform === "win32") {
+      await exec("schtasks", ["/Delete", "/F", "/TN", WINDOWS_TASK]);
+    } else {
+      const dir = systemdDir(home, io.env);
+      await exec("systemctl", ["--user", "disable", "--now", `${SYSTEMD_UNIT}.timer`]);
+      await rm(join(dir, `${SYSTEMD_UNIT}.timer`), { force: true });
+      await rm(join(dir, `${SYSTEMD_UNIT}.service`), { force: true });
+      await exec("systemctl", ["--user", "daemon-reload"]);
+    }
+    io.stdout("removed the scheduled sync. Instances, sign-ins and sync state are kept\n");
+    return 0;
+  };
 
   try {
     switch (command) {
@@ -692,7 +958,7 @@ export async function run(argv: string[], io: Io): Promise<number> {
           format: FORMAT,
           version: FORMAT_VERSION,
           exported_at: new Date().toISOString(),
-          source: io.env["CAIRN_URL"] ?? "http://localhost:8787",
+          source: baseUrl,
           root: flags.root ?? null,
           counts: {
             pages: pages.length,
@@ -863,12 +1129,92 @@ export async function run(argv: string[], io: Io): Promise<number> {
         return 0;
       }
 
+      case "instances": {
+        const [action, name, url] = args;
+        if (action === undefined) {
+          const hub = registered[0];
+          const lines: string[] = [];
+          for (const [index, instance] of registered.entries()) {
+            let last = "";
+            if (hub && index > 0) {
+              const state = await loadState(await statePath(credentials, hub.url, instance.url), hub.url, instance.url);
+              last = state.last_sync ? `, last synced with ${hub.name} at ${state.last_sync}` : `, not yet synced with ${hub.name}`;
+            }
+            const start = instance.start ? `\n     cairn start runs: ${instance.start}` : "";
+            lines.push(`${index + 1}. ${instance.name}  ${instance.url}${last}${start}`);
+          }
+          out({ instances: registered }, () =>
+            registered.length === 0
+              ? "no instances registered. Add one: cairn instances add laptop http://localhost:8787\n"
+              : `${lines.join("\n")}\n`,
+          );
+          return 0;
+        }
+        if (action === "add") {
+          let normalised: string;
+          try {
+            normalised = checkInstance(need(name, "a name"), need(url, "an address"), registered);
+          } catch (error) {
+            throw error instanceof UsageError ? error : new UsageError(error instanceof Error ? error.message : String(error));
+          }
+          const entry: Instance = { name: name!, url: normalised, ...(flags.start ? { start: flags.start } : {}) };
+          const next = flags.first ? [entry, ...registered] : [...registered, entry];
+          await saveInstances(registry, next);
+          const signIn = isLoopback(normalised) ? "" : ` If it uses sign-in: cairn login --instance ${entry.name}`;
+          io.stdout(`added ${entry.name} (${normalised}), number ${next.indexOf(entry) + 1} of ${next.length}.${signIn}\n`);
+          return 0;
+        }
+        if (action === "remove") {
+          const gone = named(need(name, "a name"));
+          await saveInstances(registry, registered.filter((instance) => instance !== gone));
+          io.stdout(`removed ${gone.name} (${gone.url}). Its sign-in and sync state are kept\n`);
+          return 0;
+        }
+        throw new UsageError(`cannot do "cairn instances ${action}". Use add or remove`);
+      }
+
+      case "start": {
+        const first = registered[0];
+        if (!first) {
+          throw new UsageError('cairn start needs registered instances: cairn instances add laptop http://localhost:8787 --start "pnpm dev"');
+        }
+        if (await reachable(first.url, io.fetch)) {
+          io.stderr(`${first.name} is running\n`);
+        } else if (!first.start) {
+          io.stderr(
+            `${first.name} (${first.url}) is not answering, and cairn has no command to start it. ` +
+              `Start it yourself, or register it with one: cairn instances remove ${first.name}, then cairn instances add ${first.name} ${first.url} --first --start "command"\n`,
+          );
+        } else {
+          if (!io.launch) throw new Error("this build of cairn cannot start programs");
+          const log = join(dirname(credentials), "logs", `${first.name}.log`);
+          io.stderr(`starting ${first.name}: ${first.start}\n  its output goes to ${log}\n`);
+          await io.launch(first.start, log);
+          const sleep = io.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+          let up = false;
+          for (let waited = 0; waited < START_WAIT_MS && !up; waited += 1_000) {
+            await sleep(1_000);
+            up = await reachable(first.url, io.fetch);
+          }
+          if (!up) {
+            io.stderr(`error: ${first.name} did not answer within ${START_WAIT_MS / 1000} seconds. See ${log}\n`);
+            return 1;
+          }
+          io.stderr(`${first.name} is up\n`);
+        }
+        if (registered.length < 2) {
+          io.stdout("one instance registered, so nothing to sync\n");
+          return 0;
+        }
+        const ok = await syncAll(false);
+        if (!(await jobInstalled())) io.stderr("to keep them in sync from now on: cairn sync install --every 1h\n");
+        return ok ? 0 : 1;
+      }
+
       case "sync": {
-        const urls: Record<Side, string> = {
-          a: normaliseUrl(need(args[0], "the first server's address")),
-          b: normaliseUrl(need(args[1], "the second server's address")),
-        };
-        if (urls.a === urls.b) throw new UsageError("cairn sync needs two different servers");
+        if (args[0] === "install") return await installJob();
+        if (args[0] === "uninstall") return await uninstallJob();
+
         let every: number | null = null;
         if (flags.every !== undefined) {
           try {
@@ -880,48 +1226,32 @@ export async function run(argv: string[], io: Io): Promise<number> {
         const dry = flags["dry-run"] === true;
         if (dry && every !== null) throw new UsageError("--dry-run runs once; leave out --every");
 
-        const clientFor = async (url: string) =>
-          new CairnClient({
-            baseUrl: url,
-            token: (await storedToken(url, loginIo).catch(() => null)) ?? undefined,
-            userAgent: `cairn-cli/${VERSION} sync${agent ? ` (${agent})` : ""}`,
-            fetch: io.fetch,
-          });
-
-        const once = async () => {
-          const [clientA, clientB] = await Promise.all([clientFor(urls.a), clientFor(urls.b)]);
-          const [snapshotA, snapshotB] = await Promise.all([readSide(clientA), readSide(clientB)]);
-          const path = await statePath(credentialsPath(io.env), urls.a, urls.b);
-          const state = await loadState(path, urls.a, urls.b);
-          const syncPlan = plan(snapshotA, snapshotB, state.base);
-          if (dry) {
-            out({ dry_run: true, actions: syncPlan.actions.map((x) => ({ key: x.key, op: x.op, to: urls[x.to], conflict: x.conflict })) }, () =>
-              describeSyncPlan(syncPlan, urls),
-            );
-            return;
+        let round: () => Promise<boolean>;
+        if (args.length === 0) {
+          if (registered.length < 2) {
+            throw new UsageError("cairn sync needs two addresses, or two or more registered instances (cairn instances add)");
           }
-          const { report, base } = await apply(
-            syncPlan,
-            {
-              a: { url: urls.a, client: clientA, snapshot: snapshotA },
-              b: { url: urls.b, client: clientB, snapshot: snapshotB },
-            },
-            state.base,
-          );
-          await saveState(path, { servers: [urls.a, urls.b], last_sync: new Date().toISOString(), base });
-          out(report as unknown as Json, () => describeSyncReport(report, urls));
-        };
-
-        if (every === null) {
-          await once();
-          return 0;
+          round = () => syncAll(dry);
+        } else {
+          // A registered name works as well as an address.
+          const address = (value: string) => registered.find((instance) => instance.name === value)?.url ?? normaliseUrl(value);
+          const urls: Record<Side, string> = {
+            a: address(need(args[0], "the first server's address")),
+            b: address(need(args[1], "the second server's address")),
+          };
+          if (urls.a === urls.b) throw new UsageError("cairn sync needs two different servers");
+          round = async () => {
+            await syncPair(urls, dry);
+            return true;
+          };
         }
+
+        if (every === null) return (await round()) ? 0 : 1;
         for (;;) {
           try {
-            await once();
+            await round();
           } catch (error) {
-            const reason = error instanceof ApiError ? `${error.code}: ${error.message}` : error instanceof Error ? error.message : String(error);
-            io.stderr(`${new Date().toISOString()} sync failed: ${reason}. Trying again in ${flags.every}\n`);
+            io.stderr(`${new Date().toISOString()} sync failed: ${reason(error)}. Trying again in ${flags.every}\n`);
           }
           await new Promise((resolve) => setTimeout(resolve, every));
         }

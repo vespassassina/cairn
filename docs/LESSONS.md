@@ -13,6 +13,20 @@ Each entry answers four questions:
 
 ## 2026-09-14
 
+### CLI tests read the owner's real sign-ins
+
+1. **What happened.** Adding named instances meant any CLI test with no `CAIRN_URL` could route to whatever the owner had registered on this machine. Checking why showed the older tests already read `~/.config/cairn/credentials.json` when they built the CLI's environment.
+2. **Cause.** `cli.test.ts` and `export.test.ts` passed an environment without `CAIRN_CREDENTIALS` or `XDG_CONFIG_HOME`, so the CLI used the default config folder, the real one. They passed only because the owner's tokens did not match the test servers' addresses.
+3. **Fix.** Both set `CAIRN_CREDENTIALS` to a path that does not exist, and the new instances tests use a fresh temporary folder, as the sync tests already did.
+4. **Lesson.** A CLI test builds its whole environment, config folder included. When a command gains a new file it reads by default, check every test that runs the CLI, not only the new ones.
+
+### A shell variable holding a command does not run in zsh
+
+1. **What happened.** Setting `c="node packages/cli/dist/bin.js"` and running `$c instances` failed with "no such file or directory".
+2. **Cause.** zsh does not split an unquoted variable into words, as bash does, so it looked for a program named the whole string.
+3. **Fix.** A shell function instead of a variable.
+4. **Lesson.** On the owner's Mac the shell is zsh. Use a function or an alias for a command with arguments, or spell it out.
+
 ### A test assumed two writes could not share a millisecond
 
 1. **What happened.** The history test for freshness failed every run: an edit made straight after a verification was reported as a verification too.

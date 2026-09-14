@@ -13,17 +13,29 @@ Rules:
 
 ## 2026-09-14
 
+### Sync keeps order, and settles conflicts the way git does
+
+> "for sync to work we need to use very granular timestamps. no doc shall conflict and order should always be maintained. also in case of conflicts, how do we solve ? take the newest and merge ? newest and link the older keeping the chain in order ? how does git do it we could do the same"
+
+Said while ADR-029 was being built. Landed in: a new roadmap item, "Ordered history and three-way merge in sync", marked next, with a hybrid logical clock for order, revisions linked across instances, and a three-way merge by section. The question of how git does it was answered in the conversation: git orders by parent links, not clocks, and merges three ways against the common ancestor. Not built yet; needs an ADR.
+
+### Why Cairn and not Obsidian on GitHub
+
+> "evaluate why users would use cairn and not obsidian stored on github. propose features we can add to make cairn more appealing"
+
+A question, answered in the conversation with a comparison and a list of candidate features. Landed in: nothing yet; the features become roadmap items only when the owner picks them.
+
 ### The CLI knows every instance, uses the best, and catches up on start
 
 > "allow cli to know all the endpoints and use the best. when starting check for sync from cloud if someone has changed something. and sync local"
 
-A follow-up to the direction below, refining the same roadmap item. Landed in: the roadmap item "Named instances, kept in sync", whose notes now include both. Not built yet.
+A follow-up to the direction below, refining the same roadmap item. Landed in: the roadmap item "Named instances, kept in sync", whose notes now include both. Built in ADR-029, where the owner chose, from four questions and each time the recommended answer: the first instance that answers, in the owner's order; a `cairn start` command; a background job the CLI installs; and a hub, the first instance that answers syncing with each of the others.
 
 ### Sync as backup and a hybrid service across clouds
 
 > "add to the features : use sync as a backup/ha strategy, allow cairn cli to register multiple instances and keep them synced regularly, for example work local and sync remote every x minutes (or hours to keep cost low) so we have a hybrid service running cross cloud using the same atomic unit"
 
-"The same atomic unit" is the one container every deployment runs (ADR-020). Landed in: a new roadmap item, "Named instances, kept in sync", marked next. Not built yet; it needs an ADR first, since ADR-023 covers only two Cairns.
+"The same atomic unit" is the one container every deployment runs (ADR-020). Landed in: a new roadmap item, "Named instances, kept in sync", marked next. Built in ADR-029.
 
 ### Freshness: when a page was last verified
 

@@ -25,7 +25,7 @@ let stderr: string;
 function io(): Io {
   return {
     fetch: async (request) => apps.get(current)!.fetch(request),
-    env: {},
+    env: { CAIRN_CREDENTIALS: "/nonexistent/cairn-test/credentials.json" },
     stdout: (text) => {
       stdout += text;
     },

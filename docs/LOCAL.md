@@ -142,7 +142,7 @@ cairn import ~/cairn-backup
 
 An export is Markdown files in folders that mirror your page tree, plus one JSON file per table, readable without Cairn. Importing keeps ids, so links still work, and running it again changes nothing. Use it to back up, to move to another machine or to Azure, or to edit offline and bring the changes back.
 
-To keep this Cairn and another one the same, use `cairn sync` instead (ADR-023, `docs/CLI.md`): `cairn sync http://localhost:8787 https://your-address --every 5m`.
+To keep this Cairn and another one the same, use `cairn sync` instead (ADR-023, `docs/CLI.md`): `cairn sync http://localhost:8787 https://your-address --every 5m`. To keep several the same on a schedule, register them with `cairn instances add`, start the day with `cairn start`, and install the job with `cairn sync install` (ADR-029).
 
 ## Other commands
 

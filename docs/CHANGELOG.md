@@ -6,6 +6,23 @@ Entries link to the ADR when there is one. A change of direction that has no ADR
 
 ## 2026-09-14
 
+### Roadmap: ordered history and three-way merge in sync
+
+The owner asked that sync keep every edit in order and settle conflicts the way git does. Sync today orders edits by each server's millisecond clock, which a fast clock on one machine can get wrong, and a conflict keeps the whole newer record. Added to the roadmap as next: a hybrid logical clock on every write, revisions linked to the ones they replaced across instances, and a three-way merge by section against the version both sides last agreed on. No code yet.
+
+### The CLI keeps several named Cairns as one (ADR-029)
+
+The roadmap's named-instances item: sync as backup, and one Cairn running on a laptop and in one or more clouds, all the same container. The owner chose, each time the recommended answer: the first instance that answers is the best, `cairn start` catches up, a background job keeps them in sync, and the first that answers is the hub.
+
+1. **Registering:** `cairn instances`, `cairn instances add <name> <url> [--first] [--start "command"]` and `cairn instances remove <name>`. The list is `instances.json` beside the credentials, with no tokens in it.
+2. **Routing:** with instances registered and no `CAIRN_URL`, a command goes to the first that answers `/health`, and says on stderr which it used when it skipped any; `--instance NAME` picks one. The probe waits 2 seconds for this machine and 60 for a cloud copy that may be starting, and stops at the first that answers, so the cloud is not woken while the laptop is up. `login` and `logout` need `--instance`.
+3. **Sync:** `cairn sync` with no addresses syncs every instance through the first that answers, and syncs the earlier ones again when the hub took changes, so a change made anywhere reaches everywhere in one run. `cairn sync <a> <b>` takes registered names too.
+4. **`cairn start`:** starts the first instance with its start command if it is down, waits up to 90 seconds, then syncs everything.
+5. **`cairn sync install [--every 1h] [--dry-run]` and `cairn sync uninstall`:** a launchd agent on macOS, a systemd user timer on Linux, a scheduled task on Windows, running this CLI by its absolute path. One hour by default, because each sync wakes a sleeping Azure copy for about 30 minutes.
+6. **Tests:** 14 new, with three real Cairns behind a fetch that can take any of them down, and fakes for starting programs and the OS schedulers. The CLI tests now point at a credentials file that does not exist, so the owner's own sign-ins and instances never reach them (`docs/LESSONS.md`).
+
+No server change, and no change to the MCP tools, the instructions or the skill, so the context cost is unchanged.
+
 ### Roadmap: the CLI picks the best instance and catches up on start
 
 Two more parts of the named-instances item, from the owner: the CLI sends each command to the best reachable instance, and on starting it pulls changes made in the cloud into the local copy before work begins. No code yet.

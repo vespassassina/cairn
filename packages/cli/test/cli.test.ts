@@ -28,7 +28,9 @@ beforeEach(async () => {
       seen.push(request.clone());
       return app.fetch(request);
     },
-    env: { CLAUDECODE: "1" },
+    // A config folder that does not exist, so the owner's own instances and
+    // sign-ins never reach a test.
+    env: { CLAUDECODE: "1", CAIRN_CREDENTIALS: "/nonexistent/cairn-test/credentials.json" },
     stdout: (text) => {
       stdout += text;
     },

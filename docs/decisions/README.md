@@ -30,12 +30,13 @@ A decision that changes is not edited away. Add a new ADR that supersedes it, an
 | [020](ADR-020.md) | One container everywhere, as small as it can be, with SQLite on a mounted volume or a replica | accepted, supersedes parts of 006 and 018 | 2026-09-12 |
 | [021](ADR-021.md) | Keyword search returns pages that hold most of the query's words, stemmed | accepted | 2026-09-12 |
 | [022](ADR-022.md) | Vector search in SQLite with sqlite-vec, and a small English model inside the container | accepted, supersedes 003 as the default | 2026-09-13 |
-| [023](ADR-023.md) | Two Cairns sync through the cairn command, by comparing each record with the last sync | accepted, amended by 024 | 2026-09-13 |
+| [023](ADR-023.md) | Two Cairns sync through the cairn command, by comparing each record with the last sync | accepted, amended by 024, extended by 029 | 2026-09-13 |
 | [024](ADR-024.md) | Collections sit in the page tree, and relation fields are links | accepted | 2026-09-13 |
 | [025](ADR-025.md) | Headings weigh more than text, and a search for a page's exact title finds that page first | accepted, amends 021 | 2026-09-13 |
 | [026](ADR-026.md) | A collection is a top-level page and its tree; typed tables are tables | accepted, amends 009 and 024 | 2026-09-13 |
 | [027](ADR-027.md) | Pages and rows keep a list of sources | accepted | 2026-09-14 |
 | [028](ADR-028.md) | Pages record when their facts were last verified | accepted | 2026-09-14 |
+| [029](ADR-029.md) | The CLI keeps several named Cairns as one | accepted | 2026-09-14 |
 
 ## Writing one
 

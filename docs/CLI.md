@@ -192,7 +192,7 @@ cairn sync http://localhost:8787 https://your-address             sync once
 cairn sync http://localhost:8787 https://your-address --every 5m  keep syncing, every 5 minutes
 ```
 
-1. **Sign in to both first.** `cairn login` with `CAIRN_URL` set to each server that uses OAuth; localhost needs no sign-in. Sync uses those sign-ins, not `CAIRN_TOKEN`.
+1. **Sign in to both first.** `cairn login` with `CAIRN_URL` set to each server that uses OAuth, or `cairn login --instance <name>` for a registered one; localhost needs no sign-in. Sync uses those sign-ins, not `CAIRN_TOKEN`.
 2. **What it copies:** every page, table and row, with their sources and when each page was last verified, both ways. A change on one side goes to the other, and so does a deletion.
 3. **When both sides changed the same record,** the newer edit wins on both, and the edit it replaced stays in that record's history, where the console can restore it. The report lists each one as a conflict. Tables are the exception: their schemas keep no history (ADR-008), so a schema that loses a conflict is replaced, and the report says so.
 4. **Moving to a new Cairn** is one sync into an empty one. Ids and links are kept, as with an import.
@@ -200,9 +200,29 @@ cairn sync http://localhost:8787 https://your-address --every 5m  keep syncing, 
 6. **Tables are never deleted by sync;** it warns instead.
 7. **`--every`** keeps it running, at least 30 seconds apart, on a machine that stays on. A failed run is reported and tried again next time. Each run reads everything from both sides, which for a personal wiki takes about a second, plus the cold start when a Cairn on Azure was asleep. Syncing more often than a Cairn on Azure's idle time keeps it awake, which costs more (`docs/DEPLOY-AZURE.md`, "Cold starts").
 
+## Several Cairns as one: instances
+
+Register each Cairn you use by name, and the CLI treats them as one: your laptop first, then Azure, then your own server, say (ADR-029). Each is then a backup of the others, and when one is down, another serves.
+
+```
+cairn instances add laptop http://localhost:8787 --start "pnpm --dir ~/Cairn dev"
+cairn instances add azure https://your-address
+cairn login --instance azure
+cairn instances                  the list, in the order commands try them
+cairn instances add spare https://other-address --first    put one first
+cairn instances remove spare
+```
+
+1. **Every command goes to the first that answers,** in your order. If it skipped one, it says so. `--instance azure` picks one; `CAIRN_URL`, when set, still wins over the list. The check waits 2 seconds for this machine and 60 for another, since a Cairn on Azure may be starting, and stops at the first that answers, so Azure is not woken while your laptop is up.
+2. **`cairn sync`** with no addresses syncs them all: the first that answers syncs with each of the others, and again with the earlier ones if it took changes, so a change made on any of them reaches all of them in one run. `cairn sync laptop azure` syncs one pair by name.
+3. **`cairn start`** starts the first one with its `--start` command if it is not running, waits for it, and then syncs, so you begin with anything changed in the cloud while your laptop was off. Its output goes to `logs/<name>.log` beside your sign-ins.
+4. **`cairn sync install --every 1h`** keeps them in sync from now on, with no terminal open: a launchd agent on macOS, a systemd user timer on Linux, a scheduled task on Windows. Add `--dry-run` to see what it would install. `cairn sync uninstall` removes it. It needs the installed `cairn` (not `pnpm cairn`), and it uses your sign-ins, never a token. Output goes to `logs/sync.log` beside them.
+5. **How often.** Every sync wakes a Cairn on Azure that has gone to sleep, and it then stays up about 30 minutes. Every hour, the default, lets it sleep about half the time; every 30 minutes or less keeps it always on, and costs the same as one that never sleeps.
+6. **Limits.** On Windows the task cannot carry `XDG_CONFIG_HOME` or `CAIRN_CREDENTIALS`, keeps no log and does not run at login. On Linux the timer runs only while you are logged in, unless you run `loginctl enable-linger`. Claude Code and claude.ai keep the one address they were set up with; only the CLI picks among instances.
+
 ## Point it at your server
 
-By default `cairn` talks to `http://localhost:8787`, which is where `pnpm dev` runs Cairn. For another server, set `CAIRN_URL`, and `CAIRN_TOKEN` if that server needs one.
+By default `cairn` talks to `http://localhost:8787`, which is where `pnpm dev` runs Cairn, or to the first registered instance that answers (see "Several Cairns as one"). For another server, set `CAIRN_URL`, and `CAIRN_TOKEN` if that server needs one.
 
 macOS and Linux, for the current terminal, or add the lines to `~/.zshrc` or `~/.bashrc` to keep them:
 

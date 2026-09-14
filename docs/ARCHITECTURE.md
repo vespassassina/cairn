@@ -64,6 +64,8 @@ Local: nothing (ADR-010). Anywhere else, OAuth (ADR-017):
 
 `cairn sync <a> <b>` (ADR-023) is a client of two servers. It reads every page, table and row from both, compares each record's content hash with the one both sides agreed on at the last sync, kept in a state file beside the CLI's credentials, and writes the side that changed to the other through the same `PUT` and `DELETE` endpoints, with `If-Match`. When both changed, the newer `updated_at` wins and the replaced version stays in that side's history. No server knows it is being synced.
 
+With several Cairns registered by name in `instances.json` (ADR-029), the CLI sends each command to the first that answers `/health`, and `cairn sync` runs the same pairwise sync between that one and each of the others, a hub. `cairn start` and a job the CLI installs on launchd, systemd or Task Scheduler run that sync on starting and on a schedule. The servers are unchanged: each is an ordinary Cairn.
+
 ## Deployment
 
 1. **Local:** `pnpm dev`, tsx running the TypeScript directly.
