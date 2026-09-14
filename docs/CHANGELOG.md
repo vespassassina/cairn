@@ -6,6 +6,14 @@ Entries link to the ADR when there is one. A change of direction that has no ADR
 
 ## 2026-09-14
 
+### A lost refresh no longer ends the sign-in
+
+The owner's Cairn MCP sign-in stopped working, nowhere near the 30 day refresh lifetime, and they asked whether the token could last longer (`docs/DIRECTIONS.md`, ADR-033). It could, but that was not the fault. Refresh tokens rotate on every use, so a Cairn used daily never expires by time. What ended the sign-in was a refresh token presented twice, which the server read as a stolen token and answered by revoking the whole family.
+
+A second use is also what an ordinary failure looks like: the response was lost on the way back, two processes refreshed at once, or the container restarted from a replica written just before the last rotation (ADR-020). So a used refresh token now keeps answering with the tokens it was already given for 60 seconds. Past that window a second use still ends the family, a revoked sign-in stops replaying at once, and the lifetimes are untouched: one hour for an access token, 30 days for a refresh. Lengthening the access token is the one change that would genuinely weaken things, since it is verified locally with no store read.
+
+The cost is stated in the ADR rather than glossed: a token stolen and replayed inside the same minute now succeeds, and the store holds one live refresh token in readable form until the record expires.
+
 ### A wiki can be published: read-only, no sign-in, indexed by search engines
 
 The owner's direction of 2026-09-14, and the roadmap item that several others waited on (`docs/DIRECTIONS.md`, ADR-032). Cairn was private end to end (ADR-017). It is now private by default and publishable on purpose: a page carries `public`, marking it publishes it and every page under it, and published pages are served read-only at `/w`, with `/sitemap.xml` and `/robots.txt`, to anyone.

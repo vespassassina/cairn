@@ -167,6 +167,7 @@ The person edits the private files; you run the script or compose afterwards.
    2. `cairn login` says the address needs no sign-in: it tried localhost because no Cairn was named. Use `--instance` or `CAIRN_URL`.
    3. A write fails with a version conflict: someone changed the record since it was read. Read it again, merge, and retry with the new version.
    4. `semantic_search` says `failed`: keyword search still works. The reason names the cause, usually memory or the model download.
+   5. An MCP client or the CLI is suddenly asked to sign in again: the sign-in was revoked, not expired. A refresh token used twice ends the whole sign-in, and after a minute's grace that is what it means (ADR-033). Sign in again, and if it keeps happening say so: it points at something replaying tokens, or a database restored to an earlier point.
 4. **If the fix is not in the docs,** tell the person what you saw, and do not change code or cloud resources unasked. Afterwards, suggest a `docs/LESSONS.md` entry, so the next agent finds it.
 
 ## 11. Hand over

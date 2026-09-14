@@ -2,6 +2,10 @@
  * Short-lived and small records the OAuth server keeps (ADR-017): client
  * registrations, pending sign-ins, authorization codes and refresh tokens.
  *
+ * `refresh_replay` holds the answer a refresh was already given, for the few
+ * seconds a lost or repeated request can arrive in (ADR-033). It carries a
+ * live refresh token, so its expiry is what deletes it: keep it short.
+ *
  * Separate from the document store on purpose. None of it is the owner's
  * content, so it never appears in history, search or an export, and a leak of
  * an export never leaks a token. Every backend has a cheap way to do this:
@@ -15,6 +19,7 @@ export type AuthRecordKind =
   | "code"
   | "refresh"
   | "refresh_used"
+  | "refresh_replay"
   | "family_revoked";
 
 export interface AuthStore {

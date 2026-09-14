@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Hono } from "hono";
 import { createApp } from "../src/app.js";
 import { createContext, type AppContext } from "../src/context.js";
@@ -48,6 +48,21 @@ beforeEach(async () => {
   app = build();
   signInAs = "owner";
 });
+
+afterEach(() => {
+  vi.useRealTimers();
+});
+
+/**
+ * Move the clock past the refresh grace window (ADR-033), so a second use of a
+ * refresh token counts as a replay rather than a repeat. Only `Date` is faked:
+ * the store decides a record has expired by comparing ISO times, and faking
+ * the rest would stall the awaits around it.
+ */
+function afterGrace() {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date(Date.now() + 61_000));
+}
 
 function call(path: string, init: RequestInit = {}) {
   const url = path.startsWith("http") ? path : `${ISSUER}${path}`;
@@ -287,7 +302,7 @@ describe("what the server refuses", () => {
 });
 
 describe("refresh tokens", () => {
-  it("rotate, and a reused one ends the whole sign-in", async () => {
+  it("rotate, and a reused one ends the whole sign-in once the grace has passed", async () => {
     const { client, tokens } = await signIn();
     const first = String(tokens.body["refresh_token"]);
     const renewed = await token({ grant_type: "refresh_token", refresh_token: first, client_id: client });
@@ -295,13 +310,51 @@ describe("refresh tokens", () => {
     const second = String(renewed.body["refresh_token"]);
     expect(second).not.toBe(first);
 
-    // Someone replays the first one: refused, and the family is revoked.
+    // Someone replays the first one, long after the client had its answer:
+    // refused, and the family is revoked (ADR-033).
+    afterGrace();
     expect((await token({ grant_type: "refresh_token", refresh_token: first, client_id: client })).body["error"]).toBe(
       "invalid_grant",
     );
     expect((await token({ grant_type: "refresh_token", refresh_token: second, client_id: client })).body["error"]).toBe(
       "invalid_grant",
     );
+  });
+
+  it("answers a repeat inside the grace window with the same tokens (ADR-033)", async () => {
+    const { client, tokens } = await signIn();
+    const first = String(tokens.body["refresh_token"]);
+    const ask = () => token({ grant_type: "refresh_token", refresh_token: first, client_id: client });
+
+    const renewed = await ask();
+    // The answer never reached the client, or two processes refreshed at once.
+    const again = await ask();
+    expect(again.status).toBe(200);
+    expect(again.body["refresh_token"]).toBe(renewed.body["refresh_token"]);
+    expect(again.body["access_token"]).toBe(renewed.body["access_token"]);
+
+    // The sign-in is intact: the token it was given still works afterwards.
+    const next = await token({
+      grant_type: "refresh_token",
+      refresh_token: String(again.body["refresh_token"]),
+      client_id: client,
+    });
+    expect(next.status).toBe(200);
+  });
+
+  it("stops replaying once the sign-in is revoked, even inside the window", async () => {
+    const { client, tokens } = await signIn();
+    const first = String(tokens.body["refresh_token"]);
+    const renewed = await token({ grant_type: "refresh_token", refresh_token: first, client_id: client });
+
+    await call("/oauth/revoke", {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ token: String(renewed.body["refresh_token"]) }),
+    });
+
+    const again = await token({ grant_type: "refresh_token", refresh_token: first, client_id: client });
+    expect(again.status).toBe(400);
   });
 
   it("can be revoked", async () => {

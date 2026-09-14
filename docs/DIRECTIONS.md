@@ -13,6 +13,12 @@ Rules:
 
 ## 2026-09-14
 
+### Make the sign-in survive a lost refresh
+
+> "can we make the token last longer ?"
+
+Asked after the Cairn MCP sign-in expired and the owner was told the lifetimes: one hour for an access token, 30 days for a refresh token that rotates on every use. Lengthening those would not have helped, because rotation restarts the clock and the sign-in was not idle. What ends a sign-in early is a refresh token presented twice, which Cairn treated as theft even when it was a lost response, two processes refreshing at once, or a database restored to a moment before the last rotation. Offered the choice, the owner picked the fix rather than the longer lifetime: "Add the 60 second replay grace. This is the fix." Landed in: ADR-033 and `packages/api/src/oauth/server.ts`.
+
 ### Build the public wiki
 
 > "implement next"

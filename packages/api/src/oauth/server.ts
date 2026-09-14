@@ -10,7 +10,9 @@ import { documentTitle, HEAD_TAGS } from "../web/assets.js";
  * Small by design:
  *
  * 1. Authorization code with PKCE (S256 only), and refresh tokens that are
- *    single use and rotate. No other grants.
+ *    single use and rotate. No other grants. A refresh used twice ends the
+ *    whole family, except in the first minute, where it is answered with what
+ *    it was already given (ADR-033).
  * 2. Dynamic client registration, which Claude and other MCP clients use.
  * 3. Sign-in is delegated to one upstream provider. Only identities on the
  *    owner's allowlist get past it.
@@ -41,6 +43,13 @@ const REFRESH_TOKEN_SECONDS = 30 * 24 * 60 * 60;
 const SESSION_SECONDS = 7 * 24 * 60 * 60;
 const CODE_SECONDS = 5 * 60;
 const PENDING_SECONDS = 10 * 60;
+/**
+ * How long a refresh token keeps answering with what it was already given
+ * (ADR-033). A second use inside this window is a repeat, not a theft: the
+ * answer was lost on the way back, or two processes refreshed at once. Past
+ * it, a second use still ends the whole family.
+ */
+const REFRESH_GRACE_SECONDS = 60;
 const SCOPE = "cairn";
 
 export const SESSION_TYP = "cairn-session+jwt";
@@ -94,6 +103,12 @@ interface RefreshGrant {
   identity: Identity;
   scope: string;
   resource: string;
+}
+
+/** The answer a refresh was given, kept for the grace window (ADR-033). */
+interface Replay {
+  family: string;
+  tokens: Record<string, unknown>;
 }
 
 const inSeconds = (seconds: number) => new Date(Date.now() + seconds * 1000).toISOString();
@@ -509,7 +524,17 @@ export class OAuthServer {
         const hash = await sha256(form["refresh_token"] ?? "");
         const grant = await store.takeAuth<RefreshGrant>("refresh", hash);
         if (!grant) {
-          // A refresh token used twice was probably stolen: end its whole family.
+          // Within the grace window, a second use is the same request arriving
+          // twice, so it gets the same answer rather than losing the sign-in
+          // (ADR-033). The record's own expiry is what closes the window.
+          const replay = await store.getAuth<Replay>("refresh_replay", hash);
+          if (replay && !(await store.getAuth("family_revoked", replay.family))) {
+            cors(c);
+            c.header("cache-control", "no-store");
+            return c.json(replay.tokens);
+          }
+          // Past it, a refresh token used twice was probably stolen: end its
+          // whole family.
           const used = await store.getAuth<{ family: string }>("refresh_used", hash);
           if (used) await store.putAuth("family_revoked", used.family, { at: new Date().toISOString() }, inSeconds(REFRESH_TOKEN_SECONDS));
           return oauthError(c, 400, "invalid_grant", "The refresh token is unknown, expired or already used.");
@@ -518,11 +543,15 @@ export class OAuthServer {
           return oauthError(c, 400, "invalid_grant", "This sign-in was revoked. Connect again.");
         }
         if (grant.client_id !== form["client_id"]) return oauthError(c, 400, "invalid_grant", "The token was issued to another client.");
-        await store.putAuth("refresh_used", hash, { family: grant.family }, inSeconds(REFRESH_TOKEN_SECONDS));
         const { family, ...rest } = grant;
+        const tokens = await this.issueTokens(rest, family);
+        // The replay record is written first, so a repeat that arrives while
+        // this is still running is answered rather than treated as a theft.
+        await store.putAuth("refresh_replay", hash, { family, tokens } satisfies Replay, inSeconds(REFRESH_GRACE_SECONDS));
+        await store.putAuth("refresh_used", hash, { family }, inSeconds(REFRESH_TOKEN_SECONDS));
         cors(c);
         c.header("cache-control", "no-store");
-        return c.json(await this.issueTokens(rest, family));
+        return c.json(tokens);
       }
 
       return oauthError(c, 400, "unsupported_grant_type", "Use authorization_code or refresh_token.");

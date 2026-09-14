@@ -13,6 +13,13 @@ Each entry answers four questions:
 
 ## 2026-09-14
 
+### The MCP sign-in ended early, and the lifetimes were not the reason
+
+1. **What happened.** The `cairn` MCP server stopped being authorized and the owner asked why, and how long a sign-in is supposed to last. The obvious reading was that something had expired.
+2. **Cause.** Nothing had reached its lifetime. Refresh tokens last 30 days and rotate on every use, so a Cairn used daily never expires by time. What ends a sign-in early is a refresh token presented twice, which the server treated as a stolen token and answered by revoking the whole family. A second use is also what happens when the response was lost on the way back, when two processes refresh at once, or when the container restarted from a replica written just before the last rotation (ADR-020). The exact cause of this instance is not known, because that needs the server's logs and the `auth_records` table on Azure.
+3. **Fix.** ADR-033: a used refresh token keeps answering with the tokens it was already given for 60 seconds, so a repeat is a repeat. Past the window, and for a revoked sign-in, the behaviour is unchanged.
+4. **Lesson.** Two of them. First, when someone asks for a setting to be raised, check whether the setting is what is actually failing: the answer here was a design flaw, and a longer lifetime would have hidden nothing and fixed nothing. Second, a security rule that assumes the world is reliable will fire on ordinary failures, and every one of those costs a real person something. Single-use rotation assumed responses always arrive and that a replicated database never goes backwards. Neither is true.
+
 ### A published page leaked a private page's id through its description
 
 1. **What happened.** Writing the published wiki (ADR-032), the leak test "renders a link to a private page as plain text, and does not name it" failed: the page body rendered correctly, with no link and no title, but the private page's id appeared in the `<meta name="description">` tag of the published page, where it is served to everyone and read by search engines.
