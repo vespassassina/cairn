@@ -6,6 +6,10 @@ Entries link to the ADR when there is one. A change of direction that has no ADR
 
 ## 2026-09-14
 
+### Principle and roadmap: bridges between Cairns
+
+The owner's direction that citations stay correct and link to the original, so separate Cairns form a web of knowledge rather than islands. The PRD gains principle 6, "Bridges, not islands". A new roadmap section lists what that needs beyond ADR-027's sources, which already travel through export, import and sync: checking that sources still answer, a canonical address for every published page and a source pointing back when a page comes from another Cairn, citations as structured data on public pages, and an optional "cited by" notice between Cairns. No code.
+
 ### Roadmap: a wiki can be published, served or as a static site
 
 The owner's direction that Cairn be a free knowledge source as well as a knowledge manager. Two roadmap items: a public wiki, where a collection the owner marks public is served read-only with no sign-in and made indexable (titles, descriptions, a sitemap, `robots.txt`), private by default and leaking nothing private; and a static site export, HTML with working links for GitHub Pages, blob storage, S3 or Google Cloud Storage static websites, or Dropbox. The phone-console item keeps only the phone half. The PRD names readers on the web as later users and adds publishing to P2. No code.

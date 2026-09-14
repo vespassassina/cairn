@@ -94,6 +94,7 @@ What no one combines: typed tables next to the wiki, a revision for every write 
 3. **Degrade, don't fail.** Optional services (embeddings, home lab) never break the core path.
 4. **Explicit over inferred.** Graph edges come from links, mentions and relations the user wrote. No LLM guessing in v1.
 5. **Your data leaves easily.** Export is a P0, not an afterthought.
+6. **Bridges, not islands.** A fact keeps its citation and a link to the original wherever it goes: through export, import, sync, a public page or a static site. A page that comes from another Cairn points back to it. This is what lets separate Cairns form a web of knowledge instead of a set of islands (owner's direction of 2026-09-14). Sources on every write (ADR-027) are the start; checking them and linking across Cairns are on the roadmap under "Bridges between Cairns".
 
 ## 7. Architecture
 

@@ -74,9 +74,22 @@ Added on 2026-09-14, from the owner's question of why anyone would choose Cairn 
 | Templates, daily notes, attachments and images | later | Templates and daily notes are pages with a shape; attachments are PRD P1 item 4, up to 25 MB through the blob adapter |
 | A console that works on a phone | later | The PRD already asks that the web UI work on phones (non-goal 5). The public read-only wiki is now two items of its own, below |
 | Public wiki: read-only and indexable by search engines | later | The owner's direction of 2026-09-14: Cairn as a knowledge manager and also a free knowledge source. The owner marks a collection public; its pages are then served as plain HTML with no sign-in, with a title, description and canonical address on each, a `sitemap.xml` and `robots.txt`, so search engines index them. Private by default, and nothing private leaks: search, backlinks and links from a public page to a private one show nothing of it. Every other request still needs sign-in, so this amends ADR-017 and needs its own ADR. The content's licence, such as CC BY, is the owner's choice and separate from Cairn's code licence |
-| Static site export: share the wiki with no server running | later | The same direction. `cairn export` gains a site format: HTML pages with links rewritten to relative paths, an index per collection, and a sitemap, to put on GitHub Pages, an Azure Blob Storage static website, Amazon S3 static website hosting, Google Cloud Storage or Dropbox. It costs nothing to host and needs no Cairn online. Today's Markdown export can already go in a GitHub repository, which renders Markdown, but its wiki links point at ids and do not click through (ADR-016 consequence 4); rewriting them is the first step. Pairs with the git mirror above |
+| Static site export: share the wiki with no server running | later | The same direction. `cairn export` gains a site format: HTML pages with links rewritten to relative paths, an index per collection, and a sitemap, to put on GitHub Pages, an Azure Blob Storage static website, Amazon S3 static website hosting, Google Cloud Storage or Dropbox. It costs nothing to host and needs no Cairn online. Today's Markdown export can already go in a GitHub repository, which renders Markdown, but its wiki links point at ids and do not click through (ADR-016 consequence 4); rewriting them is the first step. Keeps every source as a visible citation with its link ("Bridges between Cairns" below). Pairs with the git mirror above |
 | Sharing with other people, each with their own permissions | later | PRD P2 item 6. Today a Cairn has one owner and the agents they approve; this changes the auth model (ADR-007, ADR-017) |
 | A published search-quality number from the eval set | next | The launch checklist's eval item, and the one claim about search Cairn can back with a number |
+
+## Bridges between Cairns
+
+Added on 2026-09-14, from the owner's direction: "always keep citations correct and links to original content. this is the key for semantic internet across cairns. we are not going to be islands with no bridges". PRD principle 6.
+
+What holds today: every page and row keeps its sources (ADR-027), and they travel unchanged through export, import and sync, and show in history. What does not: Cairn never checks a source (ADR-027 consequence 5), and a page knows nothing about Cairns other than its own. Each item below needs an ADR; the first one supersedes that consequence.
+
+| Item | Status | Notes |
+|---|---|---|
+| Citations kept correct | later | A job that checks each web source still answers, and lists dead ones beside the stale pages (ADR-028), offering an archived copy where one exists. Stable identifiers, such as a DOI or a PubMed id, are recognised and shown as links. The instructions and the skill ask agents to cite the original, not a summary of it |
+| Links to the original, across Cairns | later | Every published page has one stable, canonical address. A page copied or quoted from another Cairn keeps a source pointing at the original page there, and publishing never drops it. A link to a page in another Cairn is an edge like a local link |
+| Machine-readable citations on public pages | later | Public pages and the static site carry their sources as visible citations and as structured data (schema.org `citation` and `isBasedOn`), so search engines and agents can follow them from one Cairn to the next |
+| "Cited by", across Cairns | later | An optional notice, in the manner of Webmention, telling a Cairn that another has cited one of its pages, so it can show who builds on it. Off by default; a Cairn accepts notices only from addresses it trusts or on review |
 
 ## Launch checklist
 

@@ -13,6 +13,12 @@ Rules:
 
 ## 2026-09-14
 
+### Bridges, not islands: citations and links to the original
+
+> "let's also make sure we always keep citations correct and links to original content. this is the key for semantic internet across cairns. we are not going to be islands with no bridges"
+
+Landed in: PRD principle 6, "Bridges, not islands", and a new roadmap section, "Bridges between Cairns": checking citations, links to the original across Cairns, machine-readable citations on public pages, and an optional "cited by" across Cairns. The static site item now says it keeps every source. Not built; each needs an ADR, and the first supersedes ADR-027's "Cairn does not check citations".
+
 ### Publish a wiki: read-only, indexable, or as a static site
 
 > "add to comments and docs that the wiki can be made public (readonly) and indexable by search engines. it can even be just exported and dumped in github or a blob storage or s3 static website or google cloud or dropbox to be shared on the web. cairn can be a knowledge manager as well as a free knowledge source."
