@@ -13,6 +13,30 @@ Rules:
 
 ## 2026-09-14
 
+### Errors that guide, and sensible defaults
+
+> "add to our coding style guide that we always try to write the best possible useful errors. user needs to be guided as much as possible by the code (hence sensible defaults) even when the user is an agent."
+
+Cairn had no coding style guide beyond the hard rules, so the agent added a "Coding style" section to `CLAUDE.md`, which `AGENTS.md` points every agent to. Landed in: that section, PRD principle 7, and ADR-031 point 4.
+
+### An agent-first guide to deploying, configuring and running Cairn, kept up to date
+
+> "also we need to make sure that there is an agent first deployment, configuration and operation guide and that it is up to date."
+
+`docs/AGENT-INSTALL.md` covered deploying; nothing covered configuring or running a Cairn for an agent, and the install guide had drifted. Landed in: `docs/AGENT-OPERATE.md`, fixes to `docs/AGENT-INSTALL.md`, a test that checks both against the code, hard rule 19 widened, and ADR-031.
+
+### More kinds of content, and an editor that helps create them
+
+> "add to the roadmap to have a bit more options to write to the web store. allowing notes (linked from the wiki) blog, diagrams, pictures and other information formats. the online editor should help the user create those. agent goes through the cli/api, user through the agent or manually from the ditor."
+
+Landed in: the roadmap item "More kinds of content: notes, blog posts, diagrams, pictures", under Phase 2. Not built; needs an ADR.
+
+### Reskin the wiki
+
+> "also nice to have a style customization option in the online editor that allows the user to reskin his wiki (by changing the config of the css ofc)"
+
+Landed in: the roadmap item "Reskin the wiki: a theme setting", under Phase 2, built on the theme tokens the console already uses. Not built; needs an ADR.
+
 ### Fix the login error message
 
 > "correct and improve the login error message."

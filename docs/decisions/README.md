@@ -38,6 +38,7 @@ A decision that changes is not edited away. Add a new ADR that supersedes it, an
 | [028](ADR-028.md) | Pages record when their facts were last verified | accepted | 2026-09-14 |
 | [029](ADR-029.md) | The CLI keeps several named Cairns as one | accepted | 2026-09-14 |
 | [030](ADR-030.md) | Sync orders edits by when they were made, and merges both sides the way git does | accepted, extends 023 | 2026-09-14 |
+| [031](ADR-031.md) | Agents run Cairn from a guide written for them, checked against the code, and the code guides them too | accepted, extends 019 | 2026-09-14 |
 
 ## Writing one
 

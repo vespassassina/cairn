@@ -1,6 +1,6 @@
 # Installing Cairn: instructions for an agent
 
-You are a coding agent, and the person you work with wants Cairn installed or deployed. Follow this page from the top. It is written for you; the person-facing guides it links to (`docs/LOCAL.md`, `docs/CLI.md`, `docs/DEPLOY-DOCKER.md`, `docs/DEPLOY-AZURE.md`) have more detail on each step. Why it works this way: ADR-019.
+You are a coding agent, and the person you work with wants Cairn installed or deployed. Follow this page from the top. Once it runs, `docs/AGENT-OPERATE.md` covers everything after: settings, health, updates, sync, backups, access and troubleshooting. It is written for you; the person-facing guides it links to (`docs/LOCAL.md`, `docs/CLI.md`, `docs/DEPLOY-DOCKER.md`, `docs/DEPLOY-AZURE.md`) have more detail on each step. Why it works this way: ADR-019.
 
 ## Rules
 
@@ -57,7 +57,7 @@ Human guide: `docs/LOCAL.md`.
    Say first: the first start downloads a 34 MB embedding model from Hugging Face into `~/.cache/cairn/models`, for search by meaning, which works for English text only (ADR-022). If they would rather not, start it with `CAIRN_EMBEDDINGS=off` for keyword search only.
 3. **Check it:** `curl -s http://localhost:8787/health` must print `"status":"ok"`. Its `semantic_search` field says `ready` once the model has loaded, `failed` with a reason if it could not (keyword search still works), or `off`.
 4. **Connect their Claude.**
-   1. **Claude Code: use the CLI and skill** (about 115 tokens per session, against about 3,000 for MCP). Steps in `docs/CLI.md`: `pnpm build:cli host`, put the executable on the PATH, copy `skills/cairn` to `~/.claude/skills/`. Check with `cairn overview`.
+   1. **Claude Code: use the CLI and skill** (about 115 tokens per session, against about 3,100 for MCP). Steps in `docs/CLI.md`: `pnpm build:cli host`, put the executable on the PATH, copy `skills/cairn` to `~/.claude/skills/`. Check with `cairn overview`.
    2. **Or MCP:** `claude mcp add --transport http --scope user cairn http://localhost:8787/mcp`, then a new session.
    3. **Claude Desktop or on the web** cannot reach a server on this computer. Suggest Azure if they need those.
 5. **Prove it end to end,** with their permission: `cairn create --title "Cairn is connected" --note "Install check" --text "Written during setup."`. Ask them to open http://localhost:8787 and find it under recent changes.
@@ -93,8 +93,8 @@ Human guide: `docs/DEPLOY-AZURE.md`. Say first: this creates a resource group, a
 5. **First pass.** Run `deploy/azure/deploy.sh`, with `CAIRN_NAME`, `CAIRN_LOCATION` and `CAIRN_RG` set if they chose other values. It prints the address and the callback URL. Give both to the person.
 6. **The person creates the OAuth app.** For GitHub, tell them to open https://github.com/settings/applications/new and fill in:
    1. Application name: Cairn
-   2. Homepage URL: the address from step 4
-   3. Authorization callback URL: the callback URL from step 4, exactly
+   2. Homepage URL: the address from step 5
+   3. Authorization callback URL: the callback URL from step 5, exactly
    4. Register, then "Generate a new client secret".
 
    Ask them to tell you the **Client ID** (not secret) and their **GitHub login**. For the **client secret**, ask them to open `deploy/azure/.cairn-deploy.env` in their own editor and set the line `CAIRN_OAUTH_CLIENT_SECRET='...'`, then tell you when it is saved. You do not open that file.
@@ -111,8 +111,8 @@ Human guide: `docs/DEPLOY-AZURE.md`. Say first: this creates a resource group, a
 9. **The person signs in** to the console at the address, with GitHub. If the page says they are not on the list, it shows the exact entry; add it with step 7 again.
 10. **Connect their Claude,** with the steps in `docs/DEPLOY-AZURE.md` section 4:
    1. Claude on the web or Desktop: they add a custom connector with `<address>/mcp`.
-   2. Claude Code: `claude mcp add --transport http --scope user cairn <address>/mcp`, then `/mcp` in a new session to sign in. Or the CLI: `CAIRN_URL=<address> cairn login`, which opens their browser; the skill as in 3a.
-11. **Moving a local Cairn up**, if they have one. Ask whether they want to keep the local one in step. If yes: `cairn sync http://localhost:8787 <address>` after `cairn login`, and offer `--every`, with an interval longer than the idle time from step 2 (ADR-023). If not: `cairn export <folder>` against the local server, then `CAIRN_URL=<address> cairn import <folder>`. Either way, show them `--dry-run` first.
+   2. Claude Code: `claude mcp add --transport http --scope user cairn <address>/mcp`, then `/mcp` in a new session to sign in. Or the CLI: register it with `cairn instances add azure <address>` and sign in with `cairn login --instance azure`, which opens their browser (a bare `cairn login` signs in to localhost, which needs none); the skill as in 3a.
+11. **Moving a local Cairn up**, if they have one. Ask whether they want to keep the local one in step. If yes: register both (`cairn instances add laptop http://localhost:8787` first, then the Azure one from step 10), run `cairn sync --dry-run`, then `cairn sync` (ADR-023, ADR-029). Offer `cairn sync install --every 1h` to keep them in step, with an interval longer than the idle time from step 2, and `cairn start` for starting the day (`docs/AGENT-OPERATE.md` section 5). If not: `cairn export <folder>` against the local server, then `CAIRN_URL=<address> cairn import <folder> --dry-run`, then without `--dry-run`.
 12. **Prove it end to end,** with their permission: create a page with `cairn create` or through Claude, and have them find it in the console's recent changes.
 
 ## 4. Hand over
@@ -123,5 +123,6 @@ Finish with a short summary for the person:
 2. How they connected, and how to connect another device.
 3. **On this computer:** how to start it (`pnpm dev` in the repository folder). **On Azure:** that it starts by itself, where the settings file is (`deploy/azure/.cairn-deploy.env`, to keep private and back up), what it costs, how to update (`docs/DEPLOY-AZURE.md`, "Day to day") and how to remove it (`az group delete --name <resource group>`, after an export). **On their own server:** that it restarts by itself, where the database folder and `deploy/docker/.env` are (both to back up, the file to keep private), and how to update (`docker compose pull && docker compose up -d`).
 4. What you did not do, or what failed.
+5. That for anything later, from changing a setting to updating, their agent follows `docs/AGENT-OPERATE.md`.
 
 If anything in this guide was wrong or unclear, say so, so the owner can fix it.

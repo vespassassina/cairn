@@ -6,6 +6,16 @@ Entries link to the ADR when there is one. A change of direction that has no ADR
 
 ## 2026-09-14
 
+### An agent guide to running Cairn, errors that guide, and two editor items on the roadmap
+
+Four directions from the owner (`docs/DIRECTIONS.md`).
+
+1. **Coding style: errors that guide, and sensible defaults.** `CLAUDE.md` gains a "Coding style" section: every error says what happened and the exact next step, says when a default the person did not choose was used, prefers defaults to required settings, and is written so an agent can act on it; an error that misled someone is a bug. PRD principle 7 says the same for the product (ADR-031).
+2. **`docs/AGENT-OPERATE.md`,** the agent's guide to a running Cairn: what runs where, every setting with its default (server, Docker, Azure and CLI), health checks, updates, sync between Cairns, backups and restore, access and secrets, cost, troubleshooting and the hand-over. `CLAUDE.md`, `AGENTS.md` and `docs/README.md` point to it (ADR-031).
+3. **`docs/AGENT-INSTALL.md` brought up to date:** the OAuth step pointed at "step 4" for an address printed in step 5; connecting the CLI and moving a local Cairn up now use registered instances, `cairn sync install` and `cairn start` (ADR-029); the MCP cost reads about 3,100 tokens, not 3,000; the hand-over points to the operation guide.
+4. **A test keeps the agent guides in step with the code** (`packages/cli/test/agent-guides.test.ts`): every `CAIRN_` setting read by the server, the CLI, the image's start script or the deploy files must be described in the operation guide, and every setting and `cairn` command either guide names must exist. Checked by breaking the guide on purpose: all three parts failed, naming the setting and the command. Hard rule 19 now covers configuration and operation steps.
+5. **Roadmap, Phase 2:** "More kinds of content: notes, blog posts, diagrams, pictures", written by agents through the CLI and API and by people through their agent or the editor; and "Reskin the wiki: a theme setting", on artifactkit's theme tokens, with custom CSS on top. No code.
+
 ### `cairn login` says how to sign in to the Cairn you meant
 
 The owner ran `cairn login` to sign in to Azure, with no `CAIRN_URL` set, and got "http://localhost:8787 does not use OAuth sign-in (HTTP 404). On localhost no sign-in is needed." That was true, and no help: it did not say that the CLI had picked localhost because no Cairn was named, or how to name one (`docs/LESSONS.md`).

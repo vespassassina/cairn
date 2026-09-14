@@ -2,9 +2,9 @@
 
 Project context for Claude Code. Read this first, then `docs/PRD.md`.
 
-## Asked to install or deploy Cairn?
+## Asked to install, deploy, configure or run Cairn?
 
-Follow `docs/AGENT-INSTALL.md` instead of the rest of this file. Ask the person where it should run before doing anything, keep their credentials out of the chat, and never read `deploy/azure/.cairn-deploy.env` (ADR-019). The rest of this file is for working on Cairn's code.
+To install or deploy it, follow `docs/AGENT-INSTALL.md`; for anything with a Cairn already running (settings, health, updates, sync, backups, access, troubleshooting), follow `docs/AGENT-OPERATE.md`. Use them instead of the rest of this file. Ask the person before changing anything, keep their credentials out of the chat, and never read `deploy/azure/.cairn-deploy.env` or `deploy/docker/.env` (ADR-019, ADR-031). The rest of this file is for working on Cairn's code.
 
 ## What this is
 
@@ -100,7 +100,7 @@ docs/
 16. The CLI runs on Node from npm and on Bun as a compiled executable (ADR-014). Its code uses only `fetch`, Web Crypto, `node:util` `parseArgs`, `node:fs/promises`, `node:path`, `node:os`, `node:http` (the `cairn login` listener), `node:child_process` (opening the browser) and `process`. Anything else needs checking on both, and `pnpm smoke:cli` must pass.
 17. Never put a raw control character in a source file. Write separators and escapes so the file stays plain text (see `docs/LESSONS.md`).
 18. Secrets come only from the environment, never from `cairn.config.json` or any tracked file. On a non-loopback bind, local trust is always off and OAuth is required (ADR-017).
-19. An install or deploy step changes in the person's guide and in `docs/AGENT-INSTALL.md` in the same commit (ADR-019).
+19. An install, configuration or operation step changes in the person's guide and in `docs/AGENT-INSTALL.md` or `docs/AGENT-OPERATE.md` in the same commit (ADR-019, ADR-031). A new `CAIRN_` setting is described in `docs/AGENT-OPERATE.md`; `packages/cli/test/agent-guides.test.ts` fails until it is.
 
 ## Verification before calling a task done
 
@@ -110,6 +110,16 @@ docs/
 4. PRD or an ADR updated if behaviour changed
 5. `docs/CHANGELOG.md` has an entry saying what changed and why, and `docs/ROADMAP.md` reflects the new status
 6. New owner directions are in `docs/DIRECTIONS.md`, and failures met along the way are in `docs/LESSONS.md`
+
+## Coding style
+
+Write like the surrounding code: its naming, comment density and idiom. Beyond that, one rule the owner set on 2026-09-14 (ADR-031): the code guides whoever uses it, as much as it can, "even when the user is an agent".
+
+1. **Every error is the best one we can write.** It says what happened, why when that is not obvious, and the exact next step: the command, flag or setting that fixes it. "X failed" alone is a bug.
+2. **Say when a default was used.** When the code acted on a default the person did not choose, such as the CLI talking to localhost because no server was named, the error that follows says so and how to choose.
+3. **Sensible defaults over required settings.** Require a setting only when no default is safe, and then name it in the error.
+4. **Write for agents too.** Exact setting names and commands they can run, stable fields in API errors, nothing that depends on seeing a screen.
+5. **An error that misled someone is a bug:** fix it, test the message, and add a `docs/LESSONS.md` entry.
 
 ## Writing style for docs
 

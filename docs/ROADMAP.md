@@ -36,6 +36,7 @@ Status key: done, in progress, next, later, blocked.
 | OAuth server | done | ADR-017. GitHub or any OpenID Connect provider, consent page, CLI login. 23 end-to-end tests. Proven with claude.ai after a deploy |
 | Azure deploy | done | ADR-018. Running in Sweden Central since 2026-09-13, holding the owner's wiki. The first deployment found three bugs, all fixed. Cold start about 30 s, mostly the image pull |
 | Agent-first install guide | done | ADR-019. `docs/AGENT-INSTALL.md`, `AGENTS.md` |
+| Agent-first configuration and operation guide | done | ADR-031. `docs/AGENT-OPERATE.md`: every setting, health, updates, sync, backups, access, cost and troubleshooting. A test fails when a setting the code reads is missing from it, or when either agent guide names a setting or `cairn` command that does not exist |
 | Peptide wiki reseeded from the updated wiki | done | 96 pages, 79 peptides, 8 stacks, 2 tables |
 
 Gate: usage and recall targets from PRD section 10 met for two weeks. If not, stop or rethink.
@@ -122,6 +123,11 @@ Before publishing on GitHub and posting to Hacker News. From the review of 2026-
 ## Phase 2: editor
 
 BlockNote editor, table editing, export UI. Gated on Phase 1.
+
+| Item | Status | Notes |
+|---|---|---|
+| More kinds of content: notes, blog posts, diagrams, pictures | later | The owner's direction of 2026-09-14. Today a Cairn holds wiki pages and tables. Add: **notes**, short and quick, linked from wiki pages and shown in their backlinks; **blog posts**, dated, with a published state, feeding the public wiki and static site with a feed; **diagrams**, kept as text (Mermaid) so an agent can write them and history, search and the sync merge (ADR-030) work on them, drawn in the console; **pictures and other files**, as attachments through the blob adapter (PRD P1 item 4), shown inline and carried by export and sync. Other formats as they are asked for. Agents write every kind through the CLI, REST and MCP alike (hard rule 14); a person writes through their agent or in the editor, which offers a starting shape for each kind and a preview. Overlaps "Templates, daily notes, attachments and images" above. Needs an ADR: probably a `kind` on pages rather than new stores, and a blob adapter |
+| Reskin the wiki: a theme setting | later | The owner's direction of 2026-09-14. The console takes every colour, font size, width and density from artifactkit's theme tokens (ADR-009 rule 3: Cairn's own CSS defines no colour), so a theme is a handful of token values: ground, ink, accent, density, text size, page width, and dark mode. The editor edits them with a live preview and keeps them in the workspace's settings, and the public wiki and static site use the same theme. Custom CSS on top, for people who want more, served from its own stylesheet and never able to run script. Needs an ADR |
 
 ## Phase 3: options
 

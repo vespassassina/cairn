@@ -10,8 +10,9 @@ Where to find what. Cairn is built in the open, mostly by an AI agent working fr
 4. `DEPLOY-DOCKER.md`. Running Cairn on your own server, such as Proxmox or a NAS, with the database on a local disk.
 5. `DEPLOY-AZURE.md`. Putting Cairn on Azure with sign-in, connecting Claude from anywhere, and running it day to day.
 6. `AGENT-INSTALL.md`. The same installs, written for a coding agent to follow with you at the checkpoints.
-7. `PRD.md`. What Cairn is for, who it is for, the MCP tools, the requirements, and the risks.
-8. `ARCHITECTURE.md`. How it is built today: packages, the two adapter ports, the kinds of data, and the write path.
+7. `AGENT-OPERATE.md`. Configuring and running a Cairn, for a coding agent: every setting, updates, sync, backups, access and troubleshooting. A test keeps it in step with the code.
+8. `PRD.md`. What Cairn is for, who it is for, the MCP tools, the requirements, and the risks.
+9. `ARCHITECTURE.md`. How it is built today: packages, the two adapter ports, the kinds of data, and the write path.
 
 ## The four logs
 
