@@ -13,6 +13,12 @@ Rules:
 
 ## 2026-09-15
 
+### No registry. A cairn keeps its own trusted friends instead
+
+> "avoid the registry. not my place. but a cairn can keep references to other cairns and act as a local 'trusted friends' catalog"
+
+Asked what to pick up next on "Bridges between Cairns", the owner rejected "A registry of public Cairns on GitHub": running or curating a shared registry is not something they want to take on. In its place, a Cairn keeps its own local list of other Cairns it trusts, so discovery and "cited by" do not depend on any registry existing. Landed in: `docs/ROADMAP.md` (the registry item marked rejected, "Discovery by following citations" and "'Cited by', across Cairns" reframed around a local trusted list), not yet in an ADR or code.
+
 ### Which roadmap item next: citations kept correct
 
 > "ok, next item"

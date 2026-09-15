@@ -6,6 +6,12 @@ Entries link to the ADR when there is one. A change of direction that has no ADR
 
 ## 2026-09-15
 
+### No registry: a local trusted friends catalog instead
+
+Direction change, no code yet. Offered a choice of the next "Bridges between Cairns" item, the owner rejected "A registry of public Cairns on GitHub": "avoid the registry. not my place." That item in `docs/ROADMAP.md` is now marked rejected rather than `later`.
+
+In its place, the owner wants each Cairn to keep its own local list of other Cairns it trusts: "a cairn can keep references to other cairns and act as a local 'trusted friends' catalog". `docs/ROADMAP.md` gains a new item, "A local trusted friends catalog", and the two items that depended on a shared registry, "'Cited by', across Cairns" and "Discovery by following citations", are reworded to depend on this local list instead. Still needs an ADR before code: whether the list is server data or CLI config, what a trusted entry records, and how it is managed.
+
 ### Citations kept correct
 
 The owner picked "Citations kept correct" off "Bridges between Cairns" next (ADR-036). Two parts:
