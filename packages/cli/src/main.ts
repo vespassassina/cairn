@@ -20,6 +20,7 @@ import {
 } from "./export-format.js";
 import { indexPages, renderIndex, renderPage, sitemapXml, sitePaths, trailOf } from "./site-format.js";
 import { checkSources, collectSources, type FoundSource, type SourceCheck } from "./check-sources.js";
+import { fetchPeerDescription, TRUSTED_TABLE_NAME } from "./trust.js";
 import { checkInstance, firstReachable, instancesPath, isLoopback, loadInstances, reachable, saveInstances, type Instance } from "./instances.js";
 import { credentialsPath, login, logout, NoSignIn, storedToken } from "./login.js";
 import {
@@ -129,6 +130,11 @@ Your data
   cairn check-sources [--root PAGE] [--timeout MS]      which sources (a URL, a DOI or a PubMed id) no
                                                         longer answer, with an archived copy where the
                                                         Wayback Machine has one. Reports only; changes nothing
+
+Trusted Cairns: a local list of others this Cairn's owner trusts
+  cairn trust <url> [--note "why"] [--timeout MS]      confirm <url> answers with a Cairn self-description
+      (ADR-034) and add or update it in the "Trusted cairns" table. The table itself is ordinary:
+      cairn tables, rows, row and upsert read and edit it like any other
 
 Several Cairns: a laptop and a cloud copy, say, kept as one
   cairn instances                                 the ones registered, in the order commands try them
@@ -1129,6 +1135,55 @@ export async function run(argv: string[], io: Io): Promise<number> {
             found_on: found.filter((f) => f.href === href).map((f) => f.on),
           }));
         out({ checked: checks.size, dead } as unknown as Json, () => describeCheckSources(found, checks));
+        return 0;
+      }
+
+      case "trust": {
+        const url = need(args[0], "the address of the Cairn to trust, such as https://example.com");
+        const timeoutMs = flags.timeout ? Number(flags.timeout) : DEFAULT_CHECK_TIMEOUT_MS;
+        if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+          throw new UsageError(`--timeout must be a positive number of milliseconds, not "${flags.timeout}"`);
+        }
+        const peer = await fetchPeerDescription(url, io.fetch, timeoutMs).catch((error: unknown) => {
+          throw new UsageError(error instanceof Error ? error.message : String(error));
+        });
+
+        const tablesList = await client.request("GET", "/tables");
+        const existingTable = list(tablesList.json?.["tables"]).find((t) => t["name"] === TRUSTED_TABLE_NAME);
+        const tableId = existingTable
+          ? String(existingTable["id"])
+          : String(
+              (
+                await client.request("POST", "/tables", {
+                  body: {
+                    name: TRUSTED_TABLE_NAME,
+                    fields: [
+                      { name: "url", type: "url", required: true },
+                      { name: "name", type: "text" },
+                      { name: "note", type: "text" },
+                      { name: "added_at", type: "date" },
+                    ],
+                  },
+                })
+              ).json?.["id"],
+            );
+
+        const { json: rowsJson } = await client.request("POST", `/tables/${encodeURIComponent(tableId)}/query`, {
+          body: { where: [{ field: "url", op: "eq", value: url }], limit: 1 },
+        });
+        const existingRow = list(rowsJson?.["rows"])[0];
+
+        const name = peer.name ?? url;
+        const rowsPath = `/tables/${encodeURIComponent(tableId)}/rows`;
+        const { json } = existingRow
+          ? await client.request("PUT", `${rowsPath}/${encodeURIComponent(String(existingRow["id"]))}`, {
+              body: { values: { url, name, ...(flags.note ? { note: flags.note } : {}) } },
+              ifMatch: String(existingRow["version"]),
+            })
+          : await client.request("POST", rowsPath, {
+              body: { values: { url, name, ...(flags.note ? { note: flags.note } : {}), added_at: new Date().toISOString() } },
+            });
+        out(json, () => `trusted ${name} (${url})${peer.description ? `: ${peer.description}` : ""}${existingRow ? ", updated" : ""}\n`);
         return 0;
       }
 

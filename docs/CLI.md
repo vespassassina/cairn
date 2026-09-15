@@ -216,6 +216,17 @@ cairn check-sources --timeout 5000         give up on an address after 5 seconds
 
 Reads every page's and row's sources and checks each web address, DOI or PubMed id once, reporting which no longer answer and, for a dead web address, a copy on the Wayback Machine when one exists (ADR-036). It only reads; nothing is written, and it changes nothing about a page's `verified_at` (ADR-028). A plain citation with no address, such as "Smith 2021, J Pept Sci", is left unchecked and listed as such.
 
+## A local list of trusted Cairns: trust
+
+```
+cairn trust https://a-friend's-cairn.example
+cairn trust https://a-friend's-cairn.example --note "shares peptide sourcing data"
+```
+
+Confirms the address answers with a Cairn's self-description at `/.well-known/cairn.json` (ADR-034), then adds or updates a row for it in this Cairn's own "Trusted cairns" table (ADR-037), created the first time it is needed. Trusting the same address again updates the row instead of duplicating it. An address that does not answer with a Cairn is refused, with what went wrong.
+
+The table itself is ordinary: `cairn tables`, `cairn rows <table-id>`, `cairn row` and `cairn upsert` read and edit it exactly as they would any other table, from the console, MCP or the CLI. It stays local, part of this Cairn's own data, unless the owner deliberately publishes it like any other collection.
+
 ## Keep two Cairns the same: sync
 
 `cairn sync` keeps two Cairns in step: your laptop and Azure, or your own server and Azure (ADR-023).

@@ -6,6 +6,12 @@ Entries link to the ADR when there is one. A change of direction that has no ADR
 
 ## 2026-09-15
 
+### A local trusted friends catalog
+
+`cairn trust <url> [--note "why"]` (ADR-037) confirms an address answers with a Cairn's self-description at `/.well-known/cairn.json` (ADR-034), then adds or updates a row for it in this Cairn's own "Trusted cairns" table, created the first time it is needed. Trusting the same address again updates the row rather than duplicating it; an address that does not look like a Cairn is refused, with what went wrong and what to check.
+
+No new storage, port, schema or endpoint: the table is ordinary, so `cairn tables`, `rows`, `row` and `upsert`, and the equivalent MCP tools and REST endpoints, already read and manage it like any other table (hard rule 14, satisfied for free). `cairn trust` itself is CLI-only, on the reasoning `cairn sync` (ADR-023) and `cairn check-sources` (ADR-036) already established: checking an address that is not this CLI's own server is a client-of-the-web job, not a server decision. The list stays local, part of this Cairn's own data, unless the owner deliberately publishes it like any other collection.
+
 ### No registry: a local trusted friends catalog instead
 
 Direction change, no code yet. Offered a choice of the next "Bridges between Cairns" item, the owner rejected "A registry of public Cairns on GitHub": "avoid the registry. not my place." That item in `docs/ROADMAP.md` is now marked rejected rather than `later`.
