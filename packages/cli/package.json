@@ -1,5 +1,5 @@
 {
-  "name": "cairncli",
+  "name": "@vespassassina/cairncli",
   "version": "0.1.5",
   "license": "PolyForm-Noncommercial-1.0.0",
   "repository": {
@@ -9,6 +9,9 @@
   },
   "type": "module",
   "description": "Command-line client for Cairn: a wiki and tables your agents can write to, with every change reviewable.",
+  "publishConfig": {
+    "access": "public"
+  },
   "engines": {
     "node": ">=22"
   },

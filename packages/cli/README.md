@@ -1,9 +1,9 @@
-# cairncli
+# @vespassassina/cairncli
 
 The `cairn` command: a thin HTTP client for [Cairn](https://github.com/vespassassina/cairn), a self-hosted wiki and table store where Claude and other agents are the primary client.
 
 ```
-npm install -g cairncli
+npm install -g @vespassassina/cairncli
 cairn --help
 ```
 

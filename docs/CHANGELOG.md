@@ -6,9 +6,9 @@ Entries link to the ADR when there is one. A change of direction that has no ADR
 
 ## 2026-09-15
 
-### The npm package is `cairncli`, not `@cairn/cli`
+### The npm package is `@vespassassina/cairncli`, after two other names failed to publish
 
-Publishing `@cairn/cli` failed with npm error 404 on the first CI attempt after the token issue (below) was fixed: a scoped package's first publish needs the scope's org to already exist on npm, and creating the `cairn` org failed because the name is already held by someone else, unrelated to this project. Asked the owner how to proceed; they chose to drop the scope and publish unscoped. `cairn-cli` was also taken; `cairncli` was free. Renamed `packages/cli/package.json` (dropped `publishConfig.access`, which only matters for a scoped package), CI's `release` job (`pnpm --filter cairncli build`/`publish`, no `--access public` flag), `docs/CLI.md`, and `packages/cli/README.md`. Nothing else in the workspace referenced the old name. Full check suite and `pnpm smoke:cli` pass; `pnpm --filter cairncli publish --dry-run` confirms the tarball is unchanged except for the name.
+Publishing `@cairn/cli` failed with npm error 404 on the first CI attempt after the token issue (below) was fixed: a scoped package's first publish needs the scope's org to already exist on npm, and creating the `cairn` org failed because the name is already held by someone else, unrelated to this project. Renamed to the unscoped `cairncli`, confirmed free on the registry; CI's next run got further but still failed, this time with a 403 from npm's publish-time similarity check, "too similar to existing package cairn-cli", which a plain registry lookup never surfaces since it only checks exact names. npm's own error message named the fix: publish scoped to the owner's own npm username, `@vespassassina/cairncli`, which needs no separate org to exist and is not subject to the similarity check. Renamed `packages/cli/package.json` (restored `publishConfig.access: "public"`, required again since it is scoped), CI's `release` job (`pnpm --filter @vespassassina/cairncli build`/`publish --access public`), `docs/CLI.md`, and `packages/cli/README.md`. Full check suite and `pnpm smoke:cli` pass; `pnpm publish --dry-run` confirms the tarball is unchanged except for the name.
 
 ### v0.1.5
 
