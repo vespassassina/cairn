@@ -2,7 +2,7 @@
 import type { Context, Hono } from "hono";
 import { raw } from "hono/html";
 import type { Child, FC } from "hono/jsx";
-import { isUrlSource, publishedIds, type Page, type Paged } from "@cairn/core";
+import { publishedIds, sourceHref, type Page, type Paged } from "@cairn/core";
 import type { AppContext } from "../context.js";
 import { ASSET_VERSION, documentTitle, HEAD_TAGS } from "./assets.js";
 import { When } from "./layout.js";
@@ -164,17 +164,10 @@ const Shell: FC<{
 
 const SourceList: FC<{ sources: readonly string[] }> = ({ sources }) => (
   <ul class="cairn-sources">
-    {sources.map((source) => (
-      <li>
-        {isUrlSource(source) ? (
-          <a href={source} rel="noopener noreferrer nofollow">
-            {source}
-          </a>
-        ) : (
-          source
-        )}
-      </li>
-    ))}
+    {sources.map((source) => {
+      const href = sourceHref(source);
+      return <li>{href ? <a href={href} rel="noopener noreferrer nofollow">{source}</a> : source}</li>;
+    })}
   </ul>
 );
 

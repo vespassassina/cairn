@@ -5,8 +5,8 @@ import { raw } from "hono/html";
 import type { Child, FC } from "hono/jsx";
 import {
   diffLines,
-  isUrlSource,
   normalizeSources,
+  sourceHref,
   NotFoundError,
   parseRowNodeId,
   relationTarget,
@@ -347,17 +347,10 @@ const EdgeList: FC<{ edges: Edge[]; direction: "in" | "out"; titles: LinkResolve
 /** Where a page's or row's facts came from, with web addresses as links (ADR-027). */
 const SourceList: FC<{ sources: readonly string[] }> = ({ sources }) => (
   <ul class="cairn-sources">
-    {sources.map((source) => (
-      <li>
-        {isUrlSource(source) ? (
-          <a href={source} rel="noopener noreferrer nofollow">
-            {source}
-          </a>
-        ) : (
-          source
-        )}
-      </li>
-    ))}
+    {sources.map((source) => {
+      const href = sourceHref(source);
+      return <li>{href ? <a href={href} rel="noopener noreferrer nofollow">{source}</a> : source}</li>;
+    })}
   </ul>
 );
 

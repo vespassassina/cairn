@@ -36,9 +36,10 @@ once only if it would have mattered. If it says to sign in, ask the user to run
 2. Search first, and update an existing page rather than creating a near-duplicate.
 3. Every write takes `--note "why"`. The owner reads these notes when reviewing.
 4. When a fact came from somewhere, such as a paper, a web page or the owner, add
-   `--source` with a URL or a short citation ("Smith 2021, J Pept Sci", "the owner,
-   2026-09-14"). Repeat it for more than one. Sources are added to the page's or
-   row's list, which the owner sees beside it.
+   `--source` with a URL, a DOI, a PubMed id, or a short citation ("Smith 2021,
+   J Pept Sci", "the owner, 2026-09-14"). Cite the original, not a summary of it.
+   Repeat it for more than one. Sources are added to the page's or row's list,
+   which the owner sees beside it, and a DOI or PubMed id is shown as a link.
 5. `cairn read` shows when a page was last `verified`. When you re-check a page's
    facts and they still hold, add `--verified` to the edit, or run
    `cairn append <page-id> --verified --note "why"` to change nothing else.

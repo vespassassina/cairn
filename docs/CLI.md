@@ -206,6 +206,16 @@ cairn import <folder>                   read an export back in, keeping ids; saf
 
 The format is in ADR-016. On Windows, give folders as you normally would, such as `cairn export C:\Users\you\cairn-backup`.
 
+## Checking your sources: check-sources
+
+```
+cairn check-sources                        checks every linked source
+cairn check-sources --root <page-id>       checks one page and everything under it
+cairn check-sources --timeout 5000         give up on an address after 5 seconds
+```
+
+Reads every page's and row's sources and checks each web address, DOI or PubMed id once, reporting which no longer answer and, for a dead web address, a copy on the Wayback Machine when one exists (ADR-036). It only reads; nothing is written, and it changes nothing about a page's `verified_at` (ADR-028). A plain citation with no address, such as "Smith 2021, J Pept Sci", is left unchecked and listed as such.
+
 ## Keep two Cairns the same: sync
 
 `cairn sync` keeps two Cairns in step: your laptop and Azure, or your own server and Azure (ADR-023).

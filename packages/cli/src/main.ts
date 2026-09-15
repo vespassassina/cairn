@@ -19,6 +19,7 @@ import {
   type Manifest,
 } from "./export-format.js";
 import { indexPages, renderIndex, renderPage, sitemapXml, sitePaths, trailOf } from "./site-format.js";
+import { checkSources, collectSources, type FoundSource, type SourceCheck } from "./check-sources.js";
 import { checkInstance, firstReachable, instancesPath, isLoopback, loadInstances, reachable, saveInstances, type Instance } from "./instances.js";
 import { credentialsPath, login, logout, NoSignIn, storedToken } from "./login.js";
 import {
@@ -125,6 +126,9 @@ Your data
   cairn sync <url-a> <url-b> [--every 5m] [--dry-run]   keep two Cairns the same; edits made on both
                                                         merge as in git, and where both changed the same
                                                         part the newer wins, the other kept in history
+  cairn check-sources [--root PAGE] [--timeout MS]      which sources (a URL, a DOI or a PubMed id) no
+                                                        longer answer, with an archived copy where the
+                                                        Wayback Machine has one. Reports only; changes nothing
 
 Several Cairns: a laptop and a cloud copy, say, kept as one
   cairn instances                                 the ones registered, in the order commands try them
@@ -186,6 +190,7 @@ const OPTIONS = {
   instance: { type: "string" },
   first: { type: "boolean" },
   start: { type: "string" },
+  timeout: { type: "string" },
 } as const;
 
 /** Commands that choose their own servers, so never probe for one. */
@@ -196,6 +201,9 @@ const START_WAIT_MS = 90_000;
 
 /** The default for a scheduled sync: long enough to let a cloud copy sleep between runs. */
 const DEFAULT_EVERY_MS = 3_600_000;
+
+/** How long check-sources waits for one address before calling it dead. */
+const DEFAULT_CHECK_TIMEOUT_MS = 10_000;
 
 type Flags = ReturnType<typeof parse>["values"];
 
@@ -330,6 +338,23 @@ function describeSyncPlan(syncPlan: SyncPlan, urls: Record<Side, string>): strin
           ? " (changed on both, in different parts; merged)"
           : ` (changed on both; merged, and ${plural(action.merge.parts, "part")} changed on both take the newer edit)`;
     lines.push(`  ${verb} ${urls[action.to]}: ${what.kind} ${what.label}${why}`);
+  }
+  return `${lines.join("\n")}\n`;
+}
+
+function describeCheckSources(found: FoundSource[], checks: Map<string, SourceCheck>): string {
+  const linkable = found.filter((f): f is FoundSource & { href: string } => f.href !== null);
+  const plain = found.length - linkable.length;
+  const dead = [...checks.entries()].filter(([, check]) => !check.ok);
+  const header = `checked ${plural(linkable.length, "linked source")}${plain > 0 ? `, ${plural(plain, "plain citation")} left unchecked` : ""}`;
+  if (dead.length === 0) return `${header}: all answered\n`;
+  const where = (on: FoundSource["on"]) => (on.kind === "page" ? `page "${on.title}" (${on.id})` : `row ${on.table}/${on.id}`);
+  const lines = [`${header}, ${plural(dead.length, "dead source")}:`];
+  for (const [href, check] of dead) {
+    const why = check.error ? `cannot reach: ${check.error}` : `answered ${check.status}`;
+    lines.push(`  ${href} — ${why}`);
+    for (const source of linkable.filter((f) => f.href === href)) lines.push(`    on ${where(source.on)}`);
+    lines.push(check.archived ? `    archived copy: ${check.archived}` : "    no archived copy found");
   }
   return `${lines.join("\n")}\n`;
 }
@@ -671,6 +696,39 @@ export async function run(argv: string[], io: Io): Promise<number> {
     return 0;
   };
 
+  /** Every page under `root` (or all of them), parents first, as `export` reads them. */
+  const fetchPages = async (root: string | undefined): Promise<ExportPage[]> => {
+    const pages: ExportPage[] = [];
+    let cursor: string | null = null;
+    do {
+      const { json } = await client.request("GET", `/export/pages${query({ root, cursor: cursor ?? undefined, limit: "100" })}`);
+      pages.push(...(list(json?.["pages"]) as unknown as ExportPage[]));
+      cursor = (json?.["cursor"] as string | null) ?? null;
+    } while (cursor !== null);
+    if (root && pages[0]) pages[0] = { ...pages[0], parent_id: null };
+    return pages;
+  };
+
+  /** Every table's rows, with their sources, as `export --tables` reads them. */
+  const fetchTables = async (): Promise<Array<{ id: string; rows: Array<{ id: string; sources?: string[] }> }>> => {
+    const { json } = await client.request("GET", "/tables");
+    const tables: Array<{ id: string; rows: Array<{ id: string; sources?: string[] }> }> = [];
+    for (const table of list(json?.["tables"])) {
+      const rows: Array<{ id: string; sources?: string[] }> = [];
+      let rowCursor: string | null = null;
+      do {
+        const page = await client.request("GET", `/tables/${encodeURIComponent(String(table["id"]))}/rows${query({ limit: "200", cursor: rowCursor ?? undefined })}`);
+        for (const row of list(page.json?.["rows"])) {
+          const sources = list(row["sources"] as unknown).map(String);
+          rows.push({ id: String(row["id"]), ...(sources.length > 0 ? { sources } : {}) });
+        }
+        rowCursor = (page.json?.["cursor"] as string | null) ?? null;
+      } while (rowCursor !== null);
+      tables.push({ id: String(table["id"]), rows });
+    }
+    return tables;
+  };
+
   try {
     switch (command) {
       case "whoami": {
@@ -967,19 +1025,7 @@ export async function run(argv: string[], io: Io): Promise<number> {
           throw new UsageError(`${target} is not empty. Pick a new folder, or pass --force to write into it`);
         }
 
-        const pages: ExportPage[] = [];
-        let cursor: string | null = null;
-        do {
-          const { json } = await client.request(
-            "GET",
-            `/export/pages${query({ root: flags.root, cursor: cursor ?? undefined, limit: "100" })}`,
-          );
-          pages.push(...(list(json?.["pages"]) as unknown as ExportPage[]));
-          cursor = (json?.["cursor"] as string | null) ?? null;
-        } while (cursor !== null);
-
-        // The root's parent is outside this export, so it becomes top level.
-        if (flags.root && pages[0]) pages[0] = { ...pages[0], parent_id: null };
+        const pages = await fetchPages(flags.root);
 
         if (format === "site") {
           const pathOf = sitePaths(pages);
@@ -1065,6 +1111,24 @@ export async function run(argv: string[], io: Io): Promise<number> {
         out(manifest as unknown as Json, () =>
           `exported ${manifest.counts.pages} pages, ${manifest.counts.tables} tables and ${manifest.counts.rows} rows to ${target}\n`,
         );
+        return 0;
+      }
+
+      case "check-sources": {
+        const timeoutMs = flags.timeout ? Number(flags.timeout) : DEFAULT_CHECK_TIMEOUT_MS;
+        if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+          throw new UsageError(`--timeout must be a positive number of milliseconds, not "${flags.timeout}"`);
+        }
+        const [pages, tables] = await Promise.all([fetchPages(flags.root), fetchTables()]);
+        const found = collectSources(pages, tables);
+        const checks = await checkSources(found, io.fetch, timeoutMs);
+        const dead = [...checks.entries()]
+          .filter(([, check]) => !check.ok)
+          .map(([href, check]) => ({
+            ...check,
+            found_on: found.filter((f) => f.href === href).map((f) => f.on),
+          }));
+        out({ checked: checks.size, dead } as unknown as Json, () => describeCheckSources(found, checks));
         return 0;
       }
 

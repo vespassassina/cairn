@@ -4,6 +4,18 @@ What changed, and why. Newest first. One entry per meaningful change: code, desi
 
 Entries link to the ADR when there is one. A change of direction that has no ADR yet still gets an entry here.
 
+## 2026-09-15
+
+### Citations kept correct
+
+The owner picked "Citations kept correct" off "Bridges between Cairns" next (ADR-036). Two parts:
+
+`cairn check-sources [--root PAGE]` is a new CLI-only command, modelled on `cairn sync` (ADR-023): a client of the web, not a server feature. It reads every page's and row's sources through the same export endpoints `export` uses, checks each linked one once with `HEAD` (falling back to `GET`), and reports which no longer answer. For a dead `http(s)` address it looks up a copy on the Internet Archive's Wayback Machine. Report only in this version: nothing is written, and no new field is added to a page or a row.
+
+A source that names a DOI or a PubMed id, not only a plain `http(s)` address, is now recognised and shown as a link, everywhere a source is shown: the console, the published wiki, and a static site export (ADR-035). `packages/core/src/sources.ts` gains `sourceHref`, which resolves a bare or `doi:`-prefixed DOI to `https://doi.org/...` and a `PMID:`-style id to `https://pubmed.ncbi.nlm.nih.gov/.../`, alongside the existing `isUrlSource`. The CLI keeps its own copy (`packages/cli/src/sources.ts`), duplicated rather than imported, since hard rule 16 keeps `@cairn/core` out of the CLI's runtime; the two are kept in step by running the same test cases against both.
+
+The MCP instructions, the skill and the workspace summary now say to cite the original, not a summary of it, matching the roadmap wording (rule 8).
+
 ## 2026-09-14
 
 ### A static site export, no server required

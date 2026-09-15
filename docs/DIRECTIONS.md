@@ -11,6 +11,14 @@ Rules:
 3. Every entry says where it landed: an ADR, a doc, a commit, or "not yet".
 4. A later direction that reverses an earlier one does not edit it. Add the new one and point back.
 
+## 2026-09-15
+
+### Which roadmap item next: citations kept correct
+
+> "ok, next item"
+
+Asked to choose from the roadmap's "Bridges between Cairns" section, the owner picked "Citations kept correct" over links to the original across Cairns and machine-readable citations on public pages. Landed in: ADR-036, `cairn check-sources`, and `sourceHref` recognising a DOI or a PubMed id as a link.
+
 ## 2026-09-14
 
 ### Which roadmap item next: static site export

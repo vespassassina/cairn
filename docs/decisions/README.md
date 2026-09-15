@@ -43,6 +43,7 @@ A decision that changes is not edited away. Add a new ADR that supersedes it, an
 | [033](ADR-033.md) | A refresh token answers a repeat for one minute before it counts as theft | accepted | 2026-09-14 |
 | [034](ADR-034.md) | A public Cairn describes itself at /.well-known/cairn.json | accepted | 2026-09-14 |
 | [035](ADR-035.md) | cairn export can write a static site, no server required | accepted | 2026-09-14 |
+| [036](ADR-036.md) | cairn check-sources reports dead links and recognises DOIs and PubMed ids | accepted | 2026-09-15 |
 
 ## Writing one
 
