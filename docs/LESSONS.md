@@ -13,6 +13,13 @@ Each entry answers four questions:
 
 ## 2026-09-15
 
+### The first npm publish failed twice before it could even fail on the real problem
+
+1. **What happened.** The first CI run against a valid `NPM_TOKEN` failed with `npm error code EOTP`, "This operation requires a one-time password." After the owner replaced the token, the rerun got past that and failed differently: `npm error code E404`, "The requested resource '@cairn/cli@0.1.5' could not be found or you do not have permission to access it."
+2. **Cause.** Two separate, unrelated problems stacked on the very first publish. First, the original token was not an npm "Automation" token, so npm demanded an interactive one-time password that CI cannot supply; a Classic Automation token (or a granular token exempted from 2FA-on-publish) is required. Second, once authentication worked, npm still refused the publish because `@cairn/cli` is a scoped package and its first publish requires the `cairn` org to already exist on npm; that org name was already taken by someone unrelated, so no publish under that scope was possible at all, regardless of token type.
+3. **Fix.** The owner set a new Automation-type `NPM_TOKEN`, which cleared the EOTP error. For the scope conflict, the package was renamed from `@cairn/cli` to the unscoped `cairncli` (docs/CHANGELOG.md, "The npm package is `cairncli`, not `@cairn/cli`"), which needs no org and publishes under the token owner's own account.
+4. **Lesson.** A scoped package name is not just a naming choice, it is a claim on an npm org that must be checked (or created) before writing any publish plumbing, the same way a domain or a GitHub org would be. Checking `npm view <scope>/<name>` for the package tells you nothing about whether the *org* itself is free; that needs a separate check (or an attempted org creation) against the scope name alone. Do this before wiring CI, not after the first real publish attempt fails on it.
+
 ### A tag was pushed before the version was set
 
 1. **What happened.** `v0.1.5` was pushed to try the newly wired npm publish (`docs/CHANGELOG.md`, "The CLI is ready to publish to npm"). CI's `release` job refused it at its first step: "tag v0.1.5 does not match version 0.1.4 in package.json." Nothing built or published; the job failed in 5 seconds.

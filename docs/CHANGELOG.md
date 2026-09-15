@@ -6,6 +6,10 @@ Entries link to the ADR when there is one. A change of direction that has no ADR
 
 ## 2026-09-15
 
+### The npm package is `cairncli`, not `@cairn/cli`
+
+Publishing `@cairn/cli` failed with npm error 404 on the first CI attempt after the token issue (below) was fixed: a scoped package's first publish needs the scope's org to already exist on npm, and creating the `cairn` org failed because the name is already held by someone else, unrelated to this project. Asked the owner how to proceed; they chose to drop the scope and publish unscoped. `cairn-cli` was also taken; `cairncli` was free. Renamed `packages/cli/package.json` (dropped `publishConfig.access`, which only matters for a scoped package), CI's `release` job (`pnpm --filter cairncli build`/`publish`, no `--access public` flag), `docs/CLI.md`, and `packages/cli/README.md`. Nothing else in the workspace referenced the old name. Full check suite and `pnpm smoke:cli` pass; `pnpm --filter cairncli publish --dry-run` confirms the tarball is unchanged except for the name.
+
 ### v0.1.5
 
 `v0.1.5` was tagged and pushed against `0.1.4` still in `package.json`; the release job's own guard caught it and refused to publish (`docs/DIRECTIONS.md`). `pnpm set-version 0.1.5` sets the version everywhere it is written; the tag was deleted and re-pushed against this commit so it points at a matching one.

@@ -13,6 +13,12 @@ Rules:
 
 ## 2026-09-15
 
+### The npm package name changed from `@cairn/cli` to `cairncli`
+
+> "name not available" / "ditch the org, let's stick to a name" / a name picked from a shortlist
+
+The first publish attempt for `@cairn/cli` failed with npm error 404 ("could not be found or you do not have permission to access it"): a scoped package needs its scope's org to exist on npm first, and creating the `cairn` org failed because that name is already held by someone else. Asked the owner whether to try a different scope, an unscoped name, or dispute the existing claim; they chose an unscoped name. Checked availability: `cairn-cli` was also taken, `cairncli` was free. Landed in: `packages/cli/package.json` (name, `publishConfig` removed since it is unscoped), `.github/workflows/ci.yml` (`pnpm --filter` targets and step names), `docs/CLI.md`, `packages/cli/README.md`.
+
 ### Which roadmap item next: publish the CLI to npm
 
 > "next item"

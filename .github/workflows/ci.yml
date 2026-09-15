@@ -203,13 +203,13 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           files: dist/cli/*
-      - name: build @cairn/cli for npm
-        run: pnpm --filter @cairn/cli build
-      - name: publish @cairn/cli to npm
+      - name: build cairncli for npm
+        run: pnpm --filter cairncli build
+      - name: publish cairncli to npm
         # NPM_TOKEN is an npm automation token with publish rights on the
-        # @cairn scope (docs/CLI.md), set by the owner as a repository
+        # cairncli package (docs/CLI.md), set by the owner as a repository
         # secret. Missing it fails this step loudly rather than skipping it,
         # so a tag never ships a GitHub release without the matching npm one.
-        run: pnpm --filter @cairn/cli publish --access public --no-git-checks
+        run: pnpm --filter cairncli publish --no-git-checks
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

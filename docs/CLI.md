@@ -127,12 +127,12 @@ Unblock-File "$env:LOCALAPPDATA\Programs\cairn\cairn.exe"
 With Node 22 or later, on any OS:
 
 ```
-npm install -g @cairn/cli
+npm install -g cairncli
 ```
 
 npm puts `cairn` on your PATH, and on Windows it writes the `cairn.cmd` launcher itself.
 
-To remove it: `npm uninstall -g @cairn/cli`.
+To remove it: `npm uninstall -g cairncli`.
 
 To install from this repository instead of the published package, such as to run unreleased code from `main`:
 
