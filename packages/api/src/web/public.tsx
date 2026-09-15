@@ -4,6 +4,7 @@ import { raw } from "hono/html";
 import type { Child, FC } from "hono/jsx";
 import { isCairnPageAddress, publishedIds, sourceHref, type Page, type Paged } from "@cairn/core";
 import type { AppContext } from "../context.js";
+import { citedByOf, receiveCitation, WebmentionError } from "../citations.js";
 import { ASSET_VERSION, documentTitle, HEAD_TAGS } from "./assets.js";
 import { When } from "./layout.js";
 import { createMarkdownRenderer, type LinkResolver } from "./markdown.js";
@@ -26,6 +27,10 @@ import { createMarkdownRenderer, type LinkResolver } from "./markdown.js";
  * registry or a crawler that follows citations between Cairns. It is built
  * from the same published set as everything else here, so it names no page
  * that is not published.
+ *
+ * `POST /webmention` (ADR-040) is this surface's one write: a citation
+ * notice from another site, verified before it is recorded, shown on a page
+ * only once accepted.
  */
 
 export interface PublicWikiOptions {
@@ -283,6 +288,7 @@ export function registerPublicWiki(app: Hono, options: PublicWikiOptions): void 
     const links = resolverFor(pages);
     const children = pages.filter((child) => child.parentId === page.id);
     const trail = ancestorsOf(page, byId);
+    const citedBy = await citedByOf(context, page.id);
 
     return render(
       c,
@@ -326,6 +332,20 @@ export function registerPublicWiki(app: Hono, options: PublicWikiOptions): void 
               <SourceList sources={page.sources} />
             </section>
           )}
+          {citedBy.length === 0 ? null : (
+            <section class="ak-section" aria-labelledby="cairn-cited-by">
+              <h2 id="cairn-cited-by">Cited by</h2>
+              <ul class="cairn-sources">
+                {citedBy.map((source) => (
+                  <li>
+                    <a href={source} rel="noopener noreferrer nofollow">
+                      {source}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
           {children.length === 0 ? null : (
             <section class="ak-section" aria-labelledby="cairn-children">
               <h2 id="cairn-children">Pages under this one</h2>
@@ -341,6 +361,43 @@ export function registerPublicWiki(app: Hono, options: PublicWikiOptions): void 
         </article>
       </Shell>,
     );
+  });
+
+  // A Webmention-shaped citation notice (ADR-040): another site telling this
+  // Cairn it links to one of its published pages. The only route on this
+  // surface that accepts a write, and the only place this server fetches an
+  // address it did not choose itself; `citations.ts` carries the SSRF guard.
+  app.post("/webmention", async (c) => {
+    const form = await c.req.parseBody();
+    const source = typeof form["source"] === "string" ? form["source"] : null;
+    const target = typeof form["target"] === "string" ? form["target"] : null;
+    if (!source || !target) {
+      return c.text("a webmention notice needs both source and target as form fields", 400);
+    }
+    let targetUrl: URL;
+    try {
+      targetUrl = new URL(target);
+    } catch {
+      return c.text(`target (${target}) is not a valid URL`, 400);
+    }
+    if (targetUrl.origin !== origin(c)) {
+      return c.text(`target (${target}) is not an address of this Cairn (${origin(c)})`, 400);
+    }
+    const match = /^\/w\/([A-Za-z0-9_-]+)\/?$/.exec(targetUrl.pathname);
+    if (!match) {
+      return c.text(`target (${target}) is not shaped like a published page's address (${origin(c)}/w/<id>)`, 400);
+    }
+    const pageId = decodeURIComponent(match[1]!);
+    const pages = await published(context);
+    if (!pages.some((page) => page.id === pageId)) {
+      return c.text(`target (${target}) is not a page this Cairn currently publishes`, 400);
+    }
+    try {
+      const result = await receiveCitation(context, { pageId, source, target });
+      return c.text(`recorded: ${result.status}`, 202);
+    } catch (error) {
+      return c.text(error instanceof WebmentionError ? error.message : "could not verify the notice", 400);
+    }
   });
 
   // One flat sitemap. A wiki large enough to need the index format is past

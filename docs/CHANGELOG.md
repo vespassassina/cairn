@@ -6,6 +6,10 @@ Entries link to the ADR when there is one. A change of direction that has no ADR
 
 ## 2026-09-15
 
+### "Cited by", across Cairns
+
+A Cairn can now be told that another site links to one of its published pages, and show that on the page (ADR-040). `POST /webmention` takes a Webmention-shaped notice (`source`, `target`), fetches `source` through a new SSRF-safe helper (`packages/api/src/citations.ts`: http or https only, the hostname resolved and checked against private, loopback and link-local ranges at every redirect hop, not just string-matched, bounded timeout and response size), and confirms it really links to `target`. A verified notice becomes a row in a new, lazily-created "Citations" table (`page`, `source`, `status`), `accepted` at once when the sender's origin is in "Trusted cairns" (ADR-037) and `pending` for the owner to review otherwise, through the same generic table tools ADR-037 already relies on: no new console, MCP or CLI code. A published page (`/w/<id>`) gains a "Cited by" section listing its accepted rows. `cairn export --format site` is unchanged: a static export cannot receive the notice at all, so this ADR is a live-server-only feature.
+
 ### Machine-readable citations on public pages
 
 Every published page (`/w/<id>`) and every page in `cairn export --format site` now carries its sources as JSON-LD in its `<head>`, alongside the visible list it already had (ADR-039): schema.org `citation` for every source (a `CreativeWork` with a resolved address when `sourceHref` finds one, plain text when it does not), and `isBasedOn` for any source shaped like another Cairn's published page, `<origin>/w/<page-id>` (the same shape ADR-038 uses for a cross-Cairn link). Nothing is fetched: both properties are computed from data the page already carries. `isCairnPageAddress` (`packages/core/src/sources.ts`) is duplicated in `packages/cli/src/sources.ts`, the same way `sourceHref` already is, since hard rule 16 keeps `@cairn/core` out of the CLI's runtime.

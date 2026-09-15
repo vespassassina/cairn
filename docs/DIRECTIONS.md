@@ -13,6 +13,12 @@ Rules:
 
 ## 2026-09-15
 
+### Which roadmap item next: "cited by", across Cairns
+
+> "next item"
+
+Offered a choice of what remained on "Bridges between Cairns", the owner picked "'Cited by', across Cairns" over discovery by following citations. Landed in: ADR-040, `POST /webmention`, an SSRF-safe verification fetch, a new "Citations" table read and managed through the same generic table tools ADR-037 already gave "Trusted cairns", and a "Cited by" section on published pages.
+
 ### Which roadmap item next: machine-readable citations on public pages
 
 > "next adr"

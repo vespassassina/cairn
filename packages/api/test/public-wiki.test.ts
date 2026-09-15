@@ -1,7 +1,13 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Hono } from "hono";
 import { createApp } from "../src/app.js";
 import { createContext, OWNER, type AppContext } from "../src/context.js";
+
+// The webmention route's SSRF guard resolves the sender's address for real
+// (citations.test.ts covers that resolution directly); here it only needs to
+// answer with something public, so the notice's own verification is what's
+// under test.
+vi.mock("node:dns/promises", () => ({ lookup: vi.fn(async () => [{ address: "93.184.216.34", family: 4 }]) }));
 
 /**
  * The published wiki (ADR-032).
@@ -320,5 +326,81 @@ describe("what a Cairn says about itself (ADR-034)", () => {
     const response = await stranger("/.well-known/cairn.json");
     expect(response.status).toBe(200);
     expect(JSON.parse(response.body).collections).toEqual([]);
+  });
+});
+
+describe("receiving a citation notice (ADR-040)", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  async function trust(url: string) {
+    const table = await context.tables.create(
+      context.workspaceId,
+      { name: "Trusted cairns", fields: [{ name: "url", type: "url", required: true }] },
+      { actor: OWNER },
+    );
+    await context.tables.upsertRow(context.workspaceId, table.id, { values: { url } }, { actor: OWNER });
+  }
+
+  function webmention(source: string, target: string) {
+    return app.fetch(
+      new Request(`${ORIGIN}/webmention`, {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ source, target }),
+      }),
+    );
+  }
+
+  it("accepts a notice from a trusted origin and lists it as Cited by", async () => {
+    const { parent } = await aSmallWiki();
+    await trust("https://friend.example.com");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(`<a href="${ORIGIN}/w/${parent.id}">source</a>`, { status: 200 })),
+    );
+
+    const response = await webmention("https://friend.example.com/post", `${ORIGIN}/w/${parent.id}`);
+    expect(response.status).toBe(202);
+    expect(await response.text()).toContain("accepted");
+
+    const page = await stranger(`/w/${parent.id}`);
+    expect(page.body).toContain("Cited by");
+    expect(page.body).toContain("https://friend.example.com/post");
+  });
+
+  it("stores a notice from an untrusted origin as pending, not shown on the page", async () => {
+    const { parent } = await aSmallWiki();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(`<a href="${ORIGIN}/w/${parent.id}">source</a>`, { status: 200 })),
+    );
+
+    const response = await webmention("https://stranger.example.com/post", `${ORIGIN}/w/${parent.id}`);
+    expect(response.status).toBe(202);
+    expect(await response.text()).toContain("pending");
+
+    const page = await stranger(`/w/${parent.id}`);
+    expect(page.body).not.toContain("Cited by");
+    expect(page.body).not.toContain("stranger.example.com");
+  });
+
+  it("refuses a notice whose source does not actually link back", async () => {
+    const { parent } = await aSmallWiki();
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(`<a href="/somewhere-else">nope</a>`, { status: 200 })));
+
+    const response = await webmention("https://stranger.example.com/post", `${ORIGIN}/w/${parent.id}`);
+    expect(response.status).toBe(400);
+    expect(await response.text()).toContain("does not link to");
+  });
+
+  it("refuses a target that is not a page this Cairn currently publishes", async () => {
+    const { secret } = await aSmallWiki();
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("", { status: 200 })));
+
+    const response = await webmention("https://stranger.example.com/post", `${ORIGIN}/w/${secret.id}`);
+    expect(response.status).toBe(400);
+    expect(await response.text()).toContain("not a page this Cairn currently publishes");
   });
 });

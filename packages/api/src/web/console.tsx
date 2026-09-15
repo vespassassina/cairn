@@ -82,7 +82,7 @@ const SECURITY_HEADERS: Record<string, string> = {
 
 // Addresses that need no sign-in. The published wiki is here because that is
 // the whole point of it (ADR-032); it serves published pages and nothing else.
-const PUBLIC_PATHS = [/^\/health$/, /^\/mcp/, /^\/api(\/|$)/, /^\/assets\//, /^\/favicon\.ico$/, /^\/login$/, /^\/oauth\//, /^\/\.well-known\//, /^\/w(\/|$)/, /^\/sitemap\.xml$/, /^\/robots\.txt$/];
+const PUBLIC_PATHS = [/^\/health$/, /^\/mcp/, /^\/api(\/|$)/, /^\/assets\//, /^\/favicon\.ico$/, /^\/login$/, /^\/oauth\//, /^\/\.well-known\//, /^\/w(\/|$)/, /^\/sitemap\.xml$/, /^\/robots\.txt$/, /^\/webmention$/];
 
 async function render(c: Context, element: Child, status: 200 | 400 | 404 | 409 = 200) {
   const body = await (element as Promise<string> | string);
