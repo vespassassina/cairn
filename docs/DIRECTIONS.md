@@ -13,6 +13,12 @@ Rules:
 
 ## 2026-09-15
 
+### Which roadmap item next: discovery by following citations
+
+> "next item"
+
+By this point "Discovery by following citations" was the only item left on "Bridges between Cairns", so no choice was offered; picked up directly. Landed in: ADR-041, `/.well-known/cairn.json`'s `cites` field filled in from published pages' citations, and `cairn discover`, a new CLI-only command that walks outward from "Trusted cairns" following each Cairn's `cites`, landing newly found Cairns in a new "Discovered cairns" table for the owner to review.
+
 ### Which roadmap item next: "cited by", across Cairns
 
 > "next item"

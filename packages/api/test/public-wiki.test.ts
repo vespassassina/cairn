@@ -322,6 +322,25 @@ describe("what a Cairn says about itself (ADR-034)", () => {
     });
   });
 
+  it("lists the origins its published pages cite, deduplicated (ADR-041)", async () => {
+    await aSmallWiki();
+    const a = await context.pages.create(
+      context.workspaceId,
+      { title: "Cites a friend", body: "x", sources: ["https://friend.example/w/pg_notes"] },
+      { actor: OWNER },
+    );
+    await publish(a.id, a.version);
+    const b = await context.pages.create(
+      context.workspaceId,
+      { title: "Cites the same friend again, and an ordinary link", body: "x", sources: ["https://friend.example/w/pg_other", "https://not-a-cairn.example/article"] },
+      { actor: OWNER },
+    );
+    await publish(b.id, b.version);
+
+    const body = JSON.parse((await stranger("/.well-known/cairn.json")).body);
+    expect(body.cites).toEqual(["https://friend.example"]);
+  });
+
   it("lists no collections and needs no sign-in when nothing is published", async () => {
     const response = await stranger("/.well-known/cairn.json");
     expect(response.status).toBe(200);

@@ -18,7 +18,19 @@ describe("fetchPeerDescription", () => {
       fetchWith({ "https://friend.example/.well-known/cairn.json": () => Response.json(DESCRIPTION) }),
       1000,
     );
-    expect(peer).toEqual({ name: "Peptide Lab", description: "peptide research notes" });
+    expect(peer).toEqual({ name: "Peptide Lab", description: "peptide research notes", cites: [] });
+  });
+
+  it("reads cites, dropping anything that isn't a string", async () => {
+    const peer = await fetchPeerDescription(
+      "https://friend.example",
+      fetchWith({
+        "https://friend.example/.well-known/cairn.json": () =>
+          Response.json({ ...DESCRIPTION, cites: ["https://other.example", 42, "https://third.example"] }),
+      }),
+      1000,
+    );
+    expect(peer.cites).toEqual(["https://other.example", "https://third.example"]);
   });
 
   it("strips a trailing slash before asking for .well-known/cairn.json", async () => {

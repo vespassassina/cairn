@@ -48,6 +48,7 @@ A decision that changes is not edited away. Add a new ADR that supersedes it, an
 | [038](ADR-038.md) | A link to another Cairn's page is an edge, by its address alone | accepted | 2026-09-15 |
 | [039](ADR-039.md) | A published page's sources are also JSON-LD, for machines to follow | accepted | 2026-09-15 |
 | [040](ADR-040.md) | A Cairn accepts a citation notice, Webmention-shaped, from a trusted address or on review | accepted | 2026-09-15 |
+| [041](ADR-041.md) | Discovery by following citations | accepted | 2026-09-15 |
 
 ## Writing one
 

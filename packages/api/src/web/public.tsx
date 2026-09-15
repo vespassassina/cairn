@@ -154,6 +154,23 @@ function citationJsonLd(page: Page): Record<string, unknown> | null {
   };
 }
 
+/**
+ * Every other Cairn this one's published pages cite (ADR-041), as origins:
+ * the same `isBasedOn` addresses `citationJsonLd` computes per page (ADR-039),
+ * reduced to their origin and deduplicated across the whole published set.
+ * Sorted so the field is stable across requests.
+ */
+function citedCairnOrigins(pages: readonly Page[]): string[] {
+  const origins = new Set<string>();
+  for (const page of pages) {
+    for (const source of page.sources) {
+      const href = sourceHref(source);
+      if (href && isCairnPageAddress(href)) origins.add(new URL(href).origin);
+    }
+  }
+  return [...origins].sort();
+}
+
 const Shell: FC<{
   title: string;
   description: string;
@@ -447,10 +464,9 @@ export function registerPublicWiki(app: Hono, options: PublicWikiOptions): void 
       ...(self.topics ? { topics: self.topics } : {}),
       collections: rootsOf(pages).map((root) => ({ title: root.title, url: `${base}${wikiHref(root.id)}` })),
       sitemap: `${base}/sitemap.xml`,
-      // Which Cairns this one cites. Always empty today: nothing yet tells a
-      // citation in `sources` apart from an ordinary web link (ADR-034
-      // consequence 3, roadmap "Bridges between Cairns").
-      cites: [],
+      // Which other Cairns this one's published pages cite, by origin
+      // (ADR-034 consequence 3, filled in by ADR-041).
+      cites: citedCairnOrigins(pages),
     };
     return c.body(JSON.stringify(body, null, 2), 200, { "content-type": "application/json; charset=utf-8" });
   });

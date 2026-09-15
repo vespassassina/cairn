@@ -21,6 +21,7 @@ import {
 import { indexPages, renderIndex, renderPage, sitemapXml, sitePaths, trailOf } from "./site-format.js";
 import { checkSources, collectSources, type FoundSource, type SourceCheck } from "./check-sources.js";
 import { fetchPeerDescription, TRUSTED_TABLE_NAME } from "./trust.js";
+import { discover, DISCOVERED_TABLE_NAME } from "./discover.js";
 import { checkInstance, firstReachable, instancesPath, isLoopback, loadInstances, reachable, saveInstances, type Instance } from "./instances.js";
 import { credentialsPath, login, logout, NoSignIn, storedToken } from "./login.js";
 import {
@@ -135,6 +136,11 @@ Trusted Cairns: a local list of others this Cairn's owner trusts
   cairn trust <url> [--note "why"] [--timeout MS]      confirm <url> answers with a Cairn self-description
       (ADR-034) and add or update it in the "Trusted cairns" table. The table itself is ordinary:
       cairn tables, rows, row and upsert read and edit it like any other
+  cairn discover [--from URL]... [--depth N] [--limit N] [--timeout MS]
+      walk outward from every url in "Trusted cairns" (and any --from given), following the
+      Cairns each one cites (ADR-034, ADR-041), up to --depth hops (default 2) and --limit
+      Cairns visited (default 200). Newly found Cairns land in "Discovered cairns", a lead
+      to review, never auto-trusted: run cairn trust on the ones worth it
 
 Several Cairns: a laptop and a cloud copy, say, kept as one
   cairn instances                                 the ones registered, in the order commands try them
@@ -197,6 +203,8 @@ const OPTIONS = {
   first: { type: "boolean" },
   start: { type: "string" },
   timeout: { type: "string" },
+  from: { type: "string", multiple: true },
+  depth: { type: "string" },
 } as const;
 
 /** Commands that choose their own servers, so never probe for one. */
@@ -210,6 +218,12 @@ const DEFAULT_EVERY_MS = 3_600_000;
 
 /** How long check-sources waits for one address before calling it dead. */
 const DEFAULT_CHECK_TIMEOUT_MS = 10_000;
+
+/** How many hops out cairn discover walks by default. */
+const DEFAULT_DISCOVER_DEPTH = 2;
+
+/** How many Cairns cairn discover visits in total by default. */
+const DEFAULT_DISCOVER_LIMIT = 200;
 
 type Flags = ReturnType<typeof parse>["values"];
 
@@ -1186,6 +1200,87 @@ export async function run(argv: string[], io: Io): Promise<number> {
               body: { values: { url, name, ...(flags.note ? { note: flags.note } : {}), added_at: new Date().toISOString() } },
             });
         out(json, () => `trusted ${name} (${url})${peer.description ? `: ${peer.description}` : ""}${existingRow ? ", updated" : ""}\n`);
+        return 0;
+      }
+
+      case "discover": {
+        const timeoutMs = flags.timeout ? Number(flags.timeout) : DEFAULT_CHECK_TIMEOUT_MS;
+        if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+          throw new UsageError(`--timeout must be a positive number of milliseconds, not "${flags.timeout}"`);
+        }
+        const depth = flags.depth ? Number(flags.depth) : DEFAULT_DISCOVER_DEPTH;
+        if (!Number.isInteger(depth) || depth <= 0) {
+          throw new UsageError(`--depth must be a positive whole number of hops, not "${flags.depth}"`);
+        }
+        const limit = flags.limit ? Number(flags.limit) : DEFAULT_DISCOVER_LIMIT;
+        if (!Number.isInteger(limit) || limit <= 0) {
+          throw new UsageError(`--limit must be a positive whole number, not "${flags.limit}"`);
+        }
+
+        const tablesList = await client.request("GET", "/tables");
+        const trustedTable = list(tablesList.json?.["tables"]).find((t) => t["name"] === TRUSTED_TABLE_NAME);
+        const trustedUrls = trustedTable
+          ? list((await client.request("POST", `/tables/${encodeURIComponent(String(trustedTable["id"]))}/query`, { body: { limit: 200 } })).json?.["rows"])
+              .map((row) => String((row["values"] as Record<string, unknown> | undefined)?.["url"] ?? ""))
+              .filter((url) => url !== "")
+          : [];
+        const trustedOrigins = new Set(trustedUrls.map((url) => new URL(url).origin));
+
+        const from = [...trustedUrls, ...(flags.from ?? [])];
+        if (from.length === 0) {
+          throw new UsageError("no starting point. Trust a Cairn first (cairn trust <url>), or pass --from <url>");
+        }
+
+        const result = await discover({ from, fetchFn: io.fetch, timeoutMs, depth, limit, trustedOrigins });
+
+        let discoveredTableId: string | null = null;
+        if (result.found.length > 0) {
+          const existingTable = list(tablesList.json?.["tables"]).find((t) => t["name"] === DISCOVERED_TABLE_NAME);
+          discoveredTableId = existingTable
+            ? String(existingTable["id"])
+            : String(
+                (
+                  await client.request("POST", "/tables", {
+                    body: {
+                      name: DISCOVERED_TABLE_NAME,
+                      fields: [
+                        { name: "url", type: "url", required: true },
+                        { name: "name", type: "text" },
+                        { name: "discovered_via", type: "url" },
+                        { name: "depth", type: "number" },
+                        { name: "added_at", type: "date" },
+                      ],
+                    },
+                  })
+                ).json?.["id"],
+              );
+
+          for (const cairn of result.found) {
+            const rowsPath = `/tables/${encodeURIComponent(discoveredTableId)}/rows`;
+            const { json: rowsJson } = await client.request("POST", `/tables/${encodeURIComponent(discoveredTableId)}/query`, {
+              body: { where: [{ field: "url", op: "eq", value: cairn.url }], limit: 1 },
+            });
+            const existingRow = list(rowsJson?.["rows"])[0];
+            const values = { url: cairn.url, name: cairn.name ?? cairn.url, discovered_via: cairn.discoveredVia, depth: cairn.depth };
+            if (existingRow) {
+              await client.request("PUT", `${rowsPath}/${encodeURIComponent(String(existingRow["id"]))}`, { body: { values }, ifMatch: String(existingRow["version"]) });
+            } else {
+              await client.request("POST", rowsPath, { body: { values: { ...values, added_at: new Date().toISOString() } } });
+            }
+          }
+        }
+
+        const json = {
+          visited: result.visitedCount,
+          found: result.found,
+          unreachable: result.unreachable,
+        };
+        out(json, () => {
+          const lines = [`visited ${result.visitedCount} Cairn${result.visitedCount === 1 ? "" : "s"}, found ${result.found.length} new`];
+          for (const cairn of result.found) lines.push(`  ${cairn.name ?? cairn.url} (${cairn.url}), via ${cairn.discoveredVia}, depth ${cairn.depth}`);
+          if (result.unreachable.length > 0) lines.push(`${result.unreachable.length} unreachable: ${result.unreachable.map((u) => u.url).join(", ")}`);
+          return `${lines.join("\n")}\n`;
+        });
         return 0;
       }
 

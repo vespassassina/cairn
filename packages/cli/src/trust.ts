@@ -16,6 +16,8 @@ export const TRUSTED_TABLE_NAME = "Trusted cairns";
 export interface PeerDescription {
   name: string | null;
   description: string | null;
+  /** Origins this Cairn's published pages cite (ADR-034, filled in by ADR-041). Empty when the field is missing or not an array. */
+  cites: string[];
 }
 
 /** Fetches `<url>/.well-known/cairn.json` and confirms it looks like a Cairn's self-description: JSON with a "cairn" field. Throws a plain, specific message naming the address and the next thing to check, on any other outcome. */
@@ -48,5 +50,6 @@ export async function fetchPeerDescription(url: string, fetchFn: Fetch, timeoutM
   return {
     name: typeof record["name"] === "string" ? record["name"] : null,
     description: typeof record["description"] === "string" ? record["description"] : null,
+    cites: Array.isArray(record["cites"]) ? record["cites"].filter((value): value is string => typeof value === "string") : [],
   };
 }
