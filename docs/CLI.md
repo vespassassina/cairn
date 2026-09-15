@@ -124,17 +124,23 @@ Unblock-File "$env:LOCALAPPDATA\Programs\cairn\cairn.exe"
 
 ## 2. Install with npm
 
-With Node 22 or later, on any OS, from this repository:
+With Node 22 or later, on any OS:
+
+```
+npm install -g @cairn/cli
+```
+
+npm puts `cairn` on your PATH, and on Windows it writes the `cairn.cmd` launcher itself.
+
+To remove it: `npm uninstall -g @cairn/cli`.
+
+To install from this repository instead of the published package, such as to run unreleased code from `main`:
 
 ```
 pnpm install
 pnpm build
 npm install -g ./packages/cli
 ```
-
-npm puts `cairn` on your PATH, and on Windows it writes the `cairn.cmd` launcher itself. Once the CLI is published to npm, this becomes a single `npm install -g` with the package name.
-
-To remove it: `npm uninstall -g @cairn/cli`.
 
 ## 3. Build the executables yourself
 

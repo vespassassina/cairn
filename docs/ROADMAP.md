@@ -54,7 +54,7 @@ Added after the project review of 2026-09-12. Done in this order, before the clo
 | Changes feed | done | ADR-013. `GET /api/v1/changes?since=` |
 | `cairn` CLI and skill file | done | ADR-013. About 115 tokens per session against about 3,100 for MCP (2,725 before the `move` tool, ADR-024; 2,931 before sources, ADR-027; 3,091 before freshness, ADR-028). 9 tests, checked live |
 | CLI for Windows, macOS and Linux | done | ADR-014. Five standalone executables and npm. Each smoke-tested on its own OS in CI |
-| Publish the CLI to npm | later | Needs the name decided |
+| Publish the CLI to npm | next | Name decided: `@cairn/cli`, the existing package name (2026-09-15). `packages/cli/package.json` is no longer private and CI's release job publishes it on a version tag, alongside the GitHub release it already made. Blocked only on the owner adding an `NPM_TOKEN` repository secret (an npm automation token with publish rights on the `@cairn` scope) before the next tag |
 | Provenance: `sources` on every write | done | ADR-027. A list of URLs or short citations on each page and row, added to by writes, shown in the console and its history; optional but prompted |
 | Freshness: `verified_at` on pages | done | ADR-028. When a page's facts were last confirmed: set by `verified: true` on a write, or at creation with sources; shown as an age on each page and in a Freshness list, least recent first |
 | Collections in the page tree, and relations as links | done | ADR-024 (the collections it moved are tables since ADR-026). `move` for pages and tables; relation fields to pages or rows, lists allowed; backlinks from rows |

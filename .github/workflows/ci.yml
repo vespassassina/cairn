@@ -177,6 +177,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      id-token: write
     steps:
       - uses: actions/checkout@v4
       - name: the tag matches the version
@@ -193,6 +194,7 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
+          registry-url: "https://registry.npmjs.org"
       - run: pnpm install --frozen-lockfile
       - uses: oven-sh/setup-bun@v2
         with:
@@ -201,3 +203,13 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           files: dist/cli/*
+      - name: build @cairn/cli for npm
+        run: pnpm --filter @cairn/cli build
+      - name: publish @cairn/cli to npm
+        # NPM_TOKEN is an npm automation token with publish rights on the
+        # @cairn scope (docs/CLI.md), set by the owner as a repository
+        # secret. Missing it fails this step loudly rather than skipping it,
+        # so a tag never ships a GitHub release without the matching npm one.
+        run: pnpm --filter @cairn/cli publish --access public --no-git-checks
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

@@ -7,14 +7,25 @@
     "url": "git+https://github.com/vespassassina/cairn.git",
     "directory": "packages/cli"
   },
-  "private": true,
   "type": "module",
   "description": "Command-line client for Cairn: a wiki and tables your agents can write to, with every change reviewable.",
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "files": [
+    "dist"
+  ],
   "bin": {
     "cairn": "./dist/bin.js"
   },
   "exports": {
-    ".": "./src/main.ts"
+    ".": {
+      "types": "./dist/main.d.ts",
+      "default": "./dist/main.js"
+    }
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",

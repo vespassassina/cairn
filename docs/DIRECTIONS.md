@@ -13,6 +13,12 @@ Rules:
 
 ## 2026-09-15
 
+### Which roadmap item next: publish the CLI to npm
+
+> "next item"
+
+Checked the npm registry for candidates first, since PRD Q5 makes the name an owner decision, not an engineering one: `cairn`, `cairn-cli` and `cairn-mcp` are all taken (the first two unrelated and dormant since 2017 and irrelevant respectively; `cairn-mcp` close enough in its own description, "MCP server for Cairn, a shared knowledge base of AI agent observations", to be worth a look), while the scoped `@cairn/cli` already used in `packages/cli/package.json` is free. Asked; the owner chose to keep `@cairn/cli` rather than pick a new name. Landed in: `packages/cli/package.json` no longer private, with `publishConfig.access: "public"`, `files`, and `exports` fixed to point at the built `dist/`; a `pnpm publish` step added to CI's `release` job, gated the same way the GitHub release already is, on a `v*` tag. No tag was pushed; publishing itself needs the owner to add an `NPM_TOKEN` repository secret first (never done by the agent) and to push the tag (ADR-014, `docs/CLI.md`, `docs/ROADMAP.md`).
+
 ### A dark desaturated night blue background
 
 > "can we use a dark desaturated night blue for the background of cairn?"
