@@ -13,6 +13,12 @@ Rules:
 
 ## 2026-09-15
 
+### Close the name question: keep Cairn, no dedicated domain
+
+> "Keep Cairn, no dedicated domain" (chosen from three options after a domain check found the short obvious names already taken)
+
+Asked which of the roadmap's `next` items to pick up; chose "Name decided" (PRD Q5). Checked domain availability (`cairn.dev`, `cairn.app`, `cairn.io`, `getcairn.com`, `usecairn.com` all registered; `cairnwiki.com` free) and presented the choice: keep Cairn as-is, keep it and buy `cairnwiki.com`, or reconsider the name entirely. The owner chose to keep Cairn with no domain purchase, matching the name already used everywhere (GitHub, npm, container images). Landed in: `docs/decisions/ADR-044.md`, `CLAUDE.md`, `docs/PRD.md`, `docs/ROADMAP.md`.
+
 ### Deploy guides for AWS, GCP and Proxmox
 
 > "make an aws and gcp deploy and a proxmog deploy guide"

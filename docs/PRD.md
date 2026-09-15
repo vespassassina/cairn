@@ -314,7 +314,7 @@ Mitigation: phase gate below. No editor code until the MCP-only phase passes its
 | Q7 | Does Cosmos free tier support full-text and vector indexes on shared throughput? Does Flex Consumption have a free monthly allowance? How does the AWS credit-based free plan of July 2025 affect the always-free services on a new account? Partly answered 2026-09-12 from Microsoft docs: vector indexing is not supported on shared-throughput accounts, so vectors on the free tier need a dedicated container. Flex Consumption grants 250,000 executions and 100,000 GB-s a month per pay-as-you-go subscription. The AWS question and full-text on shared throughput are still open. | Engineering | Yes, before Phase 1 |
 | Q8 | Does the Cosmos emulator support full-text search? If not, search conformance on Cosmos needs a nightly run against a real account. | Engineering | Yes, before P0.2 |
 | Q4 | ~~Licence: AGPL or MIT?~~ Answered by ADR-015: PolyForm Noncommercial 1.0.0. Free for non-commercial use; commercial use needs a separate licence. | Owner | No |
-| Q5 | Final name. Check GitHub, npm and domain availability. | Owner | No |
+| Q5 | ~~Final name. Check GitHub, npm and domain availability.~~ Answered by ADR-044: Cairn, no dedicated domain. The short obvious domains were all already registered; GitHub and npm both already carry the name, scoped under `vespassassina` where the bare name was taken. | Owner | No |
 | Q6 | Chunk size and overlap for BlockNote content. Settle with the eval set. | Engineering | No |
 
 ## 14. Phasing

@@ -8,7 +8,7 @@ To install or deploy it, follow `docs/AGENT-INSTALL.md`; for anything with a Cai
 
 ## What this is
 
-Cairn (working name): a source-available, self-hosted wiki and table store where Claude is the primary client through MCP. Web editor comes second. Runs as one small container: on the person's own server, or within a cloud's free grants (ADR-020).
+Cairn: a source-available, self-hosted wiki and table store where Claude is the primary client through MCP. Web editor comes second. Runs as one small container: on the person's own server, or within a cloud's free grants (ADR-020).
 
 ## Current phase
 

@@ -55,7 +55,7 @@ Added after the project review of 2026-09-12. Done in this order, before the clo
 | Changes feed | done | ADR-013. `GET /api/v1/changes?since=` |
 | `cairn` CLI and skill file | done | ADR-013. About 115 tokens per session against about 3,100 for MCP (2,725 before the `move` tool, ADR-024; 2,931 before sources, ADR-027; 3,091 before freshness, ADR-028). 9 tests, checked live |
 | CLI for Windows, macOS and Linux | done | ADR-014. Five standalone executables and npm. Each smoke-tested on its own OS in CI |
-| Publish the CLI to npm | next | Publishing as `@vespassassina/cairncli` (2026-09-15), after `@cairn/cli` (npm org taken) and unscoped `cairncli` (too similar to an existing package) both failed at publish time. `packages/cli/package.json` is no longer private and CI's release job publishes it on a version tag, alongside the GitHub release it already made. Retrying against `v0.1.5` after the token and name fixes (`docs/LESSONS.md`) |
+| Publish the CLI to npm | done | Published as `@vespassassina/cairncli` (2026-09-15), after `@cairn/cli` (npm org taken) and unscoped `cairncli` (too similar to an existing package) both failed at publish time. `v0.1.5` confirmed live on both npm and ghcr.io, CI green (`docs/LESSONS.md`, `docs/DIRECTIONS.md`) |
 | Provenance: `sources` on every write | done | ADR-027. A list of URLs or short citations on each page and row, added to by writes, shown in the console and its history; optional but prompted |
 | Freshness: `verified_at` on pages | done | ADR-028. When a page's facts were last confirmed: set by `verified: true` on a write, or at creation with sources; shown as an age on each page and in a Freshness list, least recent first |
 | Collections in the page tree, and relations as links | done | ADR-024 (the collections it moved are tables since ADR-026). `move` for pages and tables; relation fields to pages or rows, lists allowed; backlinks from rows |
@@ -118,7 +118,7 @@ Before publishing on GitHub and posting to Hacker News. From the review of 2026-
 | Licence decided | done | ADR-015, PolyForm Noncommercial 1.0.0 |
 | Contributor terms decided | next | Before accepting outside pull requests, so commercial licences can cover contributed code (ADR-015 consequence 4) |
 | How to ask for a commercial licence | next | A contact route in the README better than "ask through GitHub" |
-| Name decided | next | PRD Q5. The repository is `vespassassina/cairn`; check npm before publishing the CLI |
+| Name decided | done | ADR-044. Cairn, no dedicated domain: the short obvious ones are all already registered, and the repository, npm package and container images already carry the name |
 | Repository public | done | https://github.com/vespassassina/cairn |
 | Online and offline model decided | done | ADR-023: a local Cairn and a cloud one, kept in step by `cairn sync` |
 | Search over-matching fixed | done | ADR-021. Questions with no answer now return nothing |
