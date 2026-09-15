@@ -11,6 +11,15 @@ Each entry answers four questions:
 3. **Fix.** What changed, with the commit or file.
 4. **Lesson.** What to do differently next time. This is the part worth reading.
 
+## 2026-09-15
+
+### A tag was pushed before the version was set
+
+1. **What happened.** `v0.1.5` was pushed to try the newly wired npm publish (`docs/CHANGELOG.md`, "The CLI is ready to publish to npm"). CI's `release` job refused it at its first step: "tag v0.1.5 does not match version 0.1.4 in package.json." Nothing built or published; the job failed in 5 seconds.
+2. **Cause.** `git tag v0.1.5 && git push --tags` was run without `pnpm set-version 0.1.5` first. `docs/CLI.md` and this repo's own release checklist say to run it, but nothing stops a tag from being pushed without it.
+3. **Fix.** `pnpm set-version 0.1.5`, which writes the version into `package.json`, `packages/cli/package.json`, `packages/cli/src/main.ts` and `packages/api/src/app.ts` together; the mismatched `v0.1.5` tag was deleted and re-pushed against the commit that carries it.
+4. **Lesson.** The guard did exactly its job: it failed cheap, before the release job's later, harder-to-undo steps (npm publish has no unpublish after 72 hours). Moving a pushed tag is still a rewrite of shared state, worth naming as one before doing it, even when the fix itself is routine.
+
 ## 2026-09-14
 
 ### The MCP sign-in ended early, and the lifetimes were not the reason

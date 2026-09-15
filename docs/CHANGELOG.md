@@ -6,6 +6,10 @@ Entries link to the ADR when there is one. A change of direction that has no ADR
 
 ## 2026-09-15
 
+### v0.1.5
+
+`v0.1.5` was tagged and pushed against `0.1.4` still in `package.json`; the release job's own guard caught it and refused to publish (`docs/DIRECTIONS.md`). `pnpm set-version 0.1.5` sets the version everywhere it is written; the tag was deleted and re-pushed against this commit so it points at a matching one.
+
 ### The CLI is ready to publish to npm
 
 ADR-014 decided the CLI ships two ways, an npm package and standalone executables, but only the second was ever wired into CI. `packages/cli/package.json` is no longer `private`, gained `publishConfig: { access: "public" }` (required for a scoped package to publish outside a paid npm org), a `files: ["dist"]` list so the tarball carries only built output, and `exports` now points at `dist/main.js` and `dist/main.d.ts` instead of the raw `src/main.ts`, which no consumer without a TypeScript loader could have resolved. Added `packages/cli/README.md`, npm's own package page; confirmed with `pnpm publish --dry-run` that pnpm carries the root `LICENSE` into a workspace package that has none of its own, so nothing extra was needed for that. CI's `release` job, already building standalone executables and a GitHub release on a `v*` tag, now also runs `pnpm --filter @cairn/cli build` and `pnpm --filter @cairn/cli publish --access public --no-git-checks`, authenticated with a new `NPM_TOKEN` secret. `docs/CLI.md` section 2 now leads with `npm install -g @cairn/cli` and keeps the from-source path as a fallback for running `main`. The name itself, `@cairn/cli`, was confirmed with the owner (`docs/DIRECTIONS.md`) after checking the registry: `cairn`, `cairn-cli` and `cairn-mcp` are all taken, the scoped name was not. No tag was pushed and no package has been published yet; that needs the owner's `NPM_TOKEN` secret and, per this project's workflow, the owner's own tag push.
