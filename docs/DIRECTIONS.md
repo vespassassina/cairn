@@ -13,6 +13,12 @@ Rules:
 
 ## 2026-09-15
 
+### Which roadmap item next: machine-readable citations on public pages
+
+> "next adr"
+
+Offered a choice of what remained on "Bridges between Cairns", the owner picked "Machine-readable citations on public pages" over "cited by" and discovery by following citations. Landed in: ADR-039, schema.org `citation` and `isBasedOn` as JSON-LD on every published page and every page in `cairn export --format site`.
+
 ### Which roadmap item next: links to the original, across Cairns
 
 > "next item"

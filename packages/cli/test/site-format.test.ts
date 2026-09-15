@@ -166,6 +166,41 @@ describe("renderPage", () => {
     expect(html).toContain('<a href="https://example.com/source"');
   });
 
+  it("carries sources as JSON-LD citation and isBasedOn (ADR-039)", () => {
+    const page: ExportPage = {
+      id: "pg_a",
+      title: "Built on a friend's work",
+      parent_id: null,
+      tags: [],
+      body: "See the original.",
+      sources: ["https://other.example.com/w/pg_notes", "Smith 2021, J Pept Sci"],
+    };
+    const html = renderPage({
+      page,
+      path: "pages/root.html",
+      pathOf: new Map([["pg_a", "pages/root.html"]]),
+      childrenOf: new Map(),
+      trail: [],
+    });
+    const match = html.match(/<script type="application\/ld\+json">([^<]*)<\/script>/);
+    expect(match).not.toBeNull();
+    const jsonLd = JSON.parse(match![1]!);
+    expect(jsonLd["@type"]).toBe("WebPage");
+    expect(jsonLd["citation"]).toContainEqual({
+      "@type": "CreativeWork",
+      url: "https://other.example.com/w/pg_notes",
+      name: "https://other.example.com/w/pg_notes",
+    });
+    expect(jsonLd["citation"]).toContain("Smith 2021, J Pept Sci");
+    expect(jsonLd["isBasedOn"]).toEqual(["https://other.example.com/w/pg_notes"]);
+  });
+
+  it("omits the JSON-LD block for a page with no sources", () => {
+    const page: ExportPage = { id: "pg_a", title: "No sources", parent_id: null, tags: [], body: "Plain." };
+    const html = renderPage({ page, path: "pages/root.html", pathOf: new Map([["pg_a", "pages/root.html"]]), childrenOf: new Map(), trail: [] });
+    expect(html).not.toContain("application/ld+json");
+  });
+
   it("says a page is empty rather than rendering nothing", () => {
     const page: ExportPage = { id: "pg_a", title: "Empty", parent_id: null, tags: [], body: "   " };
     const html = renderPage({ page, path: "pages/empty.html", pathOf: new Map([["pg_a", "pages/empty.html"]]), childrenOf: new Map(), trail: [] });

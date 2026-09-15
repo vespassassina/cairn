@@ -31,3 +31,15 @@ export function sourceHref(source: string): string | null {
   if (pmid) return `https://pubmed.ncbi.nlm.nih.gov/${pmid[1]}/`;
   return null;
 }
+
+/** The shape ADR-038 gives every Cairn's published page: `<origin>/w/<id>`. */
+const CAIRN_PAGE_ADDRESS = /^https?:\/\/[^\s/]+\/w\/[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)?$/i;
+
+/**
+ * Whether a resolved address is shaped like another Cairn's published page,
+ * rather than an ordinary citation (ADR-039). Duplicated from
+ * `packages/core/src/sources.ts` for the same reason `sourceHref` is above.
+ */
+export function isCairnPageAddress(address: string): boolean {
+  return CAIRN_PAGE_ADDRESS.test(address);
+}

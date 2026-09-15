@@ -105,6 +105,32 @@ describe("what a stranger can read", () => {
     expect(page.body).toContain(`rel="canonical"`);
   });
 
+  it("carries sources as JSON-LD citation and isBasedOn (ADR-039)", async () => {
+    const page = await context.pages.create(
+      context.workspaceId,
+      {
+        title: "Built on a friend's work",
+        body: "See the original.",
+        sources: ["https://other.example.com/w/pg_notes", "Smith 2021, J Pept Sci"],
+      },
+      { actor: OWNER },
+    );
+    await publish(page.id, page.version);
+
+    const read = await stranger(`/w/${page.id}`);
+    const match = read.body.match(/<script type="application\/ld\+json">([^<]*)<\/script>/);
+    expect(match).not.toBeNull();
+    const jsonLd = JSON.parse(match![1]!);
+    expect(jsonLd["@type"]).toBe("WebPage");
+    expect(jsonLd["citation"]).toContainEqual({
+      "@type": "CreativeWork",
+      url: "https://other.example.com/w/pg_notes",
+      name: "https://other.example.com/w/pg_notes",
+    });
+    expect(jsonLd["citation"]).toContain("Smith 2021, J Pept Sci");
+    expect(jsonLd["isBasedOn"]).toEqual(["https://other.example.com/w/pg_notes"]);
+  });
+
   it("still asks everyone to sign in for the console", async () => {
     await aSmallWiki();
     const console = await stranger("/pages");

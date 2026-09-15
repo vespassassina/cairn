@@ -69,3 +69,16 @@ export function sourceHref(source: string): string | null {
   if (pmid) return `https://pubmed.ncbi.nlm.nih.gov/${pmid[1]}/`;
   return null;
 }
+
+/** The shape ADR-038 gives every Cairn's published page: `<origin>/w/<id>`. */
+const CAIRN_PAGE_ADDRESS = /^https?:\/\/[^\s/]+\/w\/[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)?$/i;
+
+/**
+ * Whether a resolved address is shaped like another Cairn's published page,
+ * rather than an ordinary citation (ADR-039). Structural only, the same as
+ * ADR-038's recognition of a cross-Cairn link in a page's body: nothing is
+ * fetched to check the page is still there or ever was.
+ */
+export function isCairnPageAddress(address: string): boolean {
+  return CAIRN_PAGE_ADDRESS.test(address);
+}

@@ -2,7 +2,7 @@
 import type { Context, Hono } from "hono";
 import { raw } from "hono/html";
 import type { Child, FC } from "hono/jsx";
-import { publishedIds, sourceHref, type Page, type Paged } from "@cairn/core";
+import { isCairnPageAddress, publishedIds, sourceHref, type Page, type Paged } from "@cairn/core";
 import type { AppContext } from "../context.js";
 import { ASSET_VERSION, documentTitle, HEAD_TAGS } from "./assets.js";
 import { When } from "./layout.js";
@@ -126,13 +126,37 @@ function summaryOf(page: Page): string {
   return (line ?? page.title).slice(0, 200);
 }
 
+/**
+ * A page's sources, as schema.org `citation` and `isBasedOn` (ADR-039), for a
+ * machine reader that follows structured data rather than prose. `null` when
+ * the page has no sources: an empty block would say nothing an absent one
+ * doesn't.
+ */
+function citationJsonLd(page: Page): Record<string, unknown> | null {
+  if (page.sources.length === 0) return null;
+  const citation = page.sources.map((source) => {
+    const href = sourceHref(source);
+    return href ? { "@type": "CreativeWork", url: href, name: source } : source;
+  });
+  const isBasedOn = page.sources
+    .map((source) => sourceHref(source))
+    .filter((href): href is string => href !== null && isCairnPageAddress(href));
+  return {
+    "@context": "https://schema.org",
+    "@type": "WebPage",
+    citation,
+    ...(isBasedOn.length > 0 ? { isBasedOn } : {}),
+  };
+}
+
 const Shell: FC<{
   title: string;
   description: string;
   canonical: string;
   licence: string | null;
+  jsonLd?: Record<string, unknown> | null;
   children: Child;
-}> = ({ title, description, canonical, licence, children }) => (
+}> = ({ title, description, canonical, licence, jsonLd, children }) => (
   <html lang="en">
     <head>
       <meta charset="utf-8" />
@@ -141,6 +165,7 @@ const Shell: FC<{
       <meta name="description" content={description} />
       {canonical === "" ? null : <link rel="canonical" href={canonical} />}
       <link rel="stylesheet" href={`/assets/console.css?v=${ASSET_VERSION}`} />
+      {jsonLd ? raw(`<script type="application/ld+json">${jsonLdEscape(JSON.stringify(jsonLd))}</script>`) : null}
     </head>
     <body>
       <div class="ak-wrap">
@@ -266,6 +291,7 @@ export function registerPublicWiki(app: Hono, options: PublicWikiOptions): void 
         description={summaryOf(page)}
         canonical={`${origin(c)}${wikiHref(page.id)}`}
         licence={licence}
+        jsonLd={citationJsonLd(page)}
       >
         <article>
           {trail.length === 0 ? null : (
@@ -375,4 +401,9 @@ export function registerPublicWiki(app: Hono, options: PublicWikiOptions): void 
 
 function escapeXml(value: string): string {
   return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+/** Escapes what would otherwise close the `<script>` tag a JSON-LD block sits in. */
+function jsonLdEscape(json: string): string {
+  return json.replace(/</g, "\\u003c");
 }

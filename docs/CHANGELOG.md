@@ -6,6 +6,10 @@ Entries link to the ADR when there is one. A change of direction that has no ADR
 
 ## 2026-09-15
 
+### Machine-readable citations on public pages
+
+Every published page (`/w/<id>`) and every page in `cairn export --format site` now carries its sources as JSON-LD in its `<head>`, alongside the visible list it already had (ADR-039): schema.org `citation` for every source (a `CreativeWork` with a resolved address when `sourceHref` finds one, plain text when it does not), and `isBasedOn` for any source shaped like another Cairn's published page, `<origin>/w/<page-id>` (the same shape ADR-038 uses for a cross-Cairn link). Nothing is fetched: both properties are computed from data the page already carries. `isCairnPageAddress` (`packages/core/src/sources.ts`) is duplicated in `packages/cli/src/sources.ts`, the same way `sourceHref` already is, since hard rule 16 keeps `@cairn/core` out of the CLI's runtime.
+
 ### Links to another Cairn join the link graph
 
 An ordinary Markdown link to another Cairn's published page, `[label](<origin>/w/<page-id>)`, is now recognised as a `cairn_link` edge (ADR-038), the third and last part of "Links to the original, across Cairns" on the "Bridges between Cairns" roadmap. The other two parts were already in place: every published page has one canonical address (ADR-032), and sources travel unconditionally through publishing (ADR-027). No new syntax: an ordinary link already rendered safely as external, and nothing changes about how it renders.
