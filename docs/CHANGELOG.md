@@ -6,6 +6,12 @@ Entries link to the ADR when there is one. A change of direction that has no ADR
 
 ## 2026-09-15
 
+### Links to another Cairn join the link graph
+
+An ordinary Markdown link to another Cairn's published page, `[label](<origin>/w/<page-id>)`, is now recognised as a `cairn_link` edge (ADR-038), the third and last part of "Links to the original, across Cairns" on the "Bridges between Cairns" roadmap. The other two parts were already in place: every published page has one canonical address (ADR-032), and sources travel unconditionally through publishing (ADR-027). No new syntax: an ordinary link already rendered safely as external, and nothing changes about how it renders.
+
+Recognition is structural, from the URL's shape alone: nothing is fetched, so `extractReferences` (`packages/core/src/indexer/extract.ts`) stays a pure function and edges stay rebuildable offline (ADR-005, hard rule 9). It deliberately does not consult the ADR-037 trusted list; that answers a different question, who to accept notices from, not what counts as a link. `linkJson` (`packages/api/src/operations.ts`), shared by MCP, REST and the CLI (hard rule 14), reports a `cairn_link` edge as `{ cairn_url, type, label }` instead of guessing at a page id. No schema migration: `target_id` and `type` on the `edges` table are plain text with no enum constraint.
+
 ### A local trusted friends catalog
 
 `cairn trust <url> [--note "why"]` (ADR-037) confirms an address answers with a Cairn's self-description at `/.well-known/cairn.json` (ADR-034), then adds or updates a row for it in this Cairn's own "Trusted cairns" table, created the first time it is needed. Trusting the same address again updates the row rather than duplicating it; an address that does not look like a Cairn is refused, with what went wrong and what to check.

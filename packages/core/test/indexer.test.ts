@@ -27,6 +27,21 @@ describe("extractReferences", () => {
     ]);
   });
 
+  it("reads a link to another Cairn's published page as a cairn_link edge", () => {
+    const { edges } = extractReferences(
+      page("See [their notes](https://other.example.com/w/pg_notes) for more."),
+    );
+    expect(edges.filter((e) => e.type === "cairn_link")).toEqual([
+      {
+        sourceId: "pg_self",
+        targetId: "https://other.example.com/w/pg_notes",
+        type: "cairn_link",
+        label: "their notes",
+      },
+    ]);
+    expect(edges.filter((e) => e.type === "link")).toHaveLength(0);
+  });
+
   it("reads wiki links with and without a label", () => {
     const { edges } = extractReferences(page("[[pg_a]] and [[pg_b|Bee]]"));
     const links = edges.filter((e) => e.type === "link");

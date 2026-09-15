@@ -176,7 +176,7 @@ export function registerTools(server: McpServer, context: AppContext, actor: Act
     {
       title: "Create a page",
       description:
-        "Create a page with a Markdown body. Link to another page with [[page-id]] or [label](cairn:page-id); those links become the graph that get_backlinks and get_neighbours read. " +
+        "Create a page with a Markdown body. Link to another page with [[page-id]] or [label](cairn:page-id); those links become the graph that get_backlinks and get_neighbours read. A Markdown link to another Cairn's published page (its address ends /w/id) becomes a cairn_link edge the same way. " +
         "Tags can be given in the tags list or written inline as #tag.",
       inputSchema: {
         title: z.string().min(1),

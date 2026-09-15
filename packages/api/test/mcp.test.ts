@@ -292,6 +292,21 @@ describe("page tools", () => {
     expect(outbound.map((e) => e["page_id"])).toContain(target.data["id"]);
   });
 
+  it("reads a link to another Cairn's published page as a cairn_link neighbour (ADR-038)", async () => {
+    const source = await callTool("create_page", {
+      title: "Source",
+      body: "see [their notes](https://other.example.com/w/pg_notes) for context",
+    });
+
+    const neighbours = await callTool("get_neighbours", { page_id: source.data["id"] });
+    const outbound = neighbours.data["outbound"] as Array<Record<string, unknown>>;
+    expect(outbound).toContainEqual({
+      cairn_url: "https://other.example.com/w/pg_notes",
+      type: "cairn_link",
+      label: "their notes",
+    });
+  });
+
   it("includes backlinks in get_page when asked", async () => {
     const target = await callTool("create_page", { title: "Hub", body: "hub" });
     await callTool("create_page", {

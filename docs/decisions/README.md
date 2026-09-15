@@ -45,6 +45,7 @@ A decision that changes is not edited away. Add a new ADR that supersedes it, an
 | [035](ADR-035.md) | cairn export can write a static site, no server required | accepted | 2026-09-14 |
 | [036](ADR-036.md) | cairn check-sources reports dead links and recognises DOIs and PubMed ids | accepted | 2026-09-15 |
 | [037](ADR-037.md) | A Cairn's trusted friends are rows in a table, not a registry | accepted | 2026-09-15 |
+| [038](ADR-038.md) | A link to another Cairn's page is an edge, by its address alone | accepted | 2026-09-15 |
 
 ## Writing one
 

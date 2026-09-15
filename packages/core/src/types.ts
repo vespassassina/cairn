@@ -116,14 +116,19 @@ export interface PageInput {
   public?: boolean;
 }
 
-export type EdgeType = "link" | "mention" | "relation" | "parent" | "tag";
+export type EdgeType = "link" | "mention" | "relation" | "parent" | "tag" | "cairn_link";
 
 export interface Edge {
   workspaceId: WorkspaceId;
   sourceId: Id;
   targetId: Id;
   type: EdgeType;
-  /** Anchor text for a link, field name for a relation, raw text for a tag. */
+  /**
+   * Anchor text for a link, field name for a relation, raw text for a tag.
+   * For a `cairn_link`, `targetId` is the other Cairn's page address, not an
+   * id in this workspace (ADR-038), the same way a `tag` edge's target is
+   * `tag:<name>` rather than a page id.
+   */
   label: string | null;
 }
 

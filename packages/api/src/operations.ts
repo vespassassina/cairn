@@ -85,6 +85,12 @@ export function toFieldDefs(fields: FieldInput[]): FieldDef[] {
  */
 export function linkJson(edge: Edge, end: "source" | "target", tableIds: ReadonlySet<string>): Record<string, unknown> {
   const id = end === "source" ? edge.sourceId : edge.targetId;
+  if (edge.type === "cairn_link") {
+    // The target is another Cairn's page address, not an id in this
+    // workspace (ADR-038); only ever the target end, since this edge is
+    // never written to point at anything of ours.
+    return { cairn_url: id, type: edge.type, label: edge.label };
+  }
   const row = parseRowNodeId(id);
   const where = row
     ? { table_id: row.tableId, row_id: row.rowId }

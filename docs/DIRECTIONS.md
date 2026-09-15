@@ -13,6 +13,12 @@ Rules:
 
 ## 2026-09-15
 
+### Which roadmap item next: links to the original, across Cairns
+
+> "next item"
+
+Offered a choice of what remained on "Bridges between Cairns", the owner picked "Links to the original, across Cairns" over machine-readable citations, "cited by" and discovery by following citations. Landed in: ADR-038, a new `cairn_link` edge type recognising a Markdown link to another Cairn's published page (`<origin>/w/<id>`) as part of the link graph.
+
 ### No registry. A cairn keeps its own trusted friends instead
 
 > "avoid the registry. not my place. but a cairn can keep references to other cairns and act as a local 'trusted friends' catalog"

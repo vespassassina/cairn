@@ -16,6 +16,13 @@ import type { Table, EdgeInput, Id, Page, Row } from "../types.js";
 const MARKDOWN_LINK = /\[([^\]\n]*)\]\((?:cairn:|\/pages\/)([A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)?)\)/g;
 /** `[[id]]` or `[[id|label]]`, with the same ids. */
 const WIKI_LINK = /\[\[([A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)?)(?:\|([^\]\n]*))?\]\]/g;
+/**
+ * `[label](https://origin/w/id)`: another Cairn's page, by its one canonical
+ * address (ADR-032, ADR-038). Structural only, so extraction stays pure and
+ * rebuildable offline (rule 9): nothing is fetched to tell a live cross-Cairn
+ * link from a dead one, or a trusted Cairn from any other.
+ */
+const CROSS_CAIRN_LINK = /\[([^\]\n]*)\]\((https?:\/\/[^\s)]+\/w\/[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)?)\)/g;
 /** `@page-id`, for a mention rather than a link. */
 const MENTION = /(?:^|\s)@([A-Za-z0-9_-]+)/g;
 /** `#tag`, not a Markdown heading (headings are `#` followed by a space). */
@@ -60,6 +67,9 @@ export function extractReferences(page: Page): ExtractedReferences {
   }
   for (const [, targetId, label] of text.matchAll(WIKI_LINK)) {
     add(targetId!, "link", label ?? null);
+  }
+  for (const [, label, address] of text.matchAll(CROSS_CAIRN_LINK)) {
+    add(address!, "cairn_link", label || null);
   }
   for (const [, targetId] of text.matchAll(MENTION)) {
     add(targetId!, "mention", null);

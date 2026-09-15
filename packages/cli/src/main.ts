@@ -793,9 +793,11 @@ export async function run(argv: string[], io: Io): Promise<number> {
         const { json } = await client.request("GET", path);
         out(json, () => {
           const end = (edge: Json) =>
-            edge["row_id"] !== undefined
-              ? `${String(edge["table_id"])}/${String(edge["row_id"])}`
-              : String(edge["page_id"] ?? edge["table_id"]);
+            edge["cairn_url"] !== undefined
+              ? String(edge["cairn_url"])
+              : edge["row_id"] !== undefined
+                ? `${String(edge["table_id"])}/${String(edge["row_id"])}`
+                : String(edge["page_id"] ?? edge["table_id"]);
           const how = (edge: Json) => (edge["type"] === "relation" ? `relation ${String(edge["label"])}` : String(edge["type"]));
           const line = (edge: Json) => `  ${end(edge)}  ${how(edge)}`;
           const outbound = list(json?.["outbound"]).map(line);

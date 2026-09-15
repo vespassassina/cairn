@@ -92,6 +92,8 @@ Three kinds of record, and the difference between them is the most important thi
 
 Pages form a tree through `parent_id`, and tables sit in it too, under a page or at the top (ADR-024). A top-level page and everything under it is a collection, one wiki, which is how the console groups them (ADR-026); a collection is a view of the tree, not a stored record. The link graph is the edges table: one edge per link, mention, parent or tag in a page's text, and one per value of a row's relation fields. A node is a page id, a table id, or a row as `table-id/row-id`, so page text can link to all three (`[[id]]`), and a relation field links a row to pages or to the rows of any table, its own included. Backlinks are read from the same table by target, so nothing is stored twice.
 
+An ordinary Markdown link whose address is shaped `<origin>/w/<page-id>`, another Cairn's canonical published address (ADR-032), becomes a `cairn_link` edge (ADR-038): its target is the full URL, not a local id, the same way a `tag` edge targets `tag:<name>`. Recognition is structural only, from the URL's shape, so extraction stays a pure function with no I/O (ADR-005, ADR-009's edges-rebuildable rule); nothing is fetched to tell a live link from a dead one, and the ADR-037 trusted list plays no part in what counts as a link. `get_backlinks`, `get_neighbours` and `cairn links` report a `cairn_link` edge as `{ cairn_url, type, label }`.
+
 ## The write path
 
 In this order, because no transaction spans documents (ADR-005 rule 3, ADR-008 rule 3):
