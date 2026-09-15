@@ -13,6 +13,12 @@ Rules:
 
 ## 2026-09-15
 
+### Which roadmap item next: search quality
+
+> "next item"
+
+By this point "Bridges between Cairns" was fully done, so there was no longer a single unambiguous next item: the roadmap's remaining `later` rows spanned unrelated areas (search quality, npm publishing, sync and console features, the Obsidian bridge, a git mirror, and more). Asked which area to pick from; the owner chose "Search quality", specifically the one known eval miss: "search does not know direction (e.g. 'appetite suppressant' vs 'appetite stimulant')". Landed in: ADR-042, a negation-aware keyword match, and a new roadmap item recording a second, separate cause found along the way (the vector margin filter, left alone rather than tuned to fit one query).
+
 ### Which roadmap item next: discovery by following citations
 
 > "next item"

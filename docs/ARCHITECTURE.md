@@ -113,7 +113,7 @@ A crash after step 1 leaves a revision off the chain, which is never shown and i
 1. Reads of a page, row or revision by id: immediate.
 2. Lists, backlinks, neighbours, search and recent changes: eventual, within 10 seconds.
 
-Search returns pages that hold most of the query's words, with filler words ignored and each page's best chunk first; the rules live in `core/src/search/terms.ts` and the conformance suite, so every backend applies them (ADR-021). SQLite stems with FTS5's Porter tokenizer.
+Search returns pages that hold most of the query's words, with filler words ignored and each page's best chunk first; the rules live in `core/src/search/terms.ts` and the conformance suite, so every backend applies them (ADR-021). SQLite stems with FTS5's Porter tokenizer. A term match does not count towards a page's coverage when every occurrence of it sits next to a negation or decrease word ("less hungry" is not "hungry"), a small generic English lexicon also in `core/src/search/terms.ts` (ADR-042).
 
 With embeddings on (the default), the same adapter keeps vectors in sqlite-vec tables and searches by meaning too: a small English model (bge-small-en-v1.5) runs in the server process behind the `Embedder` port (`packages/adapter-embeddings-local`), chunks are embedded in the background after each write, and hybrid search fuses the two rankings. Without the model, or if it fails, search is keyword only and says so (ADR-022).
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { foldTerm, queryTerms, requiredMatches, sameWords, tokenize } from "../src/index.js";
+import { foldTerm, isNegatedEverywhere, queryTerms, requiredMatches, sameWords, tokenize } from "../src/index.js";
 
 describe("search terms (ADR-021)", () => {
   it("splits on the same boundaries as FTS5 unicode61", () => {
@@ -44,5 +44,37 @@ describe("search terms (ADR-021)", () => {
     expect(sameWords("Crème", "creme")).toBe(true);
     expect(sameWords("BPC-157 dosage", "BPC-157")).toBe(false);
     expect(sameWords("", "BPC-157")).toBe(false);
+  });
+});
+
+describe("negated matches (ADR-042)", () => {
+  it("is negated when the only occurrence sits after a decrease word", () => {
+    expect(
+      isNegatedEverywhere("more than simply feeling less hungry, plus better sleep", "hungry"),
+    ).toBe(true);
+  });
+
+  it("is not negated when the term also appears plainly", () => {
+    expect(
+      isNegatedEverywhere(
+        "distinctive strong appetite stimulation. popular for the intense hunger effect, not less hungry",
+        "hunger",
+      ),
+    ).toBe(false);
+  });
+
+  it("is not negated when the term never appears", () => {
+    expect(isNegatedEverywhere("strong appetite stimulation", "hungry")).toBe(false);
+  });
+
+  it("only looks a few words back, not the whole text", () => {
+    expect(
+      isNegatedEverywhere("less about dosing than about staying hungry", "hungry", 2),
+    ).toBe(false);
+  });
+
+  it("is case insensitive, like the rest of term matching", () => {
+    expect(isNegatedEverywhere("without HUNGER at all", "hunger")).toBe(true);
+    expect(isNegatedEverywhere("Reduced Appetite reported by some", "appetite")).toBe(true);
   });
 });

@@ -117,4 +117,47 @@ describe("SqliteSearchIndex", () => {
     expect(index.needsRebuild).toBe(false);
     await index.close();
   });
+
+  it("does not match a page whose only occurrence of a term is negated (ADR-042)", async () => {
+    const index = new SqliteSearchIndex();
+    await index.init();
+    // Both terms are literally present, "hungry" only inside a negation, so
+    // this page would wrongly pass requiredMatches' coverage bar without the
+    // negation check: it is q17's own shape, "less hungry" for "hungry".
+    await index.replaceChunksForPage(WS, "pg_suppressant", [
+      {
+        id: "pg_suppressant:0",
+        pageId: "pg_suppressant",
+        ordinal: 0,
+        headingPath: ["Community notes"],
+        text: "This peptide leaves some users feeling less hungry during the day.",
+      },
+    ]);
+    await index.replaceChunksForPage(WS, "pg_stimulant", [
+      {
+        id: "pg_stimulant:0",
+        pageId: "pg_stimulant",
+        ordinal: 0,
+        headingPath: ["Mechanism"],
+        text: "This peptide makes users feel hungry within the hour.",
+      },
+    ]);
+
+    const result = await index.search(WS, { query: "peptide hungry" });
+    expect(result.hits.map((h) => h.pageId)).toEqual(["pg_stimulant"]);
+    await index.close();
+  });
+
+  it("still matches a page that states a term plainly elsewhere on the same page (ADR-042)", async () => {
+    const index = new SqliteSearchIndex();
+    await index.init();
+    await index.replaceChunksForPage(WS, "pg_mixed", [
+      { id: "pg_mixed:0", pageId: "pg_mixed", ordinal: 0, headingPath: ["Mechanism"], text: "Peptide known to leave users feeling hungry soon after dosing." },
+      { id: "pg_mixed:1", pageId: "pg_mixed", ordinal: 1, headingPath: ["Notes"], text: "Some report feeling less hungry on higher doses." },
+    ]);
+
+    const result = await index.search(WS, { query: "peptide hungry" });
+    expect(new Set(result.hits.map((h) => h.pageId))).toEqual(new Set(["pg_mixed"]));
+    await index.close();
+  });
 });

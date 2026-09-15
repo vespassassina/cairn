@@ -49,6 +49,7 @@ A decision that changes is not edited away. Add a new ADR that supersedes it, an
 | [039](ADR-039.md) | A published page's sources are also JSON-LD, for machines to follow | accepted | 2026-09-15 |
 | [040](ADR-040.md) | A Cairn accepts a citation notice, Webmention-shaped, from a trusted address or on review | accepted | 2026-09-15 |
 | [041](ADR-041.md) | Discovery by following citations | accepted | 2026-09-15 |
+| [042](ADR-042.md) | A negated keyword match does not count | accepted | 2026-09-15 |
 
 ## Writing one
 

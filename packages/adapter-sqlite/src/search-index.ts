@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { getLoadablePath } from "sqlite-vec";
 import {
+  isNegatedEverywhere,
   queryTerms,
   requiredMatches,
   sameWords,
@@ -370,15 +371,20 @@ export class SqliteSearchIndex implements SearchIndex {
 
   /** Chunks that pass the keyword rule (ADR-021), best first. */
   private keywordRanking(workspaceId: WorkspaceId, terms: string[]): HitRecord[] {
-    // Which pages hold each term, across all their chunks.
+    // Which pages hold each term, in at least one chunk where it is not
+    // negated (ADR-042): "less hungry" does not count towards "hungry".
     const pagesOf = this.db.prepare(
-      "SELECT DISTINCT page_id FROM chunks WHERE chunks MATCH ? AND workspace_id = ?",
+      "SELECT page_id, text FROM chunks WHERE chunks MATCH ? AND workspace_id = ?",
     );
     const required = requiredMatches(terms.length);
     const coverage = new Map<string, number>();
     for (const term of terms) {
-      const rows = pagesOf.all(quote(term), workspaceId) as unknown as { page_id: string }[];
-      for (const { page_id } of rows) coverage.set(page_id, (coverage.get(page_id) ?? 0) + 1);
+      const rows = pagesOf.all(quote(term), workspaceId) as unknown as { page_id: string; text: string }[];
+      const affirmed = new Set<string>();
+      for (const { page_id, text } of rows) {
+        if (!isNegatedEverywhere(text, term)) affirmed.add(page_id);
+      }
+      for (const page_id of affirmed) coverage.set(page_id, (coverage.get(page_id) ?? 0) + 1);
     }
     const covered = (record: HitRecord) => coverage.get(record.page_id) ?? 0;
 

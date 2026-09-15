@@ -77,3 +77,51 @@ export function sameWords(query: string, title: string): boolean {
   const words = tokenize(query);
   return words.length > 0 && words.join(" ") === tokenize(title).join(" ");
 }
+
+/**
+ * Generic English words that reverse the direction of whatever they sit next
+ * to: negation ("not", "without") and decrease ("less", "reduced",
+ * "suppress"). Not a domain lexicon (ADR-042): it knows no peptide, no drug,
+ * no topic, only that these words flip a plain reading of the words after
+ * them. "less hungry" is not "hungry", and a search should not credit it as
+ * though it were.
+ */
+// Contractions ("isn't", "doesn't") are left out: `tokenize` splits them on
+// the apostrophe into two tokens ("isn", "t"), and the fragment before it
+// ("isn", "does", "can") is too short and common on its own to add as a
+// negator without flagging plain, non-negated text.
+const NEGATORS = new Set(
+  [
+    "not", "no", "never", "without", "non",
+    "less", "least", "fewer", "lack", "lacks", "lacking",
+    "reduce", "reduces", "reduced", "reducing",
+    "decrease", "decreases", "decreased", "decreasing",
+    "suppress", "suppresses", "suppressed", "suppressing",
+    "minus", "rarely", "hardly", "barely",
+  ],
+);
+
+/**
+ * True when every occurrence of `term` in `text` sits within `window` words
+ * of a negator (ADR-042): the term is only ever reached through a reversed
+ * reading, such as "more than simply feeling less hungry" for the term
+ * "hungry". False the moment one occurrence is plain, so a page that states
+ * something both ways still gets credit for the plain statement.
+ *
+ * A word-for-word check, not a stemmed one: it catches the exact word a
+ * query asked for, the same words `tokenize` would find, not every
+ * inflection FTS5's stemmer would. That is enough for the direction words
+ * this exists to catch, and simpler than duplicating SQLite's stemmer here.
+ */
+export function isNegatedEverywhere(text: string, term: string, window = 4): boolean {
+  const tokens = tokenize(text);
+  const needle = foldTerm(term);
+  let found = false;
+  for (let i = 0; i < tokens.length; i++) {
+    if (tokens[i] !== needle) continue;
+    found = true;
+    const start = Math.max(0, i - window);
+    if (!tokens.slice(start, i).some((word) => NEGATORS.has(word))) return false;
+  }
+  return found;
+}
