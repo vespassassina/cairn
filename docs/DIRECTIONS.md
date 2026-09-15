@@ -13,6 +13,12 @@ Rules:
 
 ## 2026-09-15
 
+### Add `cairn restore` and `cairn peek`
+
+> "do cairn restore and cairn peek (to view an old revision but not revert)"
+
+Followed on from a question about what else the CLI might need, where the answer named restore (already in core and the console, missing from REST and the CLI) as the real gap. Landed in: `docs/decisions/ADR-045.md`, `packages/api/src/rest/routes.ts`, `packages/cli/src/main.ts`, `docs/CLI.md`, with contract tests in `packages/api/test/rest.test.ts` and `packages/cli/test/cli.test.ts`.
+
 ### Close the name question: keep Cairn, no dedicated domain
 
 > "Keep Cairn, no dedicated domain" (chosen from three options after a domain check found the short obvious names already taken)

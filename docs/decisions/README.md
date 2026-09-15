@@ -52,6 +52,7 @@ A decision that changes is not edited away. Add a new ADR that supersedes it, an
 | [042](ADR-042.md) | A negated keyword match does not count | accepted | 2026-09-15 |
 | [043](ADR-043.md) | AWS and GCP run the same Docker path as Proxmox, not a managed container service | accepted | 2026-09-15 |
 | [044](ADR-044.md) | The project's name is Cairn, with no dedicated domain | accepted | 2026-09-15 |
+| [045](ADR-045.md) | Restore reaches REST and the CLI, MCP keeps its own way | accepted | 2026-09-15 |
 
 ## Writing one
 

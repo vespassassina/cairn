@@ -201,6 +201,17 @@ cairn overview
 
 A job installed with `cairn sync install` runs the same file, so it uses the new version from its next run. Nothing needs installing again.
 
+## History and undoing a change
+
+```
+cairn history <page-id>                        who changed it, when and why
+cairn revision <page-id> <version>              one old version, with a diff against the one before it
+cairn peek <page-id> <version>                  one old version in full, as Markdown; changes nothing
+cairn restore <page-id> <version> --version V   bring an old version back, as a new one on top
+```
+
+Every write is kept as a revision (ADR-008), so nothing is really lost. `cairn peek` reads one back without touching anything, useful before deciding whether to restore it. `cairn restore` is an ordinary write: it needs `--version`, the page's current version from `cairn read`, and creates a new revision rather than rewriting history, so restoring can itself be undone the same way (ADR-045).
+
 ## Your data: export and import
 
 ```
@@ -245,7 +256,7 @@ cairn sync http://localhost:8787 https://your-address --every 5m  keep syncing, 
 
 1. **Sign in to both first.** `cairn login` with `CAIRN_URL` set to each server that uses OAuth, or `cairn login --instance <name>` for a registered one; localhost needs no sign-in. Sync uses those sign-ins, not `CAIRN_TOKEN`.
 2. **What it copies:** every page, table and row, with their sources and when each page was last verified, both ways. A change on one side goes to the other, and so does a deletion.
-3. **When both sides changed the same page or row,** sync merges the two edits, as git does (ADR-030). Parts only one side changed keep that change, so edits to different lines of a page both survive, and tags and sources added on either side are kept. Where both changed the same lines or field, the newer edit wins, and the version it replaced stays in that record's history, where the console can restore it. The report lists a clean merge as merged, and one where the newer edit won a part as a conflict. Order goes by when each edit was made, not when it arrived, so it holds across several Cairns. Tables are the exception: their schemas keep no history (ADR-008), so the newer schema wins, and the report says so.
+3. **When both sides changed the same page or row,** sync merges the two edits, as git does (ADR-030). Parts only one side changed keep that change, so edits to different lines of a page both survive, and tags and sources added on either side are kept. Where both changed the same lines or field, the newer edit wins, and the version it replaced stays in that record's history, where the console or `cairn restore` can bring it back. The report lists a clean merge as merged, and one where the newer edit won a part as a conflict. Order goes by when each edit was made, not when it arrived, so it holds across several Cairns. Tables are the exception: their schemas keep no history (ADR-008), so the newer schema wins, and the report says so.
 4. **Moving to a new Cairn** is one sync into an empty one. Ids and links are kept, as with an import.
 5. **It remembers the last sync** in a small file per pair of servers, next to the CLI's sign-ins. Deleting it loses nothing: the next run compares everything again and changes only what differs, with one catch. A record deleted on one side since the last sync comes back from the other, because without the file sync cannot tell a deletion from a record the other side never had.
 6. **Tables are never deleted by sync;** it warns instead.

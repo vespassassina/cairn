@@ -145,6 +145,31 @@ describe("cairn", () => {
     });
   });
 
+  it("peeks at an old revision without changing anything, then restores it", async () => {
+    const { id, version } = await createLog();
+    const updated = await cairn(
+      "replace-section", id, "--section", "Firmware", "--version", version, "--text", "BLHeli_32", "--note", "Real firmware",
+    );
+    expect(updated).toBe(0);
+    const current = /version (\S+)/.exec(stdout)![1]!;
+
+    expect(await cairn("peek", id, version)).toBe(0);
+    expect(stdout).toContain("2207 1750kv");
+    expect(stdout).toContain("changed nothing");
+    const unchanged = await context.pages.get(context.workspaceId, id);
+    expect(unchanged.version).toBe(current);
+
+    expect(await cairn("restore", id, version)).toBe(2);
+    expect(stderr).toContain("--version");
+
+    expect(await cairn("restore", id, version, "--version", current, "--note", "Back out the firmware change")).toBe(0);
+    expect(stdout).toContain("restored");
+    const restored = await context.pages.get(context.workspaceId, id);
+    expect(restored.body).toContain("2207 1750kv");
+    expect(restored.body).not.toContain("BLHeli_32");
+    expect(restored.version).not.toBe(current);
+  });
+
   it("works with tables: create rows, query, and name bad fields", async () => {
     const table = await context.tables.create(
       context.workspaceId,

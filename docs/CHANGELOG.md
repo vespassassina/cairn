@@ -6,6 +6,10 @@ Entries link to the ADR when there is one. A change of direction that has no ADR
 
 ## 2026-09-15
 
+### `cairn restore` and `cairn peek`, and a REST restore endpoint
+
+`pages.restore` has existed in core and the review console since ADR-008, but only the console could call it; a person or agent working from a shell had no way to undo a bad edit short of retyping the old text by hand. Added `POST /pages/:id/revisions/:version/restore` to REST (`If-Match` on the current version, optional `change_note`, same shape as `PATCH`), and two CLI commands: `cairn peek <page-id> <version>` prints an old revision in full without changing anything, and `cairn restore <page-id> <version> --version V` brings it back as a new revision, with the same optimistic-concurrency `--version` argument `move`, `publish` and `delete` already take. ADR-045 records why MCP is untouched: `get_revision` already serves as peek, and its own description already tells an agent to restore by reading an old version and writing it back with `update_page`, so a dedicated MCP tool would only hide that reasoning. Contract tests added in `packages/api/test/rest.test.ts` (a stale `If-Match` on restore is rejected with `version_conflict`) and `packages/cli/test/cli.test.ts`. `docs/CLI.md` gained a "History and undoing a change" section, and its sync section's stale claim that only the console can restore is fixed.
+
 ### The name is Cairn, settled
 
 PRD Q5 asked for a final name, checked against GitHub, npm and domain availability, and CLAUDE.md still called Cairn a "working name". A DNS check found `cairn.dev`, `cairn.app`, `cairn.io`, `getcairn.com` and `usecairn.com` all already registered; `cairnwiki.com` looked free but the owner chose not to buy it. Since the GitHub repo, the npm package and the container images already all carry the name, and renaming any of them now would be real churn for no gain, ADR-044 keeps Cairn as the final name with no dedicated domain bought. `CLAUDE.md`'s "working name" wording is gone, PRD Q5 is marked answered, and `docs/ROADMAP.md`'s "Name decided" item moves to done.

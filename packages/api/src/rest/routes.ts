@@ -489,6 +489,23 @@ export function restRoutes(context: AppContext, callerFor: CallerFor): Hono {
     });
   });
 
+  // Restore a page to an earlier revision: an ordinary update whose content
+  // comes from that revision's snapshot, so it is itself just another
+  // revision and can be undone the same way (ADR-008 consequence 3, ADR-045).
+  api.post("/pages/:id/revisions/:version/restore", async (c) => {
+    const expected = requireIfMatch(c);
+    const input = await parseBody(c, schemas.deleteBody);
+    const page = await context.pages.restore(
+      ws,
+      c.req.param("id"),
+      c.req.param("version"),
+      expected,
+      by(c, input.change_note),
+    );
+    c.header("ETag", etag(page.version));
+    return c.json(restPage(page));
+  });
+
   // Tables and rows, at /tables and also at /collections, the name before
   // ADR-026, so a client from before the rename keeps working.
   const tables = new Hono();

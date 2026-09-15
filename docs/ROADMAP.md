@@ -24,6 +24,7 @@ Status key: done, in progress, next, later, blocked.
 | Import, rebuild, eval commands | done | |
 | Peptide wiki seed | done | `examples/peptide-wiki` |
 | Revisions: history, actor, change notes | done | ADR-008. MCP `get_history`, `get_revision`, `change_note` |
+| Restore an old revision, outside the console | done | ADR-045. REST `POST /pages/:id/revisions/:version/restore`, CLI `cairn restore` and `cairn peek` |
 | Review console | done | ADR-009. 24 contract tests, checked visually |
 | Console: a new page starts under the page being read | done | The owner's direction of 2026-09-14. The header button carries the page you are on, the form says it chose that parent, and a parent that is gone falls back to the top level with a banner |
 | No sign-in on localhost | done | ADR-010. `cairn.config.json` |

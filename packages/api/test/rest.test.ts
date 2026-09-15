@@ -241,6 +241,39 @@ describe("pages", () => {
     expect(revision.json["diff"]).toContain("- Flashed old firmware on the ESC.");
   });
 
+  it("restores an old revision as a new one (ADR-045), rejecting a stale If-Match", async () => {
+    const created = await createBuildLog();
+    const id = String(created.json["id"]);
+    const original = String(created.json["version"]);
+    const updated = await call(`/pages/${id}`, {
+      method: "PATCH",
+      headers: { "if-match": created.headers.get("etag")! },
+      body: { mode: "replace_section", section: "Firmware", content: "BLHeli_32", change_note: "Firmware" },
+    });
+
+    const stale = await call(`/pages/${id}/revisions/${original}/restore`, {
+      method: "POST",
+      headers: { "if-match": original },
+      body: { change_note: "should fail" },
+    });
+    expect(stale.status).toBe(409);
+    expect(stale.json["error"]).toBe("version_conflict");
+
+    const restored = await call(`/pages/${id}/revisions/${original}/restore`, {
+      method: "POST",
+      headers: { "if-match": String(updated.json["version"]) },
+      body: { change_note: "Back out the firmware change" },
+    });
+    expect(restored.status).toBe(200);
+    const reread = await call(`/pages/${id}`);
+    expect(reread.json["body"]).toContain("Flashed old firmware on the ESC.");
+    expect(reread.json["body"]).not.toContain("BLHeli_32");
+
+    const history = await call(`/pages/${id}/history`);
+    const notes = (history.json["revisions"] as Array<{ note: string }>).map((r) => r.note);
+    expect(notes[0]).toBe("Back out the firmware change");
+  });
+
   it("deletes with If-Match, after which the page is gone", async () => {
     const created = await createBuildLog();
     const id = String(created.json["id"]);

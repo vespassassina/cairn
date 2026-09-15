@@ -94,6 +94,7 @@ Read
   cairn links <page-id | table-id/row-id> what it links to and what links to it
   cairn history <page-id>                 who changed it, when and why
   cairn revision <page-id> <version>      one old version, with a diff
+  cairn peek <page-id> <version>          one old version in full, changing nothing
   cairn changes [--since T] [--agents|--people]   what changed, newest first
 
 Write (every write is a revision the owner can review and undo)
@@ -103,6 +104,7 @@ Write (every write is a revision the owner can review and undo)
   cairn write <page-id> --version V                     replace the whole body
   cairn delete <page-id> --version V
   cairn move <page-or-table-id> --parent PAGE|root --version V   change its place in the tree
+  cairn restore <page-id> <version> --version V   bring back an old version, as a new one
   cairn publish <page-id> --version V     serve it, and everything under it, to anyone
       with no sign-in, at <server>/w. Publishing a collection publishes its wiki
   cairn unpublish <page-id> --version V   take it back down
@@ -852,6 +854,23 @@ export async function run(argv: string[], io: Io): Promise<number> {
         return 0;
       }
 
+      case "peek": {
+        const id = need(args[0], "page id");
+        const version = need(args[1], "version, from cairn history");
+        const { json } = await client.request(
+          "GET",
+          `/pages/${encodeURIComponent(id)}/revisions/${encodeURIComponent(version)}`,
+        );
+        out(json, () =>
+          `# ${String(json?.["title"])}\n` +
+          `${String(json?.["version"])}  ${String(json?.["at"])}  ${by(json?.["by"])}${json?.["note"] ? `  "${String(json["note"])}"` : ""}\n\n` +
+          `${String(json?.["body"])}\n\n` +
+          `This is version ${String(json?.["version"])}, not necessarily the current one. It changed nothing.\n` +
+          `To bring it back: cairn restore ${id} ${String(json?.["version"])} --version <current version, from cairn read>\n`,
+        );
+        return 0;
+      }
+
       case "changes": {
         if (flags.agents && flags.people) throw new UsageError("pick one of --agents and --people");
         const actor = flags.agents ? "agent" : flags.people ? "user" : undefined;
@@ -967,6 +986,19 @@ export async function run(argv: string[], io: Io): Promise<number> {
           body: { id, parent_id: parent === "root" ? null : parent, version, ...(note ? { change_note: note } : {}) },
         });
         out(json, () => `ok ${String(json?.["kind"])} ${id} now ${json?.["parent_id"] ? `under ${String(json["parent_id"])}` : "at the top"}, version ${String(json?.["version"])}\n`);
+        return 0;
+      }
+
+      case "restore": {
+        const id = need(args[0], "page id");
+        const version = need(args[1], "the version to restore, from cairn history or cairn peek");
+        const expected = need(flags.version, "--version V, the page's current version, from cairn read");
+        const { json } = await client.request(
+          "POST",
+          `/pages/${encodeURIComponent(id)}/revisions/${encodeURIComponent(version)}/restore`,
+          { ifMatch: expected, body: note ? { change_note: note } : {} },
+        );
+        out(json, () => `ok ${id} restored to version ${version}, as a new version ${String(json?.["version"])}\n`);
         return 0;
       }
 
