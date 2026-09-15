@@ -35,7 +35,8 @@ Status key: done, in progress, next, later, blocked.
 | Search does not know direction | done | ADR-042. "Which peptide makes you really hungry" was matching on a negated word: the wrong page's only occurrence of "hungry" was "less hungry". Keyword search now discounts a term match that is negated everywhere it appears in a page. Recall@5 unchanged (keyword 0.88, hybrid 0.97, both before and after): the query returns nothing now, not a confident wrong answer, which this project already treats as the honest result |
 | Vector margin misses a chunk in a dense topic cluster | later | Found while investigating the row above. The correct chunk for "which peptide makes you really hungry" is the single closest chunk in the workspace (cosine 0.7246), but ADR-022's margin filter needs 0.7250 for this query, because 18 pages sharing "appetite" vocabulary raise the neighbourhood baseline the margin is measured against. Missed by 0.0004. Shrinking the margin to pass this one query would be overfitting to the eval set; a real fix needs its own before/after evaluation across more than one query |
 | Cosmos adapter | later, on a trigger | ADR-020: only if more than one instance, a slow cold restore, or the write-loss window matters |
-| Own-server deploy (Proxmox, NAS, Docker) | done | ADR-020. `deploy/docker/`, database on a mounted local volume. CI starts it with one; not yet run on Proxmox |
+| Own-server deploy (Proxmox, NAS, Docker) | done | ADR-020. `deploy/docker/`, database on a mounted local volume. CI starts it with one; not yet run on Proxmox. Proxmox specifics split into `docs/DEPLOY-PROXMOX.md` |
+| AWS and GCP deploy guides | done | ADR-043. A small VM running the same Docker setup as any other self-hosted target, not a managed container service. `docs/DEPLOY-AWS.md`, `docs/DEPLOY-GCP.md`. Not yet run for real on either cloud |
 | OAuth server | done | ADR-017. GitHub or any OpenID Connect provider, consent page, CLI login. 23 end-to-end tests. Proven with claude.ai after a deploy |
 | Azure deploy | done | ADR-018. Running in Sweden Central since 2026-09-13, holding the owner's wiki. The first deployment found three bugs, all fixed. Cold start about 30 s, mostly the image pull |
 | Agent-first install guide | done | ADR-019. `docs/AGENT-INSTALL.md`, `AGENTS.md` |
@@ -140,4 +141,4 @@ A multilingual or bring-your-own embedding model, AWS adapters, Desktop extensio
 
 ## Open questions that block work
 
-See PRD section 13. Currently blocking: Q7 (free tier facts, now for Azure Container Apps and a future AWS container target). Q1 and Q8 wait for the optional Cosmos adapter (ADR-020).
+See PRD section 13. Currently blocking: Q7 (free tier facts, now for Azure Container Apps and cloud VMs on AWS and GCP, ADR-043; a managed AWS/GCP container service is still a future option, not a current target). Q1 and Q8 wait for the optional Cosmos adapter (ADR-020).

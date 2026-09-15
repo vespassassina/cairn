@@ -4,6 +4,8 @@ This runs Cairn as one container on a machine you own: a Proxmox VM or container
 
 It takes about twenty minutes. If you would rather have your coding agent do it, open this repository in Claude Code and say "set Cairn up on my server": it follows `docs/AGENT-INSTALL.md`.
 
+**On Proxmox specifically,** see `docs/DEPLOY-PROXMOX.md` first for which guest type to use and where the disk lives, then come back here for the rest. **On a cloud VM instead of your own hardware,** `docs/DEPLOY-AWS.md` and `docs/DEPLOY-GCP.md` cover provisioning one; everything below still applies once Docker is running on it (ADR-043).
+
 ## What you need
 
 1. A Linux machine with Docker and the Compose plugin: https://docs.docker.com/engine/install/
@@ -81,13 +83,6 @@ It starts again by itself after a reboot (`restart: unless-stopped`).
 ## 5. Connect Claude and the CLI
 
 The same as on Azure: `docs/DEPLOY-AZURE.md`, section 4, with your HTTPS address.
-
-## On Proxmox
-
-1. **A VM is the simplest:** Debian or Ubuntu, Docker installed, and the steps above. The `data` folder is on the VM's disk, so Proxmox backups of the VM include it.
-2. **A Linux container (LXC) works too,** with nesting enabled for Docker (Options, Features, Nesting).
-3. **To keep the database on a host disk,** mount a host folder into the LXC, for example `pct set <id> -mp0 /tank/cairn,mp=/srv/cairn`, and set `CAIRN_DATA=/srv/cairn` in `.env`. In an unprivileged LXC, user 1000 inside appears as 101000 on the host, so on the host run `chown 101000:101000 /tank/cairn`.
-4. **Proxmox does not back up bind mounts.** A folder mounted from the host is left out of the LXC's backups; back it up on the host, or use a replica (below).
 
 ## Backups
 

@@ -1,10 +1,10 @@
 # Installing Cairn: instructions for an agent
 
-You are a coding agent, and the person you work with wants Cairn installed or deployed. Follow this page from the top. Once it runs, `docs/AGENT-OPERATE.md` covers everything after: settings, health, updates, sync, backups, access and troubleshooting. It is written for you; the person-facing guides it links to (`docs/LOCAL.md`, `docs/CLI.md`, `docs/DEPLOY-DOCKER.md`, `docs/DEPLOY-AZURE.md`) have more detail on each step. Why it works this way: ADR-019.
+You are a coding agent, and the person you work with wants Cairn installed or deployed. Follow this page from the top. Once it runs, `docs/AGENT-OPERATE.md` covers everything after: settings, health, updates, sync, backups, access and troubleshooting. It is written for you; the person-facing guides it links to (`docs/LOCAL.md`, `docs/CLI.md`, `docs/DEPLOY-DOCKER.md`, `docs/DEPLOY-PROXMOX.md`, `docs/DEPLOY-AZURE.md`, `docs/DEPLOY-AWS.md`, `docs/DEPLOY-GCP.md`) have more detail on each step. Why it works this way: ADR-019.
 
 ## Rules
 
-1. **Ask before you act.** Cairn can run on this computer, on the person's own server, or on Azure. Never choose for the person.
+1. **Ask before you act.** Cairn can run on this computer, on the person's own server (including Proxmox), on a VM on AWS or GCP, or on Azure. Never choose for the person.
 2. **Credentials stay with the person.** Never ask for a password, client secret or token in the chat, never print one, and never write one into a file git tracks. Signing in to Azure and creating the OAuth app are the person's steps; you tell them exactly what to click and type.
 3. **Never read `deploy/azure/.cairn-deploy.env` or `deploy/docker/.env`.** They hold secrets. The deploy script and Docker read them; you do not. Do not `cat`, open, grep or print them.
 4. **Check every step** with the command given, and stop on a failure. Read the matching section of the person's guide and `docs/LESSONS.md` before trying anything else. Do not improvise cloud resources.
@@ -19,7 +19,7 @@ Ask these together, in one message:
    1. **On this computer.** Free, private, set up in five minutes. Only agents on this machine can use it, and only while it runs.
    2. **On their own server,** such as a Proxmox VM or container, or a NAS, with Docker. The database stays on that machine's disk. Needs an HTTPS address in front of it: a reverse proxy, Cloudflare Tunnel or Tailscale. About twenty minutes.
    3. **On Azure.** Reachable from anywhere, including Claude on the web and phone. Needs an Azure subscription; costs nothing to a few cents a month within the free grants. About fifteen minutes, with two steps the person does in a browser.
-   4. **AWS** is not available yet. Say so, and offer one of the others.
+   4. **On a small VM on AWS or GCP,** the same Docker setup as their own server, just on a cloud machine (ADR-043). Reachable from anywhere. The person provisions the VM themselves, in their own account, following `docs/DEPLOY-AWS.md` or `docs/DEPLOY-GCP.md`; check current free-tier terms with them before they do, since these move over time. About twenty minutes on top of that, the same as 3b once Docker is running.
 2. **Which Claude do you use?** Claude Code, Claude Desktop, Claude on the web, or several.
 3. **Anything to bring in?** A folder of Markdown notes, or a folder from `cairn export`.
 
@@ -75,6 +75,13 @@ Human guide: `docs/DEPLOY-DOCKER.md`. The steps run on the server. If you are no
 7. **Check it,** on the server: `curl -s http://127.0.0.1:8787/health` must print `"status":"ok"`, and `curl -s -o /dev/null -w '%{http_code}\n' -X POST http://127.0.0.1:8787/mcp` must print `401`. Then the same health check through their HTTPS address.
 8. **Connect, move content and prove it** as in 3c steps 9 to 12.
 
+## 3d. On AWS or GCP
+
+Human guide: `docs/DEPLOY-AWS.md` or `docs/DEPLOY-GCP.md` for the VM, then `docs/DEPLOY-DOCKER.md` for everything after Docker is running, the same as 3b.
+
+1. **Provisioning the VM is the person's own step,** run from their own machine with their own cloud credentials, never yours to run for them. Say plainly what it will cost before they run anything: check current free-tier terms with them, since AWS and GCP have both changed theirs over time (the guides link to each cloud's current free-tier page). Give them the exact commands from the guide, one section at a time, and ask them to paste back the output.
+2. **Once Docker is installed on the VM,** everything is exactly 3b: the HTTPS address, the folder and `.env`, the OAuth app, starting it, checking it, connecting, and proving it end to end. The only difference is which machine the commands run on.
+
 ## 3c. On Azure
 
 Human guide: `docs/DEPLOY-AZURE.md`. Say first: this creates a resource group, a storage account and a container app in their subscription; within the free grants it costs nothing to a few cents a month; they can remove it all with one command.
@@ -121,7 +128,7 @@ Finish with a short summary for the person:
 
 1. Where Cairn runs, and its console and MCP addresses.
 2. How they connected, and how to connect another device.
-3. **On this computer:** how to start it (`pnpm dev` in the repository folder). **On Azure:** that it starts by itself, where the settings file is (`deploy/azure/.cairn-deploy.env`, to keep private and back up), what it costs, how to update (`docs/DEPLOY-AZURE.md`, "Day to day") and how to remove it (`az group delete --name <resource group>`, after an export). **On their own server:** that it restarts by itself, where the database folder and `deploy/docker/.env` are (both to back up, the file to keep private), and how to update (`docker compose pull && docker compose up -d`).
+3. **On this computer:** how to start it (`pnpm dev` in the repository folder). **On Azure:** that it starts by itself, where the settings file is (`deploy/azure/.cairn-deploy.env`, to keep private and back up), what it costs, how to update (`docs/DEPLOY-AZURE.md`, "Day to day") and how to remove it (`az group delete --name <resource group>`, after an export). **On their own server, or on an AWS or GCP VM:** that it restarts by itself, where the database folder and `deploy/docker/.env` are (both to back up, the file to keep private), how to update (`docker compose pull && docker compose up -d`), and, on a cloud VM, how to remove it (`docs/DEPLOY-AWS.md` or `docs/DEPLOY-GCP.md`, "Day to day": export first, then terminate the instance).
 4. What you did not do, or what failed.
 5. That for anything later, from changing a setting to updating, their agent follows `docs/AGENT-OPERATE.md`.
 

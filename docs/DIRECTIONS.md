@@ -13,6 +13,12 @@ Rules:
 
 ## 2026-09-15
 
+### Deploy guides for AWS, GCP and Proxmox
+
+> "make an aws and gcp deploy and a proxmog deploy guide"
+
+Asked for three new deployment guides. Rather than building AWS/GCP-specific managed-container infrastructure (ECS, Cloud Run, and the new storage, IAM and CI work that would need), ADR-043 extends the existing "one container, Docker, local-or-replicated SQLite" model (ADR-020) onto a plain cloud VM, since it reuses `deploy/docker/compose.yaml` and `docker/start.sh` unchanged. Landed in: `docs/decisions/ADR-043.md`, `docs/DEPLOY-AWS.md`, `docs/DEPLOY-GCP.md`, `docs/DEPLOY-PROXMOX.md` (new), `docs/DEPLOY-DOCKER.md`, `docs/AGENT-INSTALL.md`, `docs/README.md`, `docs/ROADMAP.md`.
+
 ### The npm package settled on `@vespassassina/cairncli`, after `@cairn/cli` and `cairncli` both failed to publish
 
 > "name not available" / "ditch the org, let's stick to a name" / "@vespassassina/cairncli (Recommended)"

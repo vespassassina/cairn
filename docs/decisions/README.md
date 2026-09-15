@@ -50,6 +50,7 @@ A decision that changes is not edited away. Add a new ADR that supersedes it, an
 | [040](ADR-040.md) | A Cairn accepts a citation notice, Webmention-shaped, from a trusted address or on review | accepted | 2026-09-15 |
 | [041](ADR-041.md) | Discovery by following citations | accepted | 2026-09-15 |
 | [042](ADR-042.md) | A negated keyword match does not count | accepted | 2026-09-15 |
+| [043](ADR-043.md) | AWS and GCP run the same Docker path as Proxmox, not a managed container service | accepted | 2026-09-15 |
 
 ## Writing one
 
