@@ -13,6 +13,12 @@ Rules:
 
 ## 2026-09-15
 
+### A dark desaturated night blue background
+
+> "can we use a dark desaturated night blue for the background of cairn?"
+
+Landed as a token override in `CAIRN_CSS` (`packages/api/src/web/assets.ts`), outside any `@layer` so it beats artifactkit's own layered tokens without `!important`: `--t-bg:#161A22`, `--t-ink:#E8EAEE`, `--t-accent:#6AA9D8`, `--t-accent-2:#4E86AC`, `--t-lift-amt:7%`. Everything else (surfaces, rules, washes, chart colours) derives from these automatically, the same way artifactkit's own dark example works. Covers the review console and the public wiki, since both serve the one `/assets/console.css`. The PWA manifest and `theme-color` meta tag match. This is a fixed palette, not a settable theme with a live preview; that stays the separate, larger "Reskin the wiki: a theme setting" roadmap row.
+
 ### Which roadmap item next: search quality
 
 > "next item"

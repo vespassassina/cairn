@@ -15,6 +15,17 @@ import {
  */
 
 const CAIRN_CSS = `
+/* The owner's theme: a dark, desaturated night blue (2026-09-15). Outside any
+   @layer, so it beats artifactkit's own tokens without !important. */
+:root{
+  --t-bg:       #161A22;
+  --t-ink:      #E8EAEE;
+  --t-accent:   #6AA9D8;
+  --t-accent-2: #4E86AC;
+  --t-lift:     #FFFFFF;
+  --t-lift-amt: 7%;
+}
+
 /* Top bar: the console's one piece of chrome. */
 .cairn-top{ display:flex; gap:var(--ak-s4); align-items:center; flex-wrap:wrap;
   padding:var(--ak-s3) 0; margin-bottom:var(--ak-s5); border-bottom:1px solid var(--ak-rule) }
@@ -136,8 +147,8 @@ export const MANIFEST = JSON.stringify({
   description: APP_DESCRIPTION,
   start_url: "/",
   display: "browser",
-  background_color: "#F1ECE1",
-  theme_color: "#F1ECE1",
+  background_color: "#161A22",
+  theme_color: "#161A22",
   icons: [
     { src: "/assets/favicon.svg", sizes: "any", type: "image/svg+xml" },
     { src: "/assets/icon-180.png", sizes: "180x180", type: "image/png" },
@@ -154,7 +165,7 @@ export const HEAD_TAGS = [
   `<meta name="description" content="${APP_DESCRIPTION}">`,
   `<meta name="application-name" content="${APP_NAME}">`,
   `<meta name="apple-mobile-web-app-title" content="${APP_NAME}">`,
-  '<meta name="theme-color" content="#F1ECE1">',
+  '<meta name="theme-color" content="#161A22">',
   '<link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">',
   '<link rel="apple-touch-icon" href="/assets/icon-180.png">',
   '<link rel="manifest" href="/assets/manifest.webmanifest">',
