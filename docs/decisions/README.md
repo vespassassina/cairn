@@ -59,6 +59,7 @@ A decision that changes is not edited away. Add a new ADR that supersedes it, an
 | [049](ADR-049.md) | A backup is a whole database, taken because something changed | accepted | 2026-09-16 |
 | [050](ADR-050.md) | Backups go to the platform's own object storage, named by one setting | accepted, completes 049 | 2026-09-16 |
 | [051](ADR-051.md) | Cairn climbs down a ladder before it starts, and stops when it runs out of rungs | accepted, extends 046 | 2026-09-16 |
+| [052](ADR-052.md) | A pair of Cairns is offered a schedule the moment it becomes a pair | accepted, extends 029 | 2026-09-16 |
 
 ## Writing one
 

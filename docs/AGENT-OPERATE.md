@@ -132,9 +132,9 @@ Then run the checks in section 3. Keep server and CLI on the same release where 
 
 Commands in `docs/CLI.md`, "Keep two Cairns the same" and "Several Cairns as one" (ADR-023, ADR-029, ADR-030).
 
-1. **Register each copy once,** in the person's order, the one to use first first: `cairn instances add laptop http://localhost:8787 --start "pnpm --dir <repository> dev"`, then `cairn instances add azure <address>`. Then `cairn login --instance azure`.
+1. **Register each copy once,** in the person's order, the one to use first first: `cairn instances add laptop http://localhost:8787 --start "pnpm --dir <repository> dev"`, then `cairn instances add azure <address>`. Then `cairn login --instance azure`. Registering the second one offers to install a scheduled sync (ADR-052). You will not see the question, because it is only asked when a person is at a terminal; you get a line on stderr naming the command instead. Put that to the person rather than running it: it installs a background job on their machine.
 2. **Sync, always dry run first:** `cairn sync --dry-run`, then `cairn sync`. With instances registered, it syncs them all through the first that answers. `cairn sync <a> <b>` syncs one pair.
-3. **On a schedule:** `cairn sync install --every 1h`, after asking; it installs a launchd, systemd or Task Scheduler job. `cairn sync uninstall` removes it. Syncing more often than `CAIRN_IDLE_MINUTES` keeps a Cairn on Azure awake, which costs more.
+3. **On a schedule:** `cairn sync install --every 4h`, after asking; it installs a launchd, systemd or Task Scheduler job. `cairn sync uninstall` removes it. Four hours is the default and is six wakes a day. Syncing more often than `CAIRN_IDLE_MINUTES` keeps a Cairn on Azure awake, which costs more, so shorten it only if the person asks for that after hearing the cost. When they want a change across now, run `cairn sync` once instead.
 4. **Starting the day:** `cairn start` starts the first instance if it is down and syncs.
 5. **Reading a report.** `merged:` means both sides changed a record in different parts and both edits were kept. `conflict:` means both changed the same part, and the newer edit won; the other is in that record's history, and `cairn history <page-id>` shows it. Tell the person about every conflict.
 

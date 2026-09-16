@@ -6,6 +6,16 @@ Entries link to the ADR when there is one. A change of direction that has no ADR
 
 ## 2026-09-16
 
+### Two registered Cairns are offered a schedule, and the default interval is now four hours
+
+The owner's direction: "paired instance should sync every few hours automatically". `cairn sync install` had been there since ADR-029 and had never been run, including on the owner's own pair, which is the worst shape this feature can take: two Cairns a person believes are paired, drifting apart at whatever rate they are edited. Nothing was broken about the command. It was one line in a help listing, and somebody who has just registered a second Cairn has no reason to read further. So the offer is now made at the moment a pair comes into being, which is the one moment the person is certainly thinking about the pair, and never again once a job exists. ADR-052.
+
+It stays an offer. Anything but an explicit yes installs nothing and prints the command for later, because installing writes a launchd agent, a systemd user timer or a Windows scheduled task, which is the person's machine rather than Cairn's, and a background job that turns up because a wiki command decided it should is not something to do to somebody. With nobody there to answer, which is every script and every agent, the registration succeeds and a line on stderr names the command; Cairn never blocks on an answer that cannot come. A failed install never costs the registration, since the instances are saved first and the failure is reported with the command to retry.
+
+The default interval goes from one hour to four. Every run reaches the cloud copy, and on Azure that wakes a container which then stays up for its idle timeout of about thirty minutes, so the interval is not a freshness setting but a choice about how much of the day the cloud copy is billed as awake. An hour left it awake roughly half the time, quietly working against ADR-020's premise that Cairn lives inside a free grant. Four hours is six wakes a day and about three hours asleep in every four. `cairn sync` by hand remains the answer when a change is wanted across now, and the guides say so rather than suggesting a shorter schedule.
+
+Asking is a new capability on the CLI's `Io`, injected like opening a browser, so the tests drive all four paths: yes, no, nobody there, and an install that fails. The implementation reads one line from the controlling terminal through `node:fs/promises`, which hard rule 16 already allows. The obvious way to write it, a `data` listener on `process.stdin`, works on Node and hangs forever on Bun, where the CLI ships as a compiled executable; see `docs/LESSONS.md`.
+
 ### -i is now the short form of --instance
 
 The owner's direction, given while signing in to the deployed Cairn: "for CLI cairn login, instead of --instance, also allow -i". Sign-in is where the flag hurts most, because `login` is the one command that cannot go to whichever instance answers, so there is no version of it that skips the flag. It is added as a short form on the existing option rather than as something `login` alone accepts, so it means the same thing on every command and a wrong name fails the same way. `-i` was unclaimed; the CLI had only `-h` and `-V`.

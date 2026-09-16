@@ -13,6 +13,12 @@ Rules:
 
 ## 2026-09-16
 
+### Paired Cairns should sync themselves
+
+> "paired instance should sync every few hours automatically"
+
+`cairn sync install` had existed since ADR-029 and nobody had run it, including on the owner's own laptop and Azure pair, so two registered Cairns were paired in name and drifting in fact. Two things in the direction needed the owner rather than the agent, and both were put back to them. "Every few hours" was made four hours, because every run wakes the Azure copy for its 30 minute idle timeout and the interval is really a choice about how much of the day the cloud is awake; the old default of an hour left it awake about half the time. And "automatically" was made an offer rather than an action, taken at the moment a second Cairn is registered, because installing the job writes a launchd agent or a systemd timer on the person's own machine. The owner chose both. ADR-052.
+
 ### Give --instance a short form
 
 > "for CLI cairn login, instead of --instance, also allow -i"

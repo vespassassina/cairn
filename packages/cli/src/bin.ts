@@ -63,12 +63,42 @@ async function readStdin(): Promise<string | null> {
   return chunks.length === 0 ? null : Buffer.concat(chunks).toString("utf8");
 }
 
+/**
+ * One line from the person, for a question cairn can carry on without. Null
+ * when there is nobody there: no terminal either way, or input being piped,
+ * which covers every script and every agent. Written on `process` alone
+ * rather than `node:readline`, which hard rule 16 keeps out of this CLI so
+ * that the same source runs on Node and as a compiled Bun executable.
+ */
+async function ask(question: string): Promise<string | null> {
+  if (!process.stdin.isTTY || !process.stdout.isTTY) return null;
+  let tty;
+  try {
+    tty = await open(process.platform === "win32" ? "CONIN$" : "/dev/tty", "r");
+  } catch {
+    // No terminal to read, whatever isTTY said. Treated as nobody being
+    // there, which is a caller's ordinary case, not an error.
+    return null;
+  }
+  try {
+    process.stdout.write(question);
+    const buffer = Buffer.alloc(256);
+    const { bytesRead } = await tty.read(buffer, 0, buffer.length, null);
+    return buffer.subarray(0, bytesRead).toString("utf8").trim();
+  } catch {
+    return null;
+  } finally {
+    await tty.close().catch(() => undefined);
+  }
+}
+
 const code = await run(process.argv.slice(2), {
   fetch: (request) => fetch(request),
   env: process.env,
   stdout: (text) => process.stdout.write(text),
   stderr: (text) => process.stderr.write(text),
   stdin: readStdin,
+  ask,
   openBrowser,
   exec,
   launch,

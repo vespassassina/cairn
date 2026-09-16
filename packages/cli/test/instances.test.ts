@@ -28,6 +28,9 @@ let calls: Array<{ command: string; args: string[] }>;
 let launched: Array<{ command: string; log: string }>;
 let platform: string;
 let seen: string[];
+/** What the person answers when cairn asks. Null means nobody is there. */
+let answer: string | null;
+let asked: string[];
 
 function io(): Io {
   return {
@@ -45,6 +48,10 @@ function io(): Io {
       stderr += text;
     },
     stdin: async () => null,
+    ask: async (question) => {
+      asked.push(question);
+      return answer;
+    },
     exec: async (command, args) => {
       calls.push({ command, args });
       return { code: 0, output: "" };
@@ -87,6 +94,8 @@ beforeEach(async () => {
   launched = [];
   seen = [];
   platform = "darwin";
+  answer = null;
+  asked = [];
   config = await mkdtemp(join(tmpdir(), "cairn-instances-test-"));
 });
 
@@ -110,6 +119,70 @@ describe("registering instances", () => {
         { name: "cloud", url: CLOUD },
       ],
     });
+  });
+
+  // A pair that nothing keeps in sync is not a pair, and `cairn sync install`
+  // went unrun for exactly as long as it was only mentioned in the help.
+  // Registering the second Cairn is the moment to offer it, and an offer is
+  // all it may be: it installs a launchd agent or a systemd timer, which is
+  // the person's machine rather than Cairn's.
+  it("offers a scheduled sync when a second Cairn is registered, and installs it on yes", async () => {
+    answer = "y";
+    expect(await cairn("instances", "add", "laptop", LAPTOP)).toBe(0);
+    // Not for the first: one Cairn has nothing to sync with.
+    expect(asked).toEqual([]);
+
+    expect(await cairn("instances", "add", "cloud", CLOUD)).toBe(0);
+    expect(asked).toHaveLength(1);
+    expect(asked[0]).toContain("every 4h");
+    expect(stdout).toContain("installed: cairn sync at login and every 4h");
+    // Installed for real, through the same path cairn sync install uses.
+    const plist = await readFile(join(config, "Library", "LaunchAgents", "dev.cairn.sync.plist"), "utf8");
+    expect(plist).toContain("<string>sync</string>");
+    expect(plist).toContain(`<integer>${4 * 60 * 60}</integer>`);
+  });
+
+  it("does not install when the answer is no, or when nobody is there to answer", async () => {
+    answer = "";
+    expect(await cairn("instances", "add", "laptop", LAPTOP)).toBe(0);
+    expect(await cairn("instances", "add", "cloud", CLOUD)).toBe(0);
+    // Anything but yes is no, because the cost of guessing wrong is a
+    // background job on someone's machine that they did not ask for.
+    expect(stdout).toContain("When you want it: cairn sync install --every 4h");
+    expect(calls).toEqual([]);
+
+    answer = null;
+    expect(await cairn("instances", "add", "spare", SPARE)).toBe(0);
+    // A script or an agent gets told how, and is never left waiting.
+    expect(stderr).toContain("they do not sync themselves yet");
+    expect(stderr).toContain("cairn sync install --every 4h");
+    expect(calls).toEqual([]);
+  });
+
+  it("does not ask twice once a job is installed", async () => {
+    answer = "yes";
+    expect(await cairn("instances", "add", "laptop", LAPTOP)).toBe(0);
+    expect(await cairn("instances", "add", "cloud", CLOUD)).toBe(0);
+    asked = [];
+    expect(await cairn("instances", "add", "spare", SPARE)).toBe(0);
+    expect(asked).toEqual([]);
+    expect(stdout).not.toContain("cairn sync install");
+  });
+
+  it("keeps the instance registered when installing the job fails", async () => {
+    answer = "y";
+    expect(await cairn("instances", "add", "laptop", LAPTOP)).toBe(0);
+    platform = "linux";
+    // systemctl refusing is the ordinary case on a machine with no user
+    // session, and it must not cost the person their registration.
+    const failing = { ...io(), exec: async () => ({ code: 1, output: "Failed to connect to bus" }) };
+    stdout = "";
+    stderr = "";
+    expect(await run(["instances", "add", "cloud", CLOUD], failing)).toBe(0);
+    expect(stderr).toContain("the instances are registered");
+    expect(stderr).toContain("cairn sync install --every 4h");
+    expect(await cairn("instances", "--json")).toBe(0);
+    expect(JSON.parse(stdout).instances).toHaveLength(2);
   });
 
   it("refuses a bad name, a bad address and a repeat", async () => {

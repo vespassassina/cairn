@@ -71,6 +71,12 @@ export interface Io {
   stderr: (text: string) => void;
   /** Piped input, or null when there is none. */
   stdin: () => Promise<string | null>;
+  /**
+   * Asks the person a question and waits for one line. Null when there is
+   * nobody to ask: no terminal, input being piped, a script, an agent. A
+   * caller that gets null must carry on without the answer, never block.
+   */
+  ask?: (question: string) => Promise<string | null>;
   /** Opens a URL in the user's browser, for cairn login. */
   openBrowser?: (url: string) => Promise<void>;
   /** Runs a program and waits for it, with no shell, for cairn sync install. */
@@ -149,8 +155,9 @@ Several Cairns: a laptop and a cloud copy, say, kept as one
   cairn instances add <name> <url> [--first] [--start "command"]
   cairn instances remove <name>
   cairn start                                     start the first if it is down, then sync them all
-  cairn sync [--every 1h] [--dry-run]             sync the first that answers with each of the others
-  cairn sync install [--every 1h] [--dry-run]     run that sync on a schedule, as a background job
+  cairn sync [--every 4h] [--dry-run]             sync the first that answers with each of the others
+  cairn sync install [--every 4h] [--dry-run]     run that sync on a schedule, as a background job
+                                                  offered when you register a second Cairn; 4h by default
   cairn sync uninstall
   With instances registered, every command goes to the first that answers; --instance NAME picks one.
 
@@ -217,8 +224,14 @@ const OWN_SERVERS = new Set(["instances", "start", "sync"]);
 /** How long cairn start waits for an instance it started. */
 const START_WAIT_MS = 90_000;
 
-/** The default for a scheduled sync: long enough to let a cloud copy sleep between runs. */
-const DEFAULT_EVERY_MS = 3_600_000;
+/**
+ * The default for a scheduled sync. Every run wakes a Cairn on Azure, which
+ * then stays up for its idle timeout of about 30 minutes, so the interval is
+ * really a choice about how much of the day the cloud copy is awake. Four
+ * hours is six wakes a day, three of those hours asleep out of every four.
+ * It was an hour until 2026-09-16, which left it awake about half the time.
+ */
+const DEFAULT_EVERY_MS = 4 * 3_600_000;
 
 /** How long check-sources waits for one address before calling it dead. */
 const DEFAULT_CHECK_TIMEOUT_MS = 10_000;
@@ -626,8 +639,8 @@ export async function run(argv: string[], io: Io): Promise<number> {
     );
   };
 
-  const installJob = async (): Promise<number> => {
-    if (registered.length < 2) {
+  const installJob = async (instances: Instance[] = registered): Promise<number> => {
+    if (instances.length < 2) {
       throw new UsageError("register two or more instances first: cairn instances add <name> <url>");
     }
     let everyMs = DEFAULT_EVERY_MS;
@@ -718,6 +731,40 @@ export async function run(argv: string[], io: Io): Promise<number> {
     }
     io.stdout("removed the scheduled sync. Instances, sign-ins and sync state are kept\n");
     return 0;
+  };
+
+  /**
+   * Offered the moment a second Cairn is registered, which is the moment a
+   * pair comes into being and the only moment the person is certainly
+   * thinking about it. `cairn sync install` had existed for a while and went
+   * unrun, so two registered Cairns drifted apart and the pairing was a
+   * promise nothing kept.
+   *
+   * It stays an offer. Installing writes a launchd agent, a systemd timer or
+   * a scheduled task, which is the person's machine rather than Cairn's, and
+   * a background job that appears because a wiki command decided it should is
+   * not something to do to somebody. With nobody there to ask, it says how.
+   */
+  const offerScheduledSync = async (instances: Instance[]): Promise<void> => {
+    const every = describeInterval(DEFAULT_EVERY_MS);
+    const how = `cairn sync install --every ${every}`;
+    if (await jobInstalled()) return;
+    const answer = io.ask ? await io.ask(`Keep your ${instances.length} Cairns in sync every ${every}, with no terminal open? [y/N] `) : null;
+    if (answer === null) {
+      io.stderr(`they do not sync themselves yet. To make them: ${how}\n`);
+      return;
+    }
+    if (!/^y(es)?$/i.test(answer.trim())) {
+      io.stdout(`not installed. When you want it: ${how}\n`);
+      return;
+    }
+    try {
+      await installJob(instances);
+    } catch (error) {
+      // The instances are registered either way, and saying otherwise would
+      // be worse than the failure: it is one command to retry.
+      io.stderr(`error: the instances are registered, but the scheduled sync could not be installed: ${reason(error)}\nRun it yourself when you have: ${how}\n`);
+    }
   };
 
   /** Every page under `root` (or all of them), parents first, as `export` reads them. */
@@ -1506,6 +1553,7 @@ export async function run(argv: string[], io: Io): Promise<number> {
           await saveInstances(registry, next);
           const signIn = isLoopback(normalised) ? "" : ` If it uses sign-in: cairn login --instance ${entry.name}`;
           io.stdout(`added ${entry.name} (${normalised}), number ${next.indexOf(entry) + 1} of ${next.length}.${signIn}\n`);
+          if (next.length >= 2) await offerScheduledSync(next);
           return 0;
         }
         if (action === "remove") {
@@ -1551,7 +1599,7 @@ export async function run(argv: string[], io: Io): Promise<number> {
           return 0;
         }
         const ok = await syncAll(false);
-        if (!(await jobInstalled())) io.stderr("to keep them in sync from now on: cairn sync install --every 1h\n");
+        if (!(await jobInstalled())) io.stderr(`to keep them in sync from now on: cairn sync install --every ${describeInterval(DEFAULT_EVERY_MS)}\n`);
         return ok ? 0 : 1;
       }
 
