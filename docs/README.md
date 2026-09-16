@@ -33,6 +33,10 @@ How one thing flows through them: the owner asks for something (a direction). If
 
 `ROADMAP.md`. What is done, in progress and next, and what gates each phase.
 
+## Work not yet built
+
+`specs/`. One file per piece of work that has been decided but not written. An ADR says what was decided and why; a spec says what has to exist for that decision to be true, and how anyone can tell whether it is. Each carries numbered acceptance criteria, the hard rules that bear on it, and its open questions. `specs/README.md` indexes them.
+
 ## Rules for keeping them
 
 Set in `../CLAUDE.md`, under documentation discipline. In short:

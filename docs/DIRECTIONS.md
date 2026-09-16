@@ -13,6 +13,22 @@ Rules:
 
 ## 2026-09-16
 
+### Review the app, then write up the fixes properly
+
+> "review the app, propose fixes and improvements to make this tool really useful."
+
+Then, once the review was delivered:
+
+> "analize the fixes, write detailed adrs, specs and roadmap."
+
+Two directions, logged together because the second is what turned the first into something the project keeps. The word that shaped the first was "really useful": not a code review and not a list of features, but a question about whether the thing works as a tool for the person who built it. So the review was done against the running system, by using it: the laptop copy, the console at a desktop width and on a phone, a live MCP initialize, and the CLI pushed at deliberately.
+
+The answer was that on that day, on the owner's own machine, nothing could reach Cairn at all, for four separate reasons that were each a piece of setup quietly decayed. That is the finding the whole review turns on, and it is why the first two items of work are about presence and sign-in rather than about anything a feature list would have named.
+
+The second direction is the one that decided the shape. Analyse before writing, so the ADRs are checkable against code rather than asserted, and every claim in them was traced to the line responsible before it was written down. "Specs" also filled a gap: the global instructions have asked for `docs/specs/<name>.md` all along and this project had no such directory.
+
+Landed as ADR-053 to ADR-058, four specs in the new `docs/specs/`, a "The review of 2026-09-16" section in `docs/ROADMAP.md`, and a changelog entry. The review itself is a page in the owner's Cairn, "Cairn review 2026-09-16: fixes and improvements", under the Cairn project page. No code changed.
+
 ### Paired Cairns should sync themselves
 
 > "paired instance should sync every few hours automatically"

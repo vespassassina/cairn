@@ -16,11 +16,11 @@ A decision that changes is not edited away. Add a new ADR that supersedes it, an
 | [006](ADR-006.md) | Hono plus stateless MCP transport, lowest common denominator | accepted, runtime targets superseded by 020 | 2026-09-11 |
 | [007](ADR-007.md) | Auth is one small OAuth server in front of any OIDC provider | accepted, amended by 017 | 2026-09-11 |
 | [008](ADR-008.md) | Every write is a revision, and agents write directly | accepted | 2026-09-12 |
-| [009](ADR-009.md) | A server-rendered review console, styled with artifactkit | accepted, rule 5 amended by 010 | 2026-09-12 |
+| [009](ADR-009.md) | A server-rendered review console, styled with artifactkit | accepted, rule 5 amended by 010, extended by 056 | 2026-09-12 |
 | [010](ADR-010.md) | No sign-in for trusted local requests | accepted | 2026-09-12 |
 | [011](ADR-011.md) | Cairn tells clients when to use it | accepted, extended by 012 | 2026-09-12 |
-| [012](ADR-012.md) | The server instructions carry a live summary of the workspace | accepted | 2026-09-12 |
-| [013](ADR-013.md) | One core, three surfaces: MCP, REST and a CLI | accepted | 2026-09-12 |
+| [012](ADR-012.md) | The server instructions carry a live summary of the workspace | accepted, amended by 055 | 2026-09-12 |
+| [013](ADR-013.md) | One core, three surfaces: MCP, REST and a CLI | accepted, extended by 058 | 2026-09-12 |
 | [014](ADR-014.md) | The CLI ships as an npm package and as standalone executables | accepted | 2026-09-12 |
 | [015](ADR-015.md) | Source-available under PolyForm Noncommercial 1.0.0 | accepted | 2026-09-12 |
 | [016](ADR-016.md) | Export is a folder of Markdown and JSON that imports back without loss | accepted | 2026-09-12 |
@@ -28,11 +28,11 @@ A decision that changes is not edited away. Add a new ADR that supersedes it, an
 | [018](ADR-018.md) | The first Azure deployment: Container Apps with Litestream | accepted, decision 6 superseded by 020 | 2026-09-12 |
 | [019](ADR-019.md) | Installation is written for an agent to follow, with the person at the checkpoints | accepted | 2026-09-12 |
 | [020](ADR-020.md) | One container everywhere, as small as it can be, with SQLite on a mounted volume or a replica | accepted, supersedes parts of 006 and 018 | 2026-09-12 |
-| [021](ADR-021.md) | Keyword search returns pages that hold most of the query's words, stemmed | accepted | 2026-09-12 |
+| [021](ADR-021.md) | Keyword search returns pages that hold most of the query's words, stemmed | accepted, amended by 025 and 057 | 2026-09-12 |
 | [022](ADR-022.md) | Vector search in SQLite with sqlite-vec, and a small English model inside the container | accepted, supersedes 003 as the default | 2026-09-13 |
 | [023](ADR-023.md) | Two Cairns sync through the cairn command, by comparing each record with the last sync | accepted, amended by 024, extended by 029 and 030 | 2026-09-13 |
 | [024](ADR-024.md) | Collections sit in the page tree, and relation fields are links | accepted | 2026-09-13 |
-| [025](ADR-025.md) | Headings weigh more than text, and a search for a page's exact title finds that page first | accepted, amends 021 | 2026-09-13 |
+| [025](ADR-025.md) | Headings weigh more than text, and a search for a page's exact title finds that page first | accepted, amends 021, amended by 057 | 2026-09-13 |
 | [026](ADR-026.md) | A collection is a top-level page and its tree; typed tables are tables | accepted, amends 009 and 024 | 2026-09-13 |
 | [027](ADR-027.md) | Pages and rows keep a list of sources | accepted | 2026-09-14 |
 | [028](ADR-028.md) | Pages record when their facts were last verified | accepted | 2026-09-14 |
@@ -40,7 +40,7 @@ A decision that changes is not edited away. Add a new ADR that supersedes it, an
 | [030](ADR-030.md) | Sync orders edits by when they were made, and merges both sides the way git does | accepted, extends 023 | 2026-09-14 |
 | [031](ADR-031.md) | Agents run Cairn from a guide written for them, checked against the code, and the code guides them too | accepted, extends 019 | 2026-09-14 |
 | [032](ADR-032.md) | A collection can be published, read-only and without sign-in | accepted, amends 017 | 2026-09-14 |
-| [033](ADR-033.md) | A refresh token answers a repeat for one minute before it counts as theft | accepted | 2026-09-14 |
+| [033](ADR-033.md) | A refresh token answers a repeat for one minute before it counts as theft | accepted, amended by 054 | 2026-09-14 |
 | [034](ADR-034.md) | A public Cairn describes itself at /.well-known/cairn.json | accepted | 2026-09-14 |
 | [035](ADR-035.md) | cairn export can write a static site, no server required | accepted | 2026-09-14 |
 | [036](ADR-036.md) | cairn check-sources reports dead links and recognises DOIs and PubMed ids | accepted | 2026-09-15 |
@@ -60,6 +60,12 @@ A decision that changes is not edited away. Add a new ADR that supersedes it, an
 | [050](ADR-050.md) | Backups go to the platform's own object storage, named by one setting | accepted, completes 049 | 2026-09-16 |
 | [051](ADR-051.md) | Cairn climbs down a ladder before it starts, and stops when it runs out of rungs | accepted, extends 046 | 2026-09-16 |
 | [052](ADR-052.md) | A pair of Cairns is offered a schedule the moment it becomes a pair | accepted, extends 029 | 2026-09-16 |
+| [053](ADR-053.md) | Cairn makes itself present, or it is not memory | accepted | 2026-09-16 |
+| [054](ADR-054.md) | A sign-in survives a lost race and a slow start | accepted, amends 033 | 2026-09-16 |
+| [055](ADR-055.md) | The workspace summary gets its own budget, not the leftovers | accepted, amends 012 | 2026-09-16 |
+| [056](ADR-056.md) | The console is readable on a phone | accepted, extends 009 | 2026-09-16 |
+| [057](ADR-057.md) | A search result names each page once | accepted, amends 021 and 025 | 2026-09-16 |
+| [058](ADR-058.md) | An agent can walk the tree, and MCP catches up with the other two surfaces | accepted, extends 013 | 2026-09-16 |
 
 ## Writing one
 
