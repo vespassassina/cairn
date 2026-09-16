@@ -13,6 +13,16 @@ Rules:
 
 ## 2026-09-16
 
+### Backups belong in the platform's own object storage
+
+> "on azure the backup must go to blob, on aws on s3 and so on."
+
+Given immediately after the backup engine landed with only a folder archive, which on Azure meant the container's own disk. Cairn warned at startup that those backups would be lost with the container, and the direction is the correct response to that warning: a warning that your backups are worthless is not a backup.
+
+"And so on" set the shape rather than naming a list. One setting, `CAIRN_BACKUP_TO`, whose scheme picks the destination, mirroring `CAIRN_REPLICA_URL`, which already resolves to `abs://` on Azure and `s3://` elsewhere. S3 covers AWS and everything else that speaks S3, including MinIO and Backblaze through `CAIRN_BACKUP_ENDPOINT`, which is also the honest route to GCP.
+
+Landed in `docs/decisions/ADR-050.md`, `packages/api/src/backup/azure.ts`, `packages/api/src/backup/s3.ts`, `packages/api/src/backup/open.ts` and `deploy/azure/main.bicep`.
+
 ### Make it start and deploy clean, and back up before shutting down
 
 > "my take: make it start and deploy clean, then add the import, wrap into error management. log issues"

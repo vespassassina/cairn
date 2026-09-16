@@ -5,8 +5,8 @@ import { createApp } from "../app.js";
 import { ConfigError, loadConfig } from "../config.js";
 import { closeContext, createContext } from "../context.js";
 import { oauthFromConfig } from "../oauth/setup.js";
-import { FolderArchive } from "../backup/archive.js";
 import { BackupEngine } from "../backup/engine.js";
+import { openArchive } from "../backup/open.js";
 import { installShutdown } from "./shutdown.js";
 
 /**
@@ -41,10 +41,13 @@ async function main(): Promise<void> {
   // Backups are a capability of the store rather than something every adapter
   // must answer for (ADR-049), so this is a check rather than an assumption.
   const backups =
-    config.backups.dir !== null && canSnapshot(context.store)
+    config.backups.to !== null && canSnapshot(context.store)
       ? new BackupEngine({
           source: context.store,
-          archive: new FolderArchive(config.backups.dir),
+          archive: openArchive(config.backups.to, {
+            ...(config.backups.region === null ? {} : { region: config.backups.region }),
+            ...(config.backups.endpoint === null ? {} : { endpoint: config.backups.endpoint }),
+          }),
           policy: {
             afterMs: config.backups.afterHours * 60 * 60 * 1000,
             keepMs: config.backups.keepDays * 24 * 60 * 60 * 1000,
@@ -57,13 +60,16 @@ async function main(): Promise<void> {
     await backups.start();
     // A replica URL means the database is being streamed off this machine,
     // which means this machine's disk is not expected to outlive the
-    // container. Backups written to it would then be lost exactly when they
-    // are needed. Say so rather than let them look like protection.
-    if (process.env["CAIRN_REPLICA_URL"]) {
+    // container, and that object storage is already reachable. Backups left on
+    // the local disk would be lost exactly when they are needed, so say so
+    // rather than let them look like protection (ADR-050).
+    const local = !/^[a-z][a-z0-9+.-]*:\/\//i.test(config.backups.to!);
+    if (local && process.env["CAIRN_REPLICA_URL"]) {
       process.stdout.write(
-        `cairn: warning: backups are going to ${config.backups.dir}, on this container's own disk, ` +
-          "but CAIRN_REPLICA_URL is set, which means this disk does not outlive the container. " +
-          "These backups will be lost when it stops. Point CAIRN_BACKUP_DIR at a mounted volume that survives, or set it to off until backups can be sent to storage.\n",
+        `cairn: warning: backups are going to ${config.backups.to}, a folder on this machine, ` +
+          "but CAIRN_REPLICA_URL is set, which usually means this disk does not outlive the container. " +
+          "If so these backups are lost when it stops. Point CAIRN_BACKUP_TO at object storage " +
+          "(abs://<account>@<container>/<prefix> or s3://<bucket>/<prefix>), or at a mounted volume that survives.\n",
       );
     }
   }

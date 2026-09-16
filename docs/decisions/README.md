@@ -57,6 +57,7 @@ A decision that changes is not edited away. Add a new ADR that supersedes it, an
 | [047](ADR-047.md) | A deploy names the image by digest, and says when it changes nothing | accepted | 2026-09-16 |
 | [048](ADR-048.md) | Cairn stops on purpose, inside the time the platform allows | accepted, extends 046 | 2026-09-16 |
 | [049](ADR-049.md) | A backup is a whole database, taken because something changed | accepted | 2026-09-16 |
+| [050](ADR-050.md) | Backups go to the platform's own object storage, named by one setting | accepted, completes 049 | 2026-09-16 |
 
 ## Writing one
 

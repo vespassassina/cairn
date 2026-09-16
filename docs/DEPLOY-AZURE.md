@@ -152,7 +152,13 @@ Any of these work: a version, `latest` for the newest release, `edge` for the ne
 az containerapp logs show -g cairn -n cairn --follow
 ```
 
-**Keep your own copy.** Litestream is a replica, not a backup. It copies SQLite's pages continuously, so a new container starts from a copy seconds old, but damage to the database reaches it just as quickly; that is how this Cairn was lost for four days in September 2026. Cairn also takes its own backups, whole copies of the database checked before they are kept (ADR-049), but on Azure these currently go to the container's own disk and are lost when it stops, and Cairn says so in its startup log. So until backups can be sent to storage, run `cairn export ~/cairn-backup` now and then. It is the one copy you hold yourself and the one you can read.
+**Two copies, and they are not the same thing.** Litestream is a replica: it copies SQLite's pages continuously, so a new container starts from a copy seconds old, but damage to the database reaches it just as quickly. That is how this Cairn was lost for four days in September 2026. So Cairn also takes its own backups: whole copies of the database, each one read back and checked before it is kept (ADR-049). The template puts them in a second blob container, `cairn-backups`, separate from the replica on purpose, and the app's managed identity is what reaches it, so no storage key exists here either (ADR-050). To see them:
+
+```
+az storage blob list --account-name <account> --container-name cairn-backups --auth-mode login -o table
+```
+
+**Keep one copy yourself as well.** Both of the above live in the same storage account, under the same subscription. `cairn export ~/cairn-backup` now and then gives you one that does not, and one you can read without Cairn.
 
 **Rotate the signing secret.** Move the current value to `CAIRN_AUTH_SECRET_PREVIOUS` in `deploy/azure/.cairn-deploy.env`, delete `CAIRN_AUTH_SECRET`, and run the script. Tokens signed with the old secret keep working until they expire.
 

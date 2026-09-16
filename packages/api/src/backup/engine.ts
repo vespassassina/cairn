@@ -207,9 +207,13 @@ function message(error: unknown): string {
 
 function describeAge(ms: number): string {
   const hours = ms / (60 * 60 * 1000);
-  if (hours < 1) return `${Math.max(1, Math.round(ms / 60000))} minutes`;
-  if (hours < 48) return `${Math.round(hours)} hours`;
-  return `${Math.round(hours / 24)} days`;
+  if (hours < 1) return plural(Math.max(1, Math.round(ms / 60000)), "minute");
+  if (hours < 48) return plural(Math.round(hours), "hour");
+  return plural(Math.round(hours / 24), "day");
+}
+
+function plural(count: number, noun: string): string {
+  return `${count} ${noun}${count === 1 ? "" : "s"}`;
 }
 
 function formatBytes(bytes: number): string {

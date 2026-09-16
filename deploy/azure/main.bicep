@@ -2,8 +2,9 @@
 //
 // What this creates, all inside the free grants for one person's use:
 //
-// 1. A storage account with one private blob container. Litestream keeps the
-//    SQLite database there, so it survives restarts and scale to zero.
+// 1. A storage account with two private blob containers. Litestream streams the
+//    SQLite database to the first, so it survives restarts and scale to zero.
+//    Cairn's own backups go to the second, kept apart on purpose (ADR-049).
 // 2. A Container Apps environment on the consumption plan, with no Log
 //    Analytics workspace, which would bill per gigabyte.
 // 3. The Cairn container app: one replica at most, zero when idle, HTTPS on
@@ -77,6 +78,10 @@ var deployApp = !empty(oauthClientId)
 var suffix = uniqueString(resourceGroup().id, name)
 var storageName = toLower('${take(replace(name, '-', ''), 10)}${take(suffix, 12)}')
 var blobContainerName = 'cairn'
+// Backups live in their own container, not beside the replica (ADR-049).
+// A replica and a backup fail differently, and one mistaken deletion or one
+// wrong credential should not be able to take both.
+var backupContainerName = 'cairn-backups'
 
 resource storage 'Microsoft.Storage/storageAccounts@2023-05-01' = {
   name: storageName
@@ -106,6 +111,14 @@ resource blobContainer 'Microsoft.Storage/storageAccounts/blobServices/container
   }
 }
 
+resource backupContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = {
+  parent: blobService
+  name: backupContainerName
+  properties: {
+    publicAccess: 'None'
+  }
+}
+
 resource environment 'Microsoft.App/managedEnvironments@2024-03-01' = {
   name: '${name}-env'
   location: location
@@ -125,6 +138,7 @@ var baseEnv = [
   { name: 'CAIRN_AUTH_SECRET', secretRef: 'auth-secret' }
   { name: 'CAIRN_ALLOWED_USERS', value: allowedUsers }
   { name: 'CAIRN_REPLICA_URL', value: 'abs://${storage.name}@${blobContainerName}/cairn.sqlite' }
+  { name: 'CAIRN_BACKUP_TO', value: 'abs://${storage.name}@${backupContainerName}/backups' }
   { name: 'CAIRN_EMBEDDINGS', value: embeddings }
 ]
 var oidcEnv = authProvider == 'oidc' ? [ { name: 'CAIRN_OIDC_ISSUER', value: oidcIssuer } ] : []
@@ -246,6 +260,9 @@ output callbackUrl string = '${publicUrl}/oauth/callback'
 
 @description('Where the database is kept.')
 output replica string = 'abs://${storage.name}@${blobContainerName}/cairn.sqlite'
+
+@description('Where the backups are kept. A different container from the replica, on purpose.')
+output backups string = 'abs://${storage.name}@${backupContainerName}/backups'
 
 @description('False on the first pass: create the OAuth app, then deploy again with its client id.')
 output appDeployed bool = deployApp

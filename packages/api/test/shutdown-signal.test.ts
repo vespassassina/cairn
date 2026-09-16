@@ -62,7 +62,7 @@ describe("stopping the server on SIGTERM", () => {
         // and none of it bears on shutting down (ADR-022).
         CAIRN_EMBEDDINGS: "off",
         CAIRN_SHUTDOWN_SECONDS: "10",
-        CAIRN_BACKUP_DIR: join(dir, "backups"),
+        CAIRN_BACKUP_TO: join(dir, "backups"),
       },
       stdio: ["ignore", "pipe", "pipe"],
     });

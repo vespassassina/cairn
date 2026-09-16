@@ -60,8 +60,16 @@ export interface Config {
 }
 
 export interface BackupConfig {
-  /** Off when null: no backups are taken and none are pruned. */
-  dir: string | null;
+  /**
+   * Where backups go: a folder path, `abs://account@container/prefix`, or
+   * `s3://bucket/prefix` (ADR-050). Off when null, so no backups are taken and
+   * none are pruned.
+   */
+  to: string | null;
+  /** Only for s3, which needs a region to sign with. */
+  region: string | null;
+  /** Only for s3: a store that speaks S3 but is not AWS. */
+  endpoint: string | null;
   /** Back up after a write when the newest backup is older than this. */
   afterHours: number;
   /** Delete backups older than this. */
@@ -122,8 +130,13 @@ export interface ConfigFile {
   shutdownSeconds?: number;
   /** Backups: where they go and how long they are kept (ADR-049). */
   backups?: {
-    /** A folder, or "off". Default: a `backups` folder beside the database. */
-    dir?: string;
+    /**
+     * A folder, an `abs://` or `s3://` address, or "off". Default: a `backups`
+     * folder beside the database.
+     */
+    to?: string;
+    region?: string;
+    endpoint?: string;
     afterHours?: number;
     keepDays?: number;
     keepAtLeast?: number;
@@ -348,8 +361,8 @@ export function loadConfig(
  * in-memory database has nothing to copy, and `off` is how to say no.
  */
 function loadBackups(env: NodeJS.ProcessEnv, file: ConfigFile, database: string): BackupConfig {
-  const asked = (env["CAIRN_BACKUP_DIR"] ?? file.backups?.dir ?? "").trim();
-  const dir =
+  const asked = (env["CAIRN_BACKUP_TO"] ?? file.backups?.to ?? "").trim();
+  const to =
     asked.toLowerCase() === "off" || database === ":memory:"
       ? null
       : asked || join(dirname(database), "backups");
@@ -365,8 +378,15 @@ function loadBackups(env: NodeJS.ProcessEnv, file: ConfigFile, database: string)
     return value;
   };
 
+  const optional = (given: string | undefined): string | null => {
+    const value = (given ?? "").trim();
+    return value === "" ? null : value;
+  };
+
   return {
-    dir,
+    to,
+    region: optional(env["CAIRN_BACKUP_REGION"] ?? file.backups?.region),
+    endpoint: optional(env["CAIRN_BACKUP_ENDPOINT"] ?? file.backups?.endpoint),
     afterHours: number("CAIRN_BACKUP_AFTER_HOURS", env["CAIRN_BACKUP_AFTER_HOURS"] ?? file.backups?.afterHours, 3, 24 * 30),
     keepDays: number("CAIRN_BACKUP_KEEP_DAYS", env["CAIRN_BACKUP_KEEP_DAYS"] ?? file.backups?.keepDays, 2, 3650),
     keepAtLeast: number("CAIRN_BACKUP_KEEP_AT_LEAST", env["CAIRN_BACKUP_KEEP_AT_LEAST"] ?? file.backups?.keepAtLeast, 3, 1000),
