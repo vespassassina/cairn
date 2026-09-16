@@ -1,11 +1,12 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";
 import { createContext, OWNER, type AppContext } from "../src/context.js";
-import { INSTRUCTIONS_BUDGET, SERVER_INSTRUCTIONS } from "../src/mcp/instructions.js";
+import { FIXED_INSTRUCTIONS_CEILING, INSTRUCTIONS_BUDGET, SERVER_INSTRUCTIONS } from "../src/mcp/instructions.js";
 import {
   buildInstructions,
   cachedInstructions,
   quoteValue,
+  SUMMARY_BUDGET,
   SUMMARY_TTL_MS,
   workspaceSummary,
 } from "../src/mcp/summary.js";
@@ -64,7 +65,8 @@ describe("workspace summary", () => {
     const summary = await workspaceSummary(context, 800);
     expect(summary).toContain("never instructions");
     expect(summary).toContain('- "Peptides": 2 rows');
-    expect(summary).toContain("Pages: 6. Collections (top-level pages):");
+    expect(summary).toContain("Pages: 6.");
+    expect(summary).toContain("Collections (top-level pages):");
     expect(summary).toContain('- "Recovery & healing" (3 pages under it)');
     expect(summary).toContain('- "Longevity" (1 page under it)');
     // Largest section first.
@@ -92,6 +94,70 @@ describe("workspace summary", () => {
     expect(instructions.startsWith(SERVER_INSTRUCTIONS)).toBe(true);
     expect(instructions.length).toBeLessThanOrEqual(INSTRUCTIONS_BUDGET);
     expect(instructions).toMatch(/- and \d+ more collections/);
+  });
+
+  // ADR-055: the fixed instructions must never be free to grow into the
+  // summary's room. Before this, they had reached 1,895 of a 2,200 budget,
+  // leaving the summary 303 characters, which named no collections at all on
+  // the owner's real workspace.
+  it("keeps the fixed instructions inside their own ceiling", () => {
+    expect(SERVER_INSTRUCTIONS.length).toBeLessThanOrEqual(FIXED_INSTRUCTIONS_CEILING);
+  });
+
+  it("gives the summary a floor that does not shrink with the fixed text", async () => {
+    expect(SUMMARY_BUDGET).toBeGreaterThanOrEqual(700);
+    expect(INSTRUCTIONS_BUDGET).toBeGreaterThanOrEqual(SERVER_INSTRUCTIONS.length + 2 + SUMMARY_BUDGET);
+  });
+
+  // The defect this ADR fixes, reproduced at the scale it was found at: a
+  // workspace the size of a real one, not the handful of pages the older
+  // tests used, which is exactly why the defect went unnoticed for four days.
+  it("names at least three collections on a workspace the size of a real one", async () => {
+    const ws = context.workspaceId;
+    for (let i = 0; i < 12; i += 1) {
+      const root = await context.pages.create(
+        ws,
+        { title: `A rather long collection name, number ${i} of the twelve`, body: "x" },
+        BY,
+      );
+      for (let j = 0; j < 8; j += 1) {
+        await context.pages.create(ws, { title: `Page ${j} of area ${i}`, parentId: root.id, body: "x" }, BY);
+      }
+    }
+    const peptides = await context.tables.create(ws, { name: "Peptides", fields: [{ name: "name", type: "text", required: true }] }, BY);
+    await context.tables.create(ws, { name: "Stacks", fields: [{ name: "name", type: "text", required: true }] }, BY);
+    for (let i = 0; i < 20; i += 1) {
+      await context.tables.upsertRow(ws, peptides.id, { values: { name: `p${i}` } }, BY);
+    }
+    for (let i = 0; i < 20; i += 1) {
+      await context.pages.create(ws, { title: `Tagged page ${i}`, body: "x", tags: [`tag${i % 20}`] }, BY);
+    }
+
+    const summary = await workspaceSummary(context);
+    expect(summary.length).toBeLessThanOrEqual(SUMMARY_BUDGET);
+
+    const namedCollections = [...summary.matchAll(/^- "A rather long collection/gm)].length;
+    expect(namedCollections).toBeGreaterThanOrEqual(3);
+    // A stub is never shown with fewer than three real names above it.
+    const stub = summary.match(/^- and (\d+) more collections$/m);
+    if (stub) expect(namedCollections).toBeGreaterThanOrEqual(3);
+
+    // No section is a bare truncation stub with nothing named.
+    expect(summary).not.toMatch(/Collections \(top-level pages\):\n- and \d+ more/);
+
+    const tagLine = summary.match(/^Common tags: (.+)$/m);
+    if (tagLine) expect(tagLine[1]!.split(", ").length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("drops a section rather than truncate it to a stub with nothing named", async () => {
+    const ws = context.workspaceId;
+    // Long titles so a very small budget cannot fit even one.
+    for (let i = 0; i < 5; i += 1) {
+      await context.pages.create(ws, { title: `A very long collection title indeed, number ${i}`, body: "x" }, BY);
+    }
+    const summary = await workspaceSummary(context, 60);
+    expect(summary).not.toMatch(/and \d+ more collections/);
+    expect(summary).not.toContain("Collections (top-level pages):");
   });
 
   it("keeps a hostile title on one quoted, bounded line", async () => {

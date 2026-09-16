@@ -11,7 +11,17 @@ Rules:
 3. Every entry says where it landed: an ADR, a doc, a commit, or "not yet".
 4. A later direction that reverses an earlier one does not edit it. Add the new one and point back.
 
-## 2026-09-16
+## 2026-09-17
+
+### Implement all the ADRs from the 2026-09-16 review, and stop asking
+
+> "implement all adrs"
+
+Then, mid-session:
+
+> "work non stop, keep questions for tomorrow mornign"
+
+The first direction is to build the code for ADR-053 through ADR-058 and their four specs, not to plan it further; the review and the specs already exist. The second changed how to work through it: make reasonable engineering calls alone rather than pausing for confirmation, and save any real open question for the next session. Landing this and the next entries: ADR-055 first, since the summary budget fix was already mid-edit when the direction arrived; the rest follow in the priority order `docs/ROADMAP.md`'s "The review of 2026-09-16" section sets.
 
 ### Review the app, then write up the fixes properly
 

@@ -4,7 +4,17 @@ What changed, and why. Newest first. One entry per meaningful change: code, desi
 
 Entries link to the ADR when there is one. A change of direction that has no ADR yet still gets an entry here.
 
-## 2026-09-16
+## 2026-09-17
+
+### The workspace summary gets its own guaranteed budget, so it stops going empty on a real workspace (ADR-055)
+
+Implements ADR-055. `buildInstructions` used to give the summary whatever was left of a 2,200 character total after the fixed instructions, which on the owner's 104-page workspace was 303 characters: enough to name no collections at all. `SUMMARY_BUDGET` (700 characters) is now a floor the summary always gets, and `FIXED_INSTRUCTIONS_CEILING` (1,500 characters) bounds the fixed text so it can never eat into that floor again; a test enforces the ceiling directly rather than relying on someone noticing the total creep up. `INSTRUCTIONS_BUDGET` moved to 2,400 to cover both with room to spare, and `SERVER_INSTRUCTIONS` was rewritten from 1,895 to 1,418 characters, moving detail that already lives in `skills/cairn/SKILL.md` out of the text every MCP session pays for.
+
+The section-truncation logic changed too, per ADR-055 decision 4: `fitLines` now reports how many items it actually named, not just the lines it kept, and a section with fewer than three named items is dropped whole instead of shown as a bare "and N more" stub. A stub with nothing named above it cost characters to say nothing. Pages count, then collections, then tables, then tags, spent in that order against the fixed floor rather than pre-reserved shares.
+
+New tests reproduce the defect at the scale it was found at: a generated 100-page, 12-collection, 2-table, 20-tag workspace, asserting at least three collections are named and the whole text still fits `INSTRUCTIONS_BUDGET`. `pnpm build`, `pnpm typecheck` and the full test suite (637 tests) pass. `pnpm context-cost` still reports about 3,100 tokens for MCP, unchanged within rounding, so the README numbers stand.
+
+A table `description` field was sketched into the summary while writing this, ahead of the schema change ADR-058 will bring; removed, since `core`'s `Table` type does not have that field yet and it does not belong in this commit.
 
 ### A review of Cairn as a tool, and the six decisions and four specs it produced
 
