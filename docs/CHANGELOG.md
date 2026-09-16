@@ -6,6 +6,10 @@ Entries link to the ADR when there is one. A change of direction that has no ADR
 
 ## 2026-09-17
 
+### The `search` tool no longer calls its own output an input (ADR-056/057, fault 5)
+
+The `search` MCP tool's description read "when `mode` is hybrid", phrasing that makes `mode` sound like a setting the caller chooses. It is the result's own field, reporting which strategy answered (hybrid or keyword), not something `inputSchema` accepts at all. Reworded the description to say plainly that `mode` comes back in the result and is not a setting. `skills/cairn/SKILL.md` and `packages/api/src/mcp/instructions.ts` do not mention `mode`, so neither needed a change (acceptance criterion 15). `packages/api/src/mcp/tools.ts`. Ran `pnpm context-cost` per rule 8: the tool list moved from about 3,738 to 3,777 tokens, too small to change the README's rounded figures.
+
 ### The reported apostrophe-dropping snippet bug does not reproduce, and is now a regression test (ADR-056/057, fault 4)
 
 Fault 4 of `docs/specs/console-and-search-polish.md` had no established cause, and the spec calls that out as a real risk: fixing the wrong thing, or fixing something already fixed, would be worse than leaving it open. Traced the candidate causes the spec names (stored-text normalisation, a typographic apostrophe handled differently from a straight one) and several more (query tokenization, console HTML escaping, MCP/REST pass-through) through the code, then reproduced the full `SqliteSearchIndex.search()` path end to end with both apostrophe forms, several query terms, and forced snippet-window boundaries. None reproduced the symptom: FTS5's `snippet()` correctly copies the original stored text verbatim, apostrophes included, under the current SQLite version (3.53.4) and tokenizer (`porter unicode61 remove_diacritics 2`). No code change follows, since no fault was found. Added a regression test asserting a snippet built from either apostrophe form keeps it, so the behaviour stays pinned. `packages/adapter-sqlite/test/search-index.test.ts` (acceptance criterion 14). LESSONS entry added.

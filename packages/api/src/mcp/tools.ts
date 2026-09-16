@@ -126,7 +126,7 @@ export function registerTools(server: McpServer, context: AppContext, actor: Act
     {
       title: "Search pages",
       description:
-        "Search page content by keyword and, when `mode` is hybrid, by meaning for English text. Returns page ids, heading paths and snippets, not whole pages: read a page with get_page once you know which one you want. " +
+        "Search page content by keyword, and by meaning for English text when embeddings are enabled. The result's `mode` field says which one answered: `hybrid` (keyword and meaning) or `keyword` (meaning unavailable); it is not a setting you choose. Returns page ids, heading paths and snippets, not whole pages: read a page with get_page once you know which one you want. " +
         "A keyword match needs most of your words on the page, in any form (tendon, tendons); filler words are ignored. A match by meaning needs none of them. " +
         "No results means nothing close: try other words, or a single unusual one, before concluding nothing exists.",
       inputSchema: {
