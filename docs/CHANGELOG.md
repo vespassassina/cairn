@@ -6,6 +6,10 @@ Entries link to the ADR when there is one. A change of direction that has no ADR
 
 ## 2026-09-17
 
+### An empty search result now names the query and suggests a next move (ADR-056/057, fault 6)
+
+The CLI already suggested trying a synonym on no matches, but didn't say what it had searched for; the console's empty banner and REST's JSON response said even less. All three, plus the MCP tool's existing `hint` field, now name the query in the message: `Nothing matched "words". Try synonyms, a shorter query, or one distinctive word.` (REST gained the `hint` field it lacked, matching MCP, per hard rule 14). `packages/cli/src/main.ts`, `packages/api/src/web/console.tsx`, `packages/api/src/rest/routes.ts`, `packages/api/src/mcp/tools.ts`, tested in `packages/cli/test/cli.test.ts`, `packages/api/test/console.test.ts`, `packages/api/test/rest.test.ts`, `packages/api/test/mcp.test.ts` (acceptance criterion 16).
+
 ### The `search` tool no longer calls its own output an input (ADR-056/057, fault 5)
 
 The `search` MCP tool's description read "when `mode` is hybrid", phrasing that makes `mode` sound like a setting the caller chooses. It is the result's own field, reporting which strategy answered (hybrid or keyword), not something `inputSchema` accepts at all. Reworded the description to say plainly that `mode` comes back in the result and is not a setting. `skills/cairn/SKILL.md` and `packages/api/src/mcp/instructions.ts` do not mention `mode`, so neither needed a change (acceptance criterion 15). `packages/api/src/mcp/tools.ts`. Ran `pnpm context-cost` per rule 8: the tool list moved from about 3,738 to 3,777 tokens, too small to change the README's rounded figures.

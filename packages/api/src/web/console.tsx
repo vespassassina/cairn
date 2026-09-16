@@ -1644,7 +1644,7 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
           </p>
         ) : null}
         {result && result.hits.length === 0 ? (
-          <div class="ak-empty">Nothing matched. Try fewer words, or a synonym.</div>
+          <div class="ak-empty">Nothing matched “{q}”. Try fewer words, or a synonym.</div>
         ) : null}
         {result?.hits.map((hit) => (
           <div class="cairn-hit">

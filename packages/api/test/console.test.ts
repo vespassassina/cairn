@@ -254,6 +254,12 @@ describe("rendering untrusted page content", () => {
     expect(html).toContain("<mark>adhesion</mark>");
     expect(html).not.toContain("<b>bold</b>");
   });
+
+  it("names the query and suggests a next move when nothing matches (fault 6, console-and-search-polish)", async () => {
+    const { html } = await get("/search?q=zzznosuchword");
+    expect(html).toContain("zzznosuchword");
+    expect(html).toContain("synonym");
+  });
 });
 
 describe("reviewing and editing", () => {

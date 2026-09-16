@@ -160,7 +160,7 @@ export function registerTools(server: McpServer, context: AppContext, actor: Act
           cursor: result.cursor,
           hint:
             budgeted.items.length === 0
-              ? "Nothing matched. Try synonyms, a shorter query, or one distinctive word."
+              ? `Nothing matched "${query}". Try synonyms, a shorter query, or one distinctive word.`
               : undefined,
         });
       } catch (error) {

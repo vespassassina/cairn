@@ -354,6 +354,10 @@ export function restRoutes(context: AppContext, callerFor: CallerFor): Hono {
       })),
       truncated: result.truncated,
       cursor: result.cursor,
+      hint:
+        result.hits.length === 0
+          ? `Nothing matched "${query}". Try synonyms, a shorter query, or one distinctive word.`
+          : undefined,
     });
   });
 

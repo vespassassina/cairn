@@ -83,7 +83,8 @@ describe("cairn", () => {
       expect(stdout).toContain(id);
     });
     expect(await cairn("search", "zzzznotaword")).toBe(0);
-    expect(stdout).toContain("no matches");
+    expect(stdout).toContain("no matches for \"zzzznotaword\"");
+    expect(stdout).toContain("synonym");
   });
 
   it("publishes a page and takes it down again, and says where it is readable", async () => {

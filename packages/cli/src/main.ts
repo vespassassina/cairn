@@ -930,7 +930,7 @@ export async function run(argv: string[], io: Io): Promise<number> {
         );
         out(json, () => {
           const hits = list(json?.["hits"]);
-          if (hits.length === 0) return "no matches. Try a synonym, or one distinctive word.\n";
+          if (hits.length === 0) return `no matches for "${words}". Try a synonym, or one distinctive word.\n`;
           const lines = hits.map(
             (hit) =>
               `${String(hit["page_id"])}  ${(hit["heading_path"] as string[]).join(" > ")}\n    ${String(hit["snippet"])}`,

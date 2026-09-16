@@ -224,6 +224,13 @@ describe("pages", () => {
     expect((await call("/search")).status).toBe(400);
   });
 
+  it("names the query and suggests a next move when nothing matches (fault 6, console-and-search-polish)", async () => {
+    const { json } = await call("/search?q=zzznosuchword");
+    expect(json["hits"]).toEqual([]);
+    expect(json["hint"]).toContain("zzznosuchword");
+    expect(json["hint"]).toContain("synonym");
+  });
+
   it("keeps history, with a diff per version", async () => {
     const created = await createBuildLog();
     const id = String(created.json["id"]);

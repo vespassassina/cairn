@@ -199,6 +199,7 @@ describe("page tools", () => {
   it("tells Claude to retry differently when nothing matches", async () => {
     const result = await callTool("search", { query: "zzzznotaword" });
     expect(result.data["hits"]).toEqual([]);
+    expect(result.data["hint"]).toContain("zzzznotaword");
     expect(result.data["hint"]).toContain("synonyms");
   });
 
