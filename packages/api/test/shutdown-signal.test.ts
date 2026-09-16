@@ -18,7 +18,6 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 // because the interesting behaviour is precisely the part a unit test stubs.
 
 const repoRoot = fileURLToPath(new URL("../../..", import.meta.url));
-const tsx = join(repoRoot, "node_modules", ".bin", "tsx");
 const entry = join(repoRoot, "packages", "api", "src", "entry", "node.ts");
 
 let dir = "";
@@ -48,11 +47,21 @@ function freePort(): Promise<number> {
   });
 }
 
-describe("stopping the server on SIGTERM", () => {
+// Not on Windows, and not because the test is awkward there. SIGTERM is a
+// POSIX signal, and Windows has no equivalent: Node emulates `kill("SIGTERM")`
+// with TerminateProcess, which stops the process dead without running any
+// handler. There is no way to observe a tidy shutdown on Windows because there
+// is no tidy shutdown to observe. The container this behaviour exists for is
+// Linux (ADR-020), so the property is tested where it is real.
+describe.skipIf(process.platform === "win32")("stopping the server on SIGTERM", () => {
   it("closes the database, so no write-ahead log is left behind", async () => {
     const database = join(dir, "cairn.sqlite");
     const port = await freePort();
-    const server = spawn(tsx, [entry], {
+    // Node itself, loading tsx, rather than the `tsx` shim in node_modules/.bin:
+    // that shim is an extensionless shell script, which Windows cannot execute,
+    // and spawning it there is why this test used to report the server as
+    // having "exited early" with no output at all.
+    const server = spawn(process.execPath, ["--import", "tsx", entry], {
       env: {
         ...process.env,
         CAIRN_DB: database,

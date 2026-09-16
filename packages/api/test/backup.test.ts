@@ -135,7 +135,13 @@ describe("snapshots", () => {
     const raw = new DatabaseSync(file);
     raw.exec("CREATE TABLE bulk(id INTEGER PRIMARY KEY, body TEXT)");
     const insert = raw.prepare("INSERT INTO bulk VALUES(?, ?)");
+    // One transaction, not five thousand. Each statement outside one commits
+    // and syncs on its own, which costs nothing here on an SSD and took over
+    // twenty seconds on a Windows CI disk, timing this test out for reasons
+    // that had nothing to do with what it tests.
+    raw.exec("BEGIN");
     for (let i = 0; i < 5000; i++) insert.run(i, "body ".repeat(60) + i);
+    raw.exec("COMMIT");
     raw.close();
 
     // Scribble over a page well inside the file, the way a bad write would.
@@ -145,12 +151,20 @@ describe("snapshots", () => {
 
     const damaged = new SqliteDocumentStore({ location: file });
     const to = join(dir, "copy.sqlite");
-    await expect(damaged.snapshot(to)).rejects.toThrow(/database/i);
-    // The trap this guards: a refused vacuum still writes a partial file. A
-    // truncated file that looks like a backup is the whole failure mode.
-    expect(existsSync(to), "a partial copy was left where a backup would be looked for").toBe(false);
-    expect(existsSync(`${to}.partial`)).toBe(false);
-    await damaged.close().catch(() => {});
+    try {
+      await expect(damaged.snapshot(to)).rejects.toThrow(/database/i);
+      // The trap this guards: a refused vacuum still writes a partial file. A
+      // truncated file that looks like a backup is the whole failure mode.
+      expect(existsSync(to), "a partial copy was left where a backup would be looked for").toBe(
+        false,
+      );
+      expect(existsSync(`${to}.partial`)).toBe(false);
+    } finally {
+      // In a finally, because Windows will not delete a file that is still
+      // open: a failing assertion here used to leave the database locked and
+      // bury the real failure under an EBUSY from the cleanup.
+      await damaged.close().catch(() => {});
+    }
   });
 });
 
