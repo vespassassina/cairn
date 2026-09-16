@@ -6,6 +6,18 @@ Entries link to the ADR when there is one. A change of direction that has no ADR
 
 ## 2026-09-16
 
+### The recovery ladder and the Azure blob archive ran for the first time on the real Azure
+
+Deployed to Azure as revision `cairn--0000016`, the first deploy carrying the ladder of ADR-051 and the archives of ADR-050. Both changelog entries below promised this run would be recorded, so here it is.
+
+What the ladder did, against the real Litestream 0.5.17 and the real replica: the container came up with no local database, took the second rung, and logged "restored from the replica, and it passed its integrity check" 2.2 seconds after starting. That is a plain restore, which is the rung a healthy Cairn takes on every cold start, and it is now confirmed rather than reasoned about. The server was listening a further 0.7 seconds later. The third rung, the one that walks back through `litestream ltx` output, still has not run, because nothing has yet damaged the replica tail; its parser remains unverified against real output, and the honest statement is that it is untested in the one situation it exists for.
+
+The blob archive resolved and reported its container: "backups: none yet, they will go to abs://cairnikh4laa53gam@cairn-backups/backups/". That proves the URL parsing, the managed identity token and the container listing, since an empty archive and an unreachable one are different answers and it gave the first. It does not yet prove an upload, which happens on the first write after the container has been up three hours.
+
+One observation worth keeping. Immediately after the restore Litestream logged "detected database behind replica" with `db_txid=0` against `replica_txid=3`, then fetched the newest L0 file and reconciled. That is the restore handing back a database at the last compacted point and Litestream catching it up, not a fault, but it is the shape of thing that would look alarming in an incident, so it is written down now while its cause is known.
+
+Separately, the deploy warned that the running revision had been deployed by tag rather than by digest, so earlier redeploys could not tell a moved tag from an unchanged one. This run replaced it with a digest, which is what ADR-047 asked for, and the warning should not appear again.
+
 ### Fix two Windows-only test faults that had kept CI red, and every image unpublished, for four commits
 
 CI had failed on the four commits from the shutdown work onwards, and because the container image job runs only after the tests pass, no image had been published for any of them. Nothing was wrong with the product: both faults were in test code and both were Windows-only. `shutdown-signal.test.ts` spawned the `tsx` shim from `node_modules/.bin`, an extensionless shell script Windows cannot execute, and it asserts a tidy shutdown on SIGTERM, which Windows has no way to deliver because Node emulates it with TerminateProcess and no handler runs; it now spawns `node --import tsx` and is scoped away from Windows with the reason stated, since the container it exists for is Linux. `backup.test.ts` inserted 5000 rows outside a transaction, one commit and one disk sync each, which cost a second on an SSD and over twenty seconds on the Windows CI disk, timing the test out and leaving the database open so the cleanup failed with EBUSY on top; the inserts are now one transaction and the store closes in a `finally`. See `docs/LESSONS.md` for the part worth remembering, which is that nobody read CI for three pushes.
