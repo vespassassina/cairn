@@ -366,6 +366,9 @@ describe("reviewing and editing", () => {
     const history = await get(`/p/${page.id}/history`);
     expect(history.html).toContain("Summarised the adhesion failures");
     expect(history.html).toContain("current");
+    // The first revision was created with no note; the history says so rather
+    // than leaving a blank (fault 3, console-and-search-polish).
+    expect(history.html).toContain("no note given");
 
     const revision = await get(`/p/${page.id}/v/${vandalised.version}`);
     expect(revision.html).toContain("- firmware: old");

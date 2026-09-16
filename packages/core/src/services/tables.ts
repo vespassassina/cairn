@@ -12,7 +12,7 @@ import {
   type RowQuery,
 } from "../query/filter.js";
 import { extractRowReferences } from "../indexer/extract.js";
-import { validateRow, validateSchema } from "../query/validate.js";
+import { validateQuery, validateRow, validateSchema } from "../query/validate.js";
 import { normalizeSources } from "../sources.js";
 import { editTime } from "../edit-time.js";
 import { sourceChanges } from "./pages.js";
@@ -348,6 +348,10 @@ export class TableService {
     query: RowQuery = {},
     options: { pushdown?: boolean } = {},
   ): Promise<Paged<Row>> {
+    const table = await this.get(workspaceId, tableId);
+    const errors = validateQuery(table, query);
+    if (errors.length > 0) throw new ValidationError(errors);
+
     const pushdown = options.pushdown ?? true;
     if (pushdown && this.store.capabilities.rowQueryPushdown && this.store.queryRows) {
       return this.store.queryRows(workspaceId, tableId, query);

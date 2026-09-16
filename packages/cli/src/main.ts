@@ -636,6 +636,13 @@ export async function run(argv: string[], io: Io): Promise<number> {
   const out = (json: Json | null, text: () => string) =>
     io.stdout(flags.json ? `${JSON.stringify(json, null, 2)}\n` : text());
   const note = flags.note;
+  // A write with no note still succeeds (MCP already requires one, and a CLI
+  // hard failure here would break scripts), but the history is worse for it,
+  // so say so on stderr rather than let it pass unremarked (fault 3, console-
+  // and-search-polish).
+  const warnIfNoNote = () => {
+    if (!note) io.stderr('no change note given. Add --note "why", so the history says why this changed.\n');
+  };
 
   const reason = (error: unknown) =>
     error instanceof ApiError ? `${error.code}: ${error.message}` : error instanceof Error ? error.message : String(error);
@@ -1071,6 +1078,7 @@ export async function run(argv: string[], io: Io): Promise<number> {
 
       case "create": {
         const body = (await content(flags, io, false)) ?? "";
+        warnIfNoNote();
         const { json } = await client.request("POST", "/pages", {
           body: {
             title: need(flags.title, "--title"),
@@ -1102,6 +1110,7 @@ export async function run(argv: string[], io: Io): Promise<number> {
           ...(note ? { change_note: note } : {}),
         };
         const path = `/pages/${encodeURIComponent(id)}`;
+        warnIfNoNote();
 
         let version = flags.version;
         if (version === undefined) {
@@ -1127,6 +1136,7 @@ export async function run(argv: string[], io: Io): Promise<number> {
 
       case "delete": {
         const id = need(args[0], "page id");
+        warnIfNoNote();
         await client.request("DELETE", `/pages/${encodeURIComponent(id)}`, {
           ifMatch: need(flags.version, "--version"),
           body: note ? { change_note: note } : {},
@@ -1140,6 +1150,7 @@ export async function run(argv: string[], io: Io): Promise<number> {
         const id = need(args[0], "the page to publish");
         const version = need(flags.version, "--version V, from cairn read");
         const wanted = command === "publish";
+        warnIfNoNote();
         const { json } = await client.request("POST", "/publish", {
           body: { id, public: wanted, version, ...(note ? { change_note: note } : {}) },
         });
@@ -1156,6 +1167,7 @@ export async function run(argv: string[], io: Io): Promise<number> {
         const id = need(args[0], "the page or table to move");
         const parent = need(flags.parent, "--parent PAGE, or --parent root for the top");
         const version = need(flags.version, "--version V, from cairn read or cairn tables --json");
+        warnIfNoNote();
         const { json } = await client.request("POST", "/move", {
           body: { id, parent_id: parent === "root" ? null : parent, version, ...(note ? { change_note: note } : {}) },
         });
@@ -1167,6 +1179,7 @@ export async function run(argv: string[], io: Io): Promise<number> {
         const id = need(args[0], "page id");
         const version = need(args[1], "the version to restore, from cairn history or cairn peek");
         const expected = need(flags.version, "--version V, the page's current version, from cairn read");
+        warnIfNoNote();
         const { json } = await client.request(
           "POST",
           `/pages/${encodeURIComponent(id)}/revisions/${encodeURIComponent(version)}/restore`,
@@ -1287,6 +1300,7 @@ export async function run(argv: string[], io: Io): Promise<number> {
       case "upsert": {
         const cid = need(args[0], "table id");
         const values = parseSet(need(flags.set, "--set field=value"));
+        warnIfNoNote();
         const withNote = note ? { change_note: note } : {};
         const rows = `/tables/${encodeURIComponent(cid)}/rows`;
         // On an update, --source adds to the row's sources, as it does for pages.
@@ -1955,8 +1969,13 @@ export async function run(argv: string[], io: Io): Promise<number> {
         io.stdout(`${JSON.stringify(error.body, null, 2)}\n`);
       } else {
         let detail = "";
+        // The server's own message is written for REST (ETag, If-Match), which
+        // means nothing at a terminal. Keep only its first sentence, which
+        // names what happened, and say the CLI's own next step ourselves.
+        let message = error.message;
         if (error.code === "version_conflict") {
-          detail = `\ncurrent version: ${String(error.body?.["current_version"])}. Read the page again, merge, and retry with that version.`;
+          message = error.message.split(". ")[0] ?? error.message;
+          detail = `.\ncurrent version: ${String(error.body?.["current_version"])}. Read the page again, merge, and retry with that version.`;
         } else if (error.code === "unauthorized") {
           detail = io.env["CAIRN_TOKEN"]
             ? "\n  CAIRN_TOKEN was not accepted by this server."
@@ -1966,7 +1985,7 @@ export async function run(argv: string[], io: Io): Promise<number> {
             .map((f) => `\n  ${String(f["field"])}: ${String(f["message"])}`)
             .join("");
         }
-        io.stderr(`error: ${error.code}: ${error.message}${detail}\n`);
+        io.stderr(`error: ${error.code}: ${message}${detail}\n`);
       }
       return 1;
     }

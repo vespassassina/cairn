@@ -556,7 +556,11 @@ const RevisionTimeline: FC<{
           <p>
             <ActorPill actor={revision.actor} />
           </p>
-          {revision.note ? <p class="cairn-note">{revision.note}</p> : null}
+          {revision.note ? (
+            <p class="cairn-note">{revision.note}</p>
+          ) : (
+            <p class="cairn-note">no note given</p>
+          )}
         </li>
       ))}
     </ol>
@@ -1077,7 +1081,11 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
                 <p>
                   <ActorPill actor={revision.actor} />
                 </p>
-                {revision.note ? <p class="cairn-note">{revision.note}</p> : null}
+                {revision.note ? (
+            <p class="cairn-note">{revision.note}</p>
+          ) : (
+            <p class="cairn-note">no note given</p>
+          )}
               </li>
             ))}
           </ol>
@@ -1385,7 +1393,11 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
                 </>
               ) : null}
             </p>
-            {view.revision.note ? <p class="cairn-note">{view.revision.note}</p> : null}
+            {view.revision.note ? (
+            <p class="cairn-note">{view.revision.note}</p>
+          ) : (
+            <p class="cairn-note">no note given</p>
+          )}
           </div>
           {page && !isCurrent && !view.revision.deleted ? (
             <form
@@ -2226,7 +2238,11 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
                 </>
               ) : null}
             </p>
-            {view.revision.note ? <p class="cairn-note">{view.revision.note}</p> : null}
+            {view.revision.note ? (
+            <p class="cairn-note">{view.revision.note}</p>
+          ) : (
+            <p class="cairn-note">no note given</p>
+          )}
           </div>
           {row && !isCurrent && !view.revision.deleted ? (
             <form method="post" action={`${base}/restore/${encodeURIComponent(view.revision.version)}`}>

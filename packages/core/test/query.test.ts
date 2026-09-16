@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   matchesCondition,
   sortRows,
+  validateQuery,
   validateRow,
   type Table,
   type Row,
@@ -163,5 +164,42 @@ describe("validateRow", () => {
         values: { title: "x", printed: "2026-09-01", tags: [], grams: null },
       }),
     ).toEqual([]);
+  });
+});
+
+describe("validateQuery", () => {
+  const table: Table = {
+    id: "col",
+    workspaceId: "ws",
+    name: "Prints",
+    fields: [
+      { name: "title", type: "text", required: true },
+      { name: "grams", type: "number" },
+    ],
+    createdAt: "2026-09-11T00:00:00.000Z",
+    updatedAt: "2026-09-11T00:00:00.000Z",
+    version: "v1",
+  };
+
+  it("accepts where and sort on known fields", () => {
+    expect(
+      validateQuery(table, {
+        where: [{ field: "grams", op: "gt", value: 10 }],
+        sort: [{ field: "title", direction: "asc" }],
+      }),
+    ).toEqual([]);
+  });
+
+  it("rejects an unknown where field and lists the known ones (fault 2, acceptance criterion 12)", () => {
+    const errors = validateQuery(table, { where: [{ field: "nosuch", op: "eq", value: 1 }] });
+    expect(errors).toHaveLength(1);
+    expect(errors[0]!.field).toBe("nosuch");
+    expect(errors[0]!.message).toBe("unknown field. known fields: title, grams");
+  });
+
+  it("rejects an unknown sort field", () => {
+    const errors = validateQuery(table, { sort: [{ field: "nosuch", direction: "desc" }] });
+    expect(errors).toHaveLength(1);
+    expect(errors[0]!.field).toBe("nosuch");
   });
 });

@@ -13,6 +13,13 @@ Each entry answers four questions:
 
 ## 2026-09-17
 
+### A misspelled filter field returned "no rows" instead of an error
+
+1. **What happened.** `cairn rows <table> --where "nosuch eq 1"` printed "no rows" for a table that had rows, with no hint that `nosuch` was not a real field. The same silent miss existed over REST and MCP: any typo in a `where` or `sort` field name simply matched nothing rather than being refused.
+2. **Cause.** `matchesCondition` in `packages/core/src/query/filter.ts` reads a row's field with `row.values[condition.field] ?? null`. That expression cannot tell the difference between "this field does not exist on the table" and "this field exists and is null on every row." Both read as `null` and both compare as not-matching. Nothing upstream validated `where`/`sort` field names against the table's schema before filtering ran, unlike `upsertRow`, which already validates a row's values against the schema before writing.
+3. **Fix.** Added `validateQuery(table, query)` to `packages/core/src/query/validate.ts`, following the exact wording `validateRow` already uses for an unknown value field (`"unknown field. known fields: ..."`), and called it from `TableService.queryRows` in `packages/core/src/services/tables.ts` before either the pushdown or in-memory path runs, so both are covered by one check. REST and MCP already turn a thrown `ValidationError` into a named-field error through the existing `describeError`/`toolError` machinery, and the CLI already prints named fields for `validation_failed`, so no surface-specific code was needed once the check sat in `core`. `packages/core/test/query.test.ts`, `packages/cli/test/cli.test.ts`.
+4. **Lesson.** A filter or sort field is user input exactly like a row value, and deserves the same validation before it reaches evaluation logic that cannot distinguish "absent" from "unknown." When one code path (`upsertRow`) already validates against a schema and a sibling path (`queryRows`) does not, that asymmetry is worth checking for deliberately, not just when a bug report points at it.
+
 ### Requiring a field on one write broke three other layers that quietly relied on it being optional
 
 1. **What happened.** Making `create_table`'s `change_note` required (ADR-058, decision 5) was a one-line schema change. Running the full test suite after it showed 31 failures, in three places that had nothing to do with the ADR being implemented: `cairn trust` and `cairn discover`'s embedded `POST /tables` calls, `cairn sync`'s table-sync `PUT`, and half a dozen REST and MCP tests that created or updated tables without a note.

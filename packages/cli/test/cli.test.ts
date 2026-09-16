@@ -106,6 +106,7 @@ describe("cairn", () => {
     const { id } = await createLog();
     stdin = "Props: 5.1 inch tri-blade.";
     expect(await cairn("append", id, "--note", "Added props")).toBe(0);
+    expect(stderr).toBe("");
     const page = await context.pages.get(context.workspaceId, id);
     expect(page.body.endsWith("Props: 5.1 inch tri-blade.")).toBe(true);
   });
@@ -121,6 +122,11 @@ describe("cairn", () => {
     expect(await cairn("write", id, "--version", version, "--text", "stale overwrite")).toBe(1);
     expect(stderr).toContain("version_conflict");
     expect(stderr).toContain("current version:");
+    // The REST wording (ETag, If-Match) means nothing at a terminal, and the
+    // CLI's own next step, printed once, replaces it rather than sitting beside it.
+    expect(stderr).not.toContain("ETag");
+    expect(stderr).not.toContain("If-Match");
+    expect(stderr.match(/Read (it|the page) again, merge/g)?.length).toBe(1);
     const page = await context.pages.get(context.workspaceId, id);
     expect(page.body).toContain("BLHeli_32");
     expect(page.body).toContain("2207 1750kv");
@@ -197,6 +203,13 @@ describe("cairn", () => {
     expect(stdout).toContain('"title":"Canopy"');
     expect(stdout).not.toContain("Mount");
 
+    // A misspelled field is refused by name, not read as always-null (fault 2,
+    // console-and-search-polish, acceptance criterion 12).
+    expect(await cairn("rows", table.id, "--where", "nosuch eq 1")).toBe(1);
+    expect(stderr).toContain("validation_failed");
+    expect(stderr).toContain("nosuch");
+    expect(stderr).toContain("known fields: title, grams, material");
+
     expect(await cairn("upsert", table.id, "--set", "grams=heavy")).toBe(1);
     expect(stderr).toContain("validation_failed");
     expect(stderr).toContain("title:");
@@ -251,6 +264,10 @@ describe("cairn", () => {
     stdin = null;
     const [, id, version] = /^ok (\S+) version (\S+)$/.exec(stdout.trim())!;
     expect(await cairn("append", id!, "--text", "Studied in rats.", "--source", "Smith 2021, J Pept Sci")).toBe(0);
+    // A write with no --note still succeeds, but warns on stderr rather than
+    // passing silently (fault 3, console-and-search-polish, criterion 13).
+    expect(stderr).toContain("no change note given");
+    expect(stderr).toContain("--note");
     const page = await context.pages.get(context.workspaceId, id!);
     expect(page.sources).toEqual([paper, "Smith 2021, J Pept Sci"]);
     expect(await cairn("revision", id!, page.version)).toBe(0);

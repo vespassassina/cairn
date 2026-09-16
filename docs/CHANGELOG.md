@@ -6,6 +6,18 @@ Entries link to the ADR when there is one. A change of direction that has no ADR
 
 ## 2026-09-17
 
+### The CLI stops repeating itself on a conflict, a bad filter field is refused by name, and a note-less write says so (ADR-056/057, faults 1 to 3)
+
+Begins the "eight smaller faults" from `docs/specs/console-and-search-polish.md` (ADR-056, ADR-057). Three of the eight are done.
+
+1. **A version conflict at the CLI no longer says the same thing twice.** REST's own conflict wording ("Read it again, merge your change, and retry with the new ETag in If-Match") is correct for a REST client but meaningless at a terminal, and the CLI printed it verbatim followed by its own "current version: ..., read again and retry" line, so the same instruction appeared twice with different words. The CLI's error renderer now keeps only the first sentence of the server's message (which names what happened) and states its own next step once. `packages/cli/src/main.ts`, tested in `packages/cli/test/cli.test.ts`.
+2. **`cairn rows --where "nosuch eq 1"` (and the equivalent REST and MCP query) now refuses an unknown field by name instead of silently matching nothing.** `matchesCondition` could not tell "the field does not exist" from "the field is null on every row," both read as `null`. Added `validateQuery` to `packages/core/src/query/validate.ts`, using the same "unknown field. known fields: ..." wording `validateRow` already uses for row values, and wired it into `TableService.queryRows` in `packages/core/src/services/tables.ts` ahead of both the pushdown and in-memory paths. REST, MCP and the CLI needed no surface-specific change: all three already turn a thrown `ValidationError` into a named-field error. Tested in `packages/core/test/query.test.ts` and `packages/cli/test/cli.test.ts` (acceptance criterion 12).
+3. **A write with no change note now says so, instead of passing silently.** MCP tools already require a note; the CLI and the console did not, and gave no sign either way. The CLI's seven note-optional write commands (`create`, `append`/`write`/`replace-section`, `delete`, `publish`/`unpublish`, `move`, `restore`, `upsert`) now print "no change note given. Add --note ..." on stderr when `--note` is missing, and still succeed (a hard failure would break scripts, for a rule that is about hygiene, not correctness). The console's four history views show "no note given" in place of a blank where a revision has none. `packages/cli/src/main.ts`, `packages/api/src/web/console.tsx`, tested in `packages/cli/test/cli.test.ts` and `packages/api/test/console.test.ts` (acceptance criterion 13).
+
+LESSONS entries added for faults 1 and 2 (fault 3 is not one of the four the spec calls out for a LESSONS entry).
+
+Verification: `pnpm build`, `pnpm typecheck`, full test suite (706 passed, 1 skipped), `pnpm smoke:cli`, all green.
+
 ### An agent can walk the tree, and MCP catches up with REST and the CLI (ADR-058)
 
 Implements ADR-058, per `docs/specs/agent-navigation.md`. An agent connected only through MCP could not see the page tree at all: the only way to ask what is under a page was `GET /api/v1/pages?parent=` on REST, and MCP was also missing delete, the changes feed, and the ability to change a table's schema, while `create_table` alone among writes took no change note.

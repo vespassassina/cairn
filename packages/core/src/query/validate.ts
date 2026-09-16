@@ -1,5 +1,6 @@
 import type { FieldError } from "../errors.js";
 import type { Table, FieldDef, FieldValue, RowInput } from "../types.js";
+import type { RowQuery } from "./filter.js";
 
 /**
  * Row validation lives in core so that every adapter stores rows without
@@ -132,6 +133,27 @@ export function validateRow(
     }
     const problem = checkValue(field, value as FieldValue);
     if (problem) errors.push({ field: field.name, message: problem });
+  }
+
+  return errors;
+}
+
+/**
+ * Names every field a --where or --sort names that the table does not have.
+ * Without this, `matchesCondition` reads a missing field as null, so a
+ * misspelled field silently matched nothing instead of being refused.
+ */
+export function validateQuery(table: Table, query: RowQuery): FieldError[] {
+  const known = new Set(table.fields.map((f) => f.name));
+  const errors: FieldError[] = [];
+  const unknown = (name: string) =>
+    errors.push({ field: name, message: `unknown field. known fields: ${[...known].join(", ")}` });
+
+  for (const condition of query.where ?? []) {
+    if (!known.has(condition.field)) unknown(condition.field);
+  }
+  for (const key of query.sort ?? []) {
+    if (!known.has(key.field)) unknown(key.field);
   }
 
   return errors;
