@@ -67,6 +67,10 @@ A setting that is wrong stops the server with a message naming the setting and t
 | `CAIRN_LANGUAGE` | `en` | The language tag it reports at `/.well-known/cairn.json` |
 | `CAIRN_TOPICS` | none | What it is about, comma-separated, at `/.well-known/cairn.json` |
 | `CAIRN_REPLICA_URL` | set by the Azure template; none on Docker | Where Litestream streams the database: `abs://` on Azure, `s3://` elsewhere. With an empty data folder, Cairn restores from it on start |
+| `CAIRN_BACKUP_DIR` | a `backups` folder beside the database | Where backups are kept (ADR-049). Each one is a complete, self-contained copy of the database, made with `VACUUM INTO`, read back before it is accepted, and named for the time it was taken. `off` turns backups off entirely. On a platform whose disk does not outlive the container, point this at a mounted volume or backups are lost with it |
+| `CAIRN_BACKUP_AFTER_HOURS` | `3` | After a write, back up if the newest backup is older than this. Activity is the trigger rather than a timer, because a timer never fires in a container that has scaled to zero |
+| `CAIRN_BACKUP_KEEP_DAYS` | `2` | Delete backups older than this |
+| `CAIRN_BACKUP_KEEP_AT_LEAST` | `3` | Never leave fewer than this many, however old they are. This is what stops a Cairn nobody touched for a week from ending up with no backups at all |
 | `CAIRN_SHUTDOWN_SECONDS` | `25` | How long Cairn may take to stop tidily: finish the requests in flight, then close the database so its write-ahead log is checkpointed away (ADR-046). Keep it below the grace period the platform allows, which is 30 seconds on Azure Container Apps and 10 on `docker stop` unless `stop_grace_period` says otherwise. Being killed part way through a shutdown is how an unfinished transaction reaches the replica |
 
 ### Docker only
@@ -131,11 +135,13 @@ Commands in `docs/CLI.md`, "Keep two Cairns the same" and "Several Cairns as one
 
 ## 6. Back up and restore
 
-1. **An export anyone can read:** `cairn export <folder>` writes Markdown and JSON (ADR-016). Suggest one before any update, restore or removal.
-2. **Azure:** Litestream streams every change to the storage account. Nothing to do; a new container restores from it.
-3. **Their own server:** the `data` folder, with the machine's own backups, and optionally `CAIRN_REPLICA_URL` for a copy off the machine.
-4. **Restore from an export:** `cairn import <folder> --dry-run`, then without `--dry-run`, into any Cairn. It keeps ids, and running it twice changes nothing.
-5. **Undo one change:** every write is a revision (ADR-008). `cairn history <page-id>` lists them, and the person restores one in the console.
+1. **Cairn backs itself up.** After a write, if the newest backup is more than `CAIRN_BACKUP_AFTER_HOURS` old, and again on every tidy shutdown, it writes a complete copy of the database into `CAIRN_BACKUP_DIR` and reads it back before keeping it (ADR-049). Each one is a plain SQLite file any `sqlite3` can open. The startup log says how many there are and how old the newest is.
+2. **An export anyone can read:** `cairn export <folder>` writes Markdown and JSON (ADR-016). Suggest one before any update, restore or removal.
+3. **Azure:** Litestream streams every change to the storage account, so a new container starts from a copy seconds old. That is a replica, not a backup: it copies SQLite's pages, so damage reaches it too, which is what happened on 2026-09-15 (ADR-046). The backups in point 1 are the independent copy. Until they can be sent to blob storage they are written to the container's own disk and are lost when it stops, and Cairn warns at startup when that is the case. Until then, tell the person to take a `cairn export` themselves at a rhythm that suits them.
+4. **Their own server:** the `data` folder, with the machine's own backups, and optionally `CAIRN_REPLICA_URL` for a copy off the machine. Here `CAIRN_BACKUP_DIR` sits on the mounted volume by default, so the backups survive the container.
+5. **Restore from a backup:** stop Cairn, move the damaged database aside, copy the backup into its place under the name `CAIRN_DB` gives, and start. Never copy a backup over a database a running Cairn has open.
+6. **Restore from an export:** `cairn import <folder> --dry-run`, then without `--dry-run`, into any Cairn. It keeps ids, and running it twice changes nothing.
+7. **Undo one change:** every write is a revision (ADR-008). `cairn history <page-id>` lists them, and the person restores one in the console.
 
 ## 7. Publishing a wiki
 

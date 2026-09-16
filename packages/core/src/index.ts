@@ -8,6 +8,7 @@ export * from "./ids.js";
 export * from "./ports/document-store.js";
 export * from "./ports/search-index.js";
 export * from "./ports/auth-store.js";
+export * from "./ports/snapshotter.js";
 export * from "./ports/embedder.js";
 export * from "./query/filter.js";
 export * from "./query/validate.js";

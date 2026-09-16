@@ -1,6 +1,8 @@
+import { rename, rm, stat } from "node:fs/promises";
 import { DatabaseSync } from "node:sqlite";
 import {
   VersionConflictError,
+  type SnapshotResult,
   type Actor,
   type Table,
   type TableInput,
@@ -355,6 +357,77 @@ export class SqliteDocumentStore implements DocumentStore {
 
   async close(): Promise<void> {
     this.db.close();
+  }
+
+  /**
+   * A backup, made the only way that cannot carry damage forward (ADR-049).
+   *
+   * `VACUUM INTO` does not copy pages. It reads the database through its
+   * B-trees and writes a brand new file, so the result is a logical
+   * reconstruction with a fresh page layout rather than a byte mirror. Two
+   * things follow, both measured rather than assumed:
+   *
+   * 1. A corrupt source is refused, with "database disk image is malformed",
+   *    instead of being copied into the backup. This is the difference
+   *    between a backup and Litestream, which replicates damage faithfully
+   *    because it works at the page level (docs/LESSONS.md).
+   * 2. The copy is self-contained and current. Changes still sitting in the
+   *    write-ahead log are included, and the copy has no log of its own, so
+   *    it can be moved or uploaded as one file.
+   *
+   * It is also cheap: 9ms for a 7MB database, twice the size of the Cairn
+   * this was written for, which is what makes it affordable on a write and
+   * during the seconds available at shutdown.
+   *
+   * The catch, and the reason for the temporary file: a refused vacuum still
+   * leaves a partial file at the destination. A truncated file that looks
+   * like a backup is precisely the failure this whole change exists to
+   * prevent, so the copy is built under a temporary name, read back, and only
+   * then given its real one.
+   */
+  async snapshot(destination: string): Promise<SnapshotResult> {
+    const partial = `${destination}.partial`;
+    await rm(partial, { force: true });
+    const started = Date.now();
+    try {
+      // A bound parameter, not interpolation: the path is a string literal to
+      // SQLite, and one containing a quote would otherwise be a syntax error.
+      this.db.prepare("VACUUM INTO ?").run(partial);
+    } catch (error) {
+      await rm(partial, { force: true });
+      throw new Error(
+        `could not copy the database: ${error instanceof Error ? error.message : String(error)}. ` +
+          "A vacuum refuses a database it cannot read soundly, so this usually means the database itself is damaged rather than that the copy failed. " +
+          "Check it with: sqlite3 <database> 'pragma integrity_check'",
+        { cause: error },
+      );
+    }
+
+    // Reading it back is the whole difference between a file and a backup.
+    let readBack: DatabaseSync | null = null;
+    try {
+      readBack = new DatabaseSync(partial, { readOnly: true });
+      const row = readBack.prepare("PRAGMA integrity_check").get() as
+        | { integrity_check?: string }
+        | undefined;
+      if (row?.integrity_check !== "ok") {
+        throw new Error(`the copy did not pass its integrity check: ${row?.integrity_check ?? "no answer"}`);
+      }
+    } catch (error) {
+      readBack?.close();
+      await rm(partial, { force: true });
+      throw new Error(
+        `the copy of the database could not be read back: ${error instanceof Error ? error.message : String(error)}. ` +
+          "It has been deleted rather than kept, because a backup that cannot be read is worse than none: it is the one you would reach for.",
+        { cause: error },
+      );
+    }
+    readBack.close();
+
+    const { size } = await stat(partial);
+    // Only now does it get the name a restore would look for.
+    await rename(partial, destination);
+    return { bytes: size, ms: Date.now() - started };
   }
 
   // Pages.

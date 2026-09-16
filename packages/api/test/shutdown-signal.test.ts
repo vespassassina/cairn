@@ -1,7 +1,8 @@
 import { spawn } from "node:child_process";
 import { createServer } from "node:http";
 import { existsSync } from "node:fs";
-import { mkdtemp, rm } from "node:fs/promises";
+import { DatabaseSync } from "node:sqlite";
+import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -61,6 +62,7 @@ describe("stopping the server on SIGTERM", () => {
         // and none of it bears on shutting down (ADR-022).
         CAIRN_EMBEDDINGS: "off",
         CAIRN_SHUTDOWN_SECONDS: "10",
+        CAIRN_BACKUP_DIR: join(dir, "backups"),
       },
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -91,6 +93,16 @@ describe("stopping the server on SIGTERM", () => {
     expect(code, `server did not stop cleanly:\n${output}`).toBe(0);
     expect(output).toContain("stopping on SIGTERM");
     expect(output).toContain("closed the database");
+
+    // The backup is taken on the way down, before the close, so the last few
+    // hours of work are not what a stop costs (ADR-049).
+    const kept = await readdir(join(dir, "backups"));
+    expect(kept.filter((name) => name.endsWith(".sqlite"))).toHaveLength(1);
+    const backup = new DatabaseSync(join(dir, "backups", kept[0]!), { readOnly: true });
+    expect(backup.prepare("PRAGMA integrity_check").get()).toMatchObject({
+      integrity_check: "ok",
+    });
+    backup.close();
     // The whole point. SQLite removes the log when the last connection closes,
     // so its absence is the evidence that the close really happened.
     expect(

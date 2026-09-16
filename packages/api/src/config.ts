@@ -55,6 +55,19 @@ export interface Config {
    * how a truncated transaction reaches the replica.
    */
   shutdownSeconds: number;
+  /** Where backups are kept, and how long (ADR-049). */
+  backups: BackupConfig;
+}
+
+export interface BackupConfig {
+  /** Off when null: no backups are taken and none are pruned. */
+  dir: string | null;
+  /** Back up after a write when the newest backup is older than this. */
+  afterHours: number;
+  /** Delete backups older than this. */
+  keepDays: number;
+  /** However old they are, never leave fewer than this many. */
+  keepAtLeast: number;
 }
 
 export interface SelfDescriptionConfig {
@@ -107,6 +120,14 @@ export interface ConfigFile {
   workspace?: string;
   /** Seconds allowed for a tidy shutdown. Default 25 (ADR-046). */
   shutdownSeconds?: number;
+  /** Backups: where they go and how long they are kept (ADR-049). */
+  backups?: {
+    /** A folder, or "off". Default: a `backups` folder beside the database. */
+    dir?: string;
+    afterHours?: number;
+    keepDays?: number;
+    keepAtLeast?: number;
+  };
   embeddings?: {
     provider?: "local" | "off";
     modelDir?: string;
@@ -317,6 +338,38 @@ export function loadConfig(
     contentLicence: (env["CAIRN_CONTENT_LICENCE"] ?? file.contentLicence ?? "").trim() || null,
     selfDescription: loadSelfDescription(env, file),
     shutdownSeconds,
+    backups: loadBackups(env, file, database),
+  };
+}
+
+/**
+ * Backups default to a folder beside the database, so a Cairn on a mounted
+ * volume is backed up without anyone choosing to turn it on (ADR-049). An
+ * in-memory database has nothing to copy, and `off` is how to say no.
+ */
+function loadBackups(env: NodeJS.ProcessEnv, file: ConfigFile, database: string): BackupConfig {
+  const asked = (env["CAIRN_BACKUP_DIR"] ?? file.backups?.dir ?? "").trim();
+  const dir =
+    asked.toLowerCase() === "off" || database === ":memory:"
+      ? null
+      : asked || join(dirname(database), "backups");
+
+  const number = (name: string, given: unknown, fallback: number, max: number): number => {
+    if (given === undefined || given === null || given === "") return fallback;
+    const value = Number(given);
+    if (!Number.isFinite(value) || value <= 0 || value > max) {
+      throw new ConfigError(
+        `${name} must be a number greater than 0 and no more than ${max}, got ${String(given)}`,
+      );
+    }
+    return value;
+  };
+
+  return {
+    dir,
+    afterHours: number("CAIRN_BACKUP_AFTER_HOURS", env["CAIRN_BACKUP_AFTER_HOURS"] ?? file.backups?.afterHours, 3, 24 * 30),
+    keepDays: number("CAIRN_BACKUP_KEEP_DAYS", env["CAIRN_BACKUP_KEEP_DAYS"] ?? file.backups?.keepDays, 2, 3650),
+    keepAtLeast: number("CAIRN_BACKUP_KEEP_AT_LEAST", env["CAIRN_BACKUP_KEEP_AT_LEAST"] ?? file.backups?.keepAtLeast, 3, 1000),
   };
 }
 

@@ -86,9 +86,10 @@ The same as on Azure: `docs/DEPLOY-AZURE.md`, section 4, with your HTTPS address
 
 ## Backups
 
-1. **The folder.** Back up the `data` folder with the rest of the machine. SQLite survives a crash-consistent snapshot, such as a VM backup.
-2. **A copy off the machine,** if you want one: set `CAIRN_REPLICA_URL` in `.env` to an S3 bucket, with its credentials, and Litestream streams every change there. If the folder is ever empty, Cairn restores from the replica on start. Litestream's guides cover S3 and S3-compatible stores: https://litestream.io/guides/
-3. **An export you can read:** `cairn export <folder>` now and then (`docs/CLI.md`).
+1. **Cairn's own backups.** Cairn writes a complete copy of the database into `data/backups` after a write when the newest copy is more than three hours old, and again every time it shuts down tidily. Each copy is checked by reading it back before it is kept, and each is a plain SQLite file you can open with `sqlite3` (ADR-049). It keeps two days' worth, and never fewer than three however old they are. `CAIRN_BACKUP_DIR`, `CAIRN_BACKUP_AFTER_HOURS`, `CAIRN_BACKUP_KEEP_DAYS` and `CAIRN_BACKUP_KEEP_AT_LEAST` change this, and `CAIRN_BACKUP_DIR=off` turns it off. Because `data` is a mounted volume, these survive the container. To use one: stop Cairn, move the damaged database aside, copy the backup in under the same name, start.
+2. **The folder.** Back up the `data` folder with the rest of the machine. SQLite survives a crash-consistent snapshot, such as a VM backup.
+3. **A copy off the machine,** if you want one: set `CAIRN_REPLICA_URL` in `.env` to an S3 bucket, with its credentials, and Litestream streams every change there. If the folder is ever empty, Cairn restores from the replica on start. Litestream's guides cover S3 and S3-compatible stores: https://litestream.io/guides/ This is a replica rather than a backup: it copies SQLite's pages, so damage to the database reaches it within seconds too. Keep point 1 as well.
+4. **An export you can read:** `cairn export <folder>` now and then (`docs/CLI.md`).
 
 ## Day to day
 

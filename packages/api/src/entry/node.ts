@@ -1,9 +1,12 @@
 import type { Server } from "node:http";
 import { createAdaptorServer } from "@hono/node-server";
+import { canSnapshot } from "@cairn/core";
 import { createApp } from "../app.js";
 import { ConfigError, loadConfig } from "../config.js";
 import { closeContext, createContext } from "../context.js";
 import { oauthFromConfig } from "../oauth/setup.js";
+import { FolderArchive } from "../backup/archive.js";
+import { BackupEngine } from "../backup/engine.js";
 import { installShutdown } from "./shutdown.js";
 
 /**
@@ -34,6 +37,37 @@ async function main(): Promise<void> {
   const config = loadConfig();
   const context = await createContext(config);
   const oauth = oauthFromConfig(config, context);
+
+  // Backups are a capability of the store rather than something every adapter
+  // must answer for (ADR-049), so this is a check rather than an assumption.
+  const backups =
+    config.backups.dir !== null && canSnapshot(context.store)
+      ? new BackupEngine({
+          source: context.store,
+          archive: new FolderArchive(config.backups.dir),
+          policy: {
+            afterMs: config.backups.afterHours * 60 * 60 * 1000,
+            keepMs: config.backups.keepDays * 24 * 60 * 60 * 1000,
+            keepAtLeast: config.backups.keepAtLeast,
+          },
+          log: (line) => process.stdout.write(`cairn: ${line}\n`),
+        })
+      : null;
+  if (backups) {
+    await backups.start();
+    // A replica URL means the database is being streamed off this machine,
+    // which means this machine's disk is not expected to outlive the
+    // container. Backups written to it would then be lost exactly when they
+    // are needed. Say so rather than let them look like protection.
+    if (process.env["CAIRN_REPLICA_URL"]) {
+      process.stdout.write(
+        `cairn: warning: backups are going to ${config.backups.dir}, on this container's own disk, ` +
+          "but CAIRN_REPLICA_URL is set, which means this disk does not outlive the container. " +
+          "These backups will be lost when it stops. Point CAIRN_BACKUP_DIR at a mounted volume that survives, or set it to off until backups can be sent to storage.\n",
+      );
+    }
+  }
+
   const app = createApp({
     context,
     token: config.token,
@@ -42,6 +76,7 @@ async function main(): Promise<void> {
     publicOrigin: config.oauth ? new URL(config.oauth.publicUrl).origin : null,
     contentLicence: config.contentLicence,
     selfDescription: config.selfDescription,
+    ...(backups ? { onWrite: () => backups.afterWrite() } : {}),
   });
 
   const servers: Server[] = [];
@@ -80,6 +115,12 @@ async function main(): Promise<void> {
   installShutdown({
     servers,
     steps: [
+      // Before the close, because a backup of a closed database is not
+      // possible, and because the last few hours of work are exactly what a
+      // sudden stop would otherwise cost (ADR-049).
+      ...(backups
+        ? [{ name: "backed up", run: async () => void (await backups.backupNow("shutting down")) }]
+        : []),
       {
         name: "closed the database",
         // SQLite checkpoints the WAL and removes it when the last connection

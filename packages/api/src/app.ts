@@ -36,6 +36,12 @@ export interface AppOptions {
   contentLicence?: string | null;
   /** How this Cairn describes itself at /.well-known/cairn.json (ADR-034). */
   selfDescription?: SelfDescription;
+  /**
+   * Told about every request that changed something, so it can back up when
+   * the last backup is more than three hours old (ADR-049). Absent in tests
+   * and short-lived commands, which back up nothing.
+   */
+  onWrite?: () => void;
 }
 
 /** How a request got in, for attribution and for GET /api/v1/me. */
@@ -142,6 +148,26 @@ export function createApp(options: AppOptions): Hono {
       semantic_search: options.context.search.status(),
     }),
   );
+
+  // Backing up is triggered by activity rather than by a timer, because a
+  // timer never fires in a container that is scaled to zero (ADR-049). This is
+  // the one place all three surfaces meet: REST, MCP and the console all
+  // arrive here, and the CLI only ever reaches Cairn over HTTP (hard rule 15).
+  //
+  // A method that can change something is taken as a write. MCP sends reads as
+  // POST too, so some of these changed nothing, and that is accepted: the
+  // trigger is the age of the last backup, so an extra one costs a few
+  // milliseconds and a file, while a missed one costs hours of work.
+  if (options.onWrite) {
+    const onWrite = options.onWrite;
+    app.use("*", async (c, next) => {
+      await next();
+      if (c.req.method === "GET" || c.req.method === "HEAD" || c.req.method === "OPTIONS") return;
+      // A request that failed changed nothing worth copying.
+      if (c.res.status >= 400) return;
+      onWrite();
+    });
+  }
 
   const trust = options.trust ?? NO_LOCAL_TRUST;
 

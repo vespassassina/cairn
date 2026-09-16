@@ -152,7 +152,7 @@ Any of these work: a version, `latest` for the newest release, `edge` for the ne
 az containerapp logs show -g cairn -n cairn --follow
 ```
 
-**Keep your own copy.** Litestream is a continuous backup, but an export is one you can read: run `cairn export` now and then.
+**Keep your own copy.** Litestream is a replica, not a backup. It copies SQLite's pages continuously, so a new container starts from a copy seconds old, but damage to the database reaches it just as quickly; that is how this Cairn was lost for four days in September 2026. Cairn also takes its own backups, whole copies of the database checked before they are kept (ADR-049), but on Azure these currently go to the container's own disk and are lost when it stops, and Cairn says so in its startup log. So until backups can be sent to storage, run `cairn export ~/cairn-backup` now and then. It is the one copy you hold yourself and the one you can read.
 
 **Rotate the signing secret.** Move the current value to `CAIRN_AUTH_SECRET_PREVIOUS` in `deploy/azure/.cairn-deploy.env`, delete `CAIRN_AUTH_SECRET`, and run the script. Tokens signed with the old secret keep working until they expire.
 
