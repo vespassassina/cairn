@@ -83,9 +83,22 @@ export class CairnClient {
     const etag = response.headers.get("etag")?.replace(/^W\//, "").replace(/^"(.*)"$/, "$1") ?? null;
 
     if (!response.ok) {
+      // 502, 503 and 504 without one of Cairn's own JSON errors come from
+      // whatever sits in front of it, so the request never arrived and the
+      // reason is in the server's log, not in this response (ADR-046).
+      const fromCairn = typeof json?.["error"] === "string";
+      const gateway = response.status === 502 || response.status === 503 || response.status === 504;
+      if (!fromCairn && gateway) {
+        throw new ApiError(
+          response.status,
+          "server_unavailable",
+          `${this.options.baseUrl} answered ${response.status} before Cairn did, so the request never reached it. The server is asleep, still starting, or failing to start. Try again in a minute; if it keeps happening, read the server's own log, because the reason is there rather than here.`,
+          json,
+        );
+      }
       throw new ApiError(
         response.status,
-        typeof json?.["error"] === "string" ? json["error"] : `http_${response.status}`,
+        fromCairn ? (json?.["error"] as string) : `http_${response.status}`,
         typeof json?.["message"] === "string" ? json["message"] : text.slice(0, 200),
         json,
       );

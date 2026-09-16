@@ -11,6 +11,15 @@ Each entry answers four questions:
 3. **Fix.** What changed, with the commit or file.
 4. **Lesson.** What to do differently next time. This is the part worth reading.
 
+## 2026-09-16
+
+### The Azure Cairn was down for days in a restart loop, and nothing said so
+
+1. **What happened.** Asked whether Cairn was connected, and found the Azure instance had been unreachable since at least the last sync on 2026-09-14. `cairn --instance azure overview` hung and then returned `error: http_504: stream timeout`. `curl` to the health endpoint timed out at 60 seconds. `az containerapp show` reported the app "Running" and its revision "Healthy" with one replica, which is what a scale-to-zero app looks like whether or not it can start. The container log held the real story: `litestream restore` failing with `decode database: decode page 1460: EOF`, then "restore attempt 1 failed; retrying in 10 seconds", over and over.
+2. **Cause.** Litestream's copy of the database in Blob Storage was truncated, so no restore could ever succeed. `docker/start.sh` had one retry loop, written for the first deploy, when access to storage takes a minute to arrive while Azure grants the app's identity its role. It could not tell that kind of failure from a permanently damaged replica, so it retried twelve times over two minutes, exited, and Container Apps restarted it into the same loop. Underneath that, Litestream was pinned at 0.5.7 while upstream had reached 0.5.17, on a 0.5 line that is a rewrite and whose patch releases have carried a run of restore and corruption fixes.
+3. **Fix.** ADR-046. The start script verifies the database with SQLite's `integrity_check` before serving it and refuses to replicate one that fails; a decode or corruption error now stops at the first attempt instead of being retried; the container logs `litestream ltx` and the exact recovery commands when a replica cannot be read; Litestream is now 0.5.17. The CLI stopped passing a bare gateway 504 through as `http_504`.
+4. **Lesson.** Three things worth carrying. First, a retry loop is a claim that the failure is temporary, and a loop that cannot tell temporary from permanent will turn a five-second diagnosis into an invisible outage; classify the error before retrying it. Second, the health that Azure reports is the health of the container app, not of the program inside it, so "Running" and "Healthy" there proved nothing and nearly sent the diagnosis in the wrong direction; the container's own log was the only source that knew. Third, and the one that actually cost the time: by ADR-018 the storage account is reachable only by the app's managed identity, so when the replica went bad there was no way to look at it from the owner's own machine, and the process that could read it was the one crash-looping. A component that is the only thing able to read its own state has to log that state when it fails, or the failure is unreadable by anyone.
+
 ## 2026-09-15
 
 ### The first npm publish failed three times before it could actually succeed

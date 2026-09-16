@@ -4,6 +4,12 @@ What changed, and why. Newest first. One entry per meaningful change: code, desi
 
 Entries link to the ADR when there is one. A change of direction that has no ADR yet still gets an entry here.
 
+## 2026-09-16
+
+### A Cairn no longer starts on a database it cannot vouch for
+
+The Azure Cairn was found in a restart loop that had left it unreachable: Litestream's copy of the database in Blob Storage was truncated, `litestream restore` failed with `decode database: decode page 1460: EOF`, and `docker/start.sh` treated that like the temporary permission delay it was written for, retrying twelve times before exiting into another restart. Nothing said so from outside: the address answered a bare 504 and the CLI passed it through as `error: http_504: stream timeout`. ADR-046 changes four things. The start script now runs SQLite's `integrity_check` on the database before serving it, through Node's built-in `node:sqlite` so the image gains nothing, and refuses to open or replicate one that fails, because streaming a half-read database back would overwrite the only good copy. A restore error naming a decode, corruption, malformed file, checksum or EOF now stops at the first attempt, since retrying cannot fix it, while network and permission errors keep their twelve tries. On a damaged replica the container now logs `litestream ltx` for that replica plus the exact commands for the three ways out, which matters because by ADR-018 only the app's managed identity can read the storage account, so the container's own log is the one place the owner can see what the replica holds. Litestream moves from 0.5.7 to 0.5.17, ten patch releases that include "validate LTX file size before restore" (0.5.3) and "remove release-blocking SQLite WAL-reset corruption exposure" (0.5.17); a stale pin on a rewrite that is still shipping corruption fixes is what made this likely in the first place. Separately, the CLI now names a 502, 503 or 504 that carries none of Cairn's own JSON errors as a gateway failure that never reached Cairn, and says the reason is in the server's log. Tests in `packages/api/test/container-start.test.ts` drive the script against a stubbed Litestream; four of the five fail against the previous script.
+
 ## 2026-09-15
 
 ### `cairn restore` and `cairn peek`, and a REST restore endpoint

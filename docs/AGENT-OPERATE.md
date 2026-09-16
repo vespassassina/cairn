@@ -167,11 +167,12 @@ The person edits the private files; you run the script or compose afterwards.
 1. **Read the message.** Cairn's errors name the setting, command or step that fixes them. Do what it says before anything else.
 2. **Then the person's guide:** "When something goes wrong" in `docs/DEPLOY-AZURE.md` or `docs/DEPLOY-DOCKER.md`, and `docs/LESSONS.md`.
 3. **Common cases:**
-   1. `cairn` says it cannot reach the server: it is not running (start it, or `cairn start`), or on Azure it is starting; try again in a minute.
+   1. `cairn` says it cannot reach the server: it is not running (start it, or `cairn start`), or on Azure it is starting; try again in a minute. If it is still unreachable after that, go to case 6 rather than waiting longer.
    2. `cairn login` says the address needs no sign-in: it tried localhost because no Cairn was named. Use `--instance` or `CAIRN_URL`.
    3. A write fails with a version conflict: someone changed the record since it was read. Read it again, merge, and retry with the new version.
    4. `semantic_search` says `failed`: keyword search still works. The reason names the cause, usually memory or the model download.
    5. An MCP client or the CLI is suddenly asked to sign in again: the sign-in was revoked, not expired. A refresh token used twice ends the whole sign-in, and after a minute's grace that is what it means (ADR-033). Sign in again, and if it keeps happening say so: it points at something replaying tokens, or a database restored to an earlier point.
+   6. The address answers 502, 503 or 504, or nothing at all, for more than a couple of minutes: the request is not reaching Cairn, so the reason is in the container's log and nowhere else. Read it: on Azure, `az containerapp logs show -n <app> -g <group> --tail 50`; with Docker, `docker compose logs --tail 50`. Do not trust the platform's own health here, because an Azure container app reports "Running" and "Healthy" whether or not the program inside it started (`docs/LESSONS.md`, 2026-09-16). If the log says the replica cannot be read back, Cairn has stopped on purpose rather than serve a database it could not verify (ADR-046); the log lists what the replica holds and the exact commands for the three ways out. Never redeploy from empty to clear it until you are certain no other Cairn holds a newer copy, because the first write overwrites the replica.
 4. **If the fix is not in the docs,** tell the person what you saw, and do not change code or cloud resources unasked. Afterwards, suggest a `docs/LESSONS.md` entry, so the next agent finds it.
 
 ## 11. Hand over

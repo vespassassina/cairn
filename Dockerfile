@@ -34,16 +34,18 @@ RUN npm install --omit=dev --no-audit --no-fund \
 FROM debian:bookworm-slim AS litestream
 ARG TARGETARCH
 # Pinned, and checked against the checksums published with the release.
-ARG LITESTREAM_VERSION=0.5.7
+# Keep this current: 0.5 is a rewrite, and the corruption and restore fixes
+# land in patch releases (ADR-046).
+ARG LITESTREAM_VERSION=0.5.17
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates curl \
   && rm -rf /var/lib/apt/lists/*
 RUN set -eu; \
   case "$TARGETARCH" in \
     amd64) file="litestream-${LITESTREAM_VERSION}-linux-x86_64.tar.gz"; \
-           sum="e62260ec49343272bea635ea8462d36d00fff0bbef27835dcfabd667ddf184c5" ;; \
+           sum="cfb371176d164437ae869f8351cfde49bd1804ae71c61923f75c9cba9c9c006d" ;; \
     arm64) file="litestream-${LITESTREAM_VERSION}-linux-arm64.tar.gz"; \
-           sum="fb53828660808a8a03dfd511b2c6bf498cfc73691ca888cf8beb7b4c435e150d" ;; \
+           sum="f8ca4a050095c1efbda2c4365172e61bf9d955ea0d9ac42f448b52e51819baa5" ;; \
     *) echo "no Litestream build for $TARGETARCH" >&2; exit 1 ;; \
   esac; \
   curl -fsSL -o /tmp/litestream.tar.gz \

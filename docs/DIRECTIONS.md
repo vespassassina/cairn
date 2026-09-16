@@ -11,6 +11,18 @@ Rules:
 3. Every entry says where it landed: an ADR, a doc, a commit, or "not yet".
 4. A later direction that reverses an earlier one does not edit it. Add the new one and point back.
 
+## 2026-09-16
+
+### Stop the database corrupting, and stop the container starting on a bad one
+
+> "we can restore from laptop, meanwhile we need to figure out how to prevent the db from corrupting and the container from starting."
+>
+> "this is a real learning and chance to make it better"
+>
+> "also add logging so we can diagnose"
+
+Given after asking "is cairn connected? how do i keep it running?" and finding the Azure Cairn had been in a restart loop: Litestream could not decode its copy of the database, and the start script retried that failure twelve times, exited, and was restarted, forever. The owner's own copy on the laptop is the good one, so recovery was not the problem; not being told what was wrong was. Landed in: `docs/decisions/ADR-046.md`, `docker/start.sh`, `Dockerfile` (Litestream 0.5.7 to 0.5.17), `packages/cli/src/client.ts`, `docs/AGENT-OPERATE.md`, with tests in `packages/api/test/container-start.test.ts` and `packages/cli/test/client.test.ts`.
+
 ## 2026-09-15
 
 ### Add `cairn restore` and `cairn peek`
