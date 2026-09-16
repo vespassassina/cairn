@@ -144,7 +144,7 @@ cairn sync http://localhost:8787 https://your-address
 CAIRN_IMAGE=ghcr.io/vespassassina/cairn:0.2.0 deploy/azure/deploy.sh
 ```
 
-Name a version, not `latest` or `edge`. Container Apps starts a new version only when the image name changes, so running the script again with the same moving tag leaves the old image running.
+Any of these work: a version, `latest` for the newest release, `edge` for the newest commit on `main`, or `@sha256:<digest>` for one exact build. The script asks the registry what the tag points at right now and deploys that digest, so a tag that has moved really does deploy, and one that has not says "no change to deploy" instead of pretending (ADR-047). Naming a version is still the clearest thing to do, because then the command itself records what you deployed.
 
 **Watch the logs:**
 

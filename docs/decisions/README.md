@@ -54,6 +54,7 @@ A decision that changes is not edited away. Add a new ADR that supersedes it, an
 | [044](ADR-044.md) | The project's name is Cairn, with no dedicated domain | accepted | 2026-09-15 |
 | [045](ADR-045.md) | Restore reaches REST and the CLI, MCP keeps its own way | accepted | 2026-09-15 |
 | [046](ADR-046.md) | Cairn never starts on a database it cannot vouch for | accepted | 2026-09-16 |
+| [047](ADR-047.md) | A deploy names the image by digest, and says when it changes nothing | accepted | 2026-09-16 |
 
 ## Writing one
 

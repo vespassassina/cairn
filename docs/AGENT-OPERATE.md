@@ -13,7 +13,7 @@ The rules of `docs/AGENT-INSTALL.md` apply here too. In short:
 3. **Never read `deploy/azure/.cairn-deploy.env` or `deploy/docker/.env`.** When a secret in them must change, tell the person which line to edit, and they edit it.
 4. **Find out which Cairn first.** Run `cairn instances`. If it lists instances, use their names with `--instance`. If not, ask for the address, and remember that without `CAIRN_URL` or `--instance` the CLI talks to `http://localhost:8787`.
 5. **Check after every change,** with the check given for it, and stop on a failure. Read the matching "When something goes wrong" section of the person's guide and `docs/LESSONS.md` before improvising.
-6. **Pin what you deploy.** Deploy an exact version or image digest, never `latest` or `edge`: Container Apps starts a new version only when the image name changes.
+6. **Say what you deployed.** On Azure, `deploy/azure/deploy.sh` resolves whatever tag it is given to the digest that tag points at now, and deploys the digest, so a moved tag deploys and an unmoved one reports "no change to deploy" rather than pretending (ADR-047). Still name a version rather than `latest`, so the command records what you deployed, and read the script's output: it prints the digest, the image it replaced, and whether anything changed. On Docker there is no such resolution, so pin a version or a digest in `.env`.
 
 ## 1. Find out what is running
 
@@ -83,7 +83,7 @@ A setting that is wrong stops the server with a message naming the setting and t
 | `CAIRN_RG` | `cairn` | The resource group |
 | `CAIRN_LOCATION` | `swedencentral` | The region. Part of the address, so awkward to change later |
 | `CAIRN_NAME` | `cairn` | The app's name. Part of the address too |
-| `CAIRN_IMAGE` | `ghcr.io/vespassassina/cairn:latest` | The image. Pin a version or a digest |
+| `CAIRN_IMAGE` | `ghcr.io/vespassassina/cairn:latest` | The image. A tag is resolved to its current digest before deploying (ADR-047); `latest` is the newest release, `edge` the newest commit on `main` |
 | `CAIRN_SERVICE_TOKEN` | none | Secret. Becomes the server's `CAIRN_TOKEN` |
 | `CAIRN_IDLE_MINUTES` | `30` | Minutes without a request before it stops; the next request waits for it to start |
 | `CAIRN_ALWAYS_ON` | `false` | `true` never stops, so no cold starts, for a few dollars a month |
@@ -113,7 +113,7 @@ Ask first. Tell the person what the new version brings, from `docs/CHANGELOG.md`
 
 1. **This computer:** in the repository, `git pull`, `pnpm install`, `pnpm build`, then restart `pnpm dev`. The database migrates itself on start.
 2. **Their own server:** set `CAIRN_IMAGE` to the version in `deploy/docker/.env` (the person edits it), then `docker compose pull && docker compose up -d`.
-3. **Azure:** `CAIRN_IMAGE=ghcr.io/vespassassina/cairn:<version> deploy/azure/deploy.sh`, or `@sha256:<digest>` to deploy an exact build from `main`. Check with `az containerapp list --query "[].properties.template.containers[0].image" -o tsv`.
+3. **Azure:** `CAIRN_IMAGE=ghcr.io/vespassassina/cairn:<version> deploy/azure/deploy.sh`, or `:edge` for the newest commit on `main`, or `@sha256:<digest>` for one exact build. The script prints the digest it resolved, the image it is replacing, and, when nothing changed, that nothing changed. Check with `az containerapp list --query "[].properties.template.containers[0].image" -o tsv`, which now answers with a digest.
 4. **The CLI:** `docs/CLI.md`, "Update it". `cairn -V` says which version is installed.
 
 Then run the checks in section 3. Keep server and CLI on the same release where you can; a newer CLI works with an older server, and where a feature needs the newer server (such as edit times in sync, ADR-030) it falls back to the older behaviour.

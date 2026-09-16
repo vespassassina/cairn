@@ -13,6 +13,60 @@ Rules:
 
 ## 2026-09-16
 
+### Make it start and deploy clean, and back up before shutting down
+
+> "my take: make it start and deploy clean, then add the import, wrap into error management. log issues"
+>
+> "also when starting and db corrupted, catch the error, log, then move the broken version (rename) then check for backup (are we doing backups right?), ingest last good backed up version (by cloning the backup into the current filename), then log the broken one position and what happened."
+>
+> "starting older and replicating SHOULD pull new data not overwrite older. old records should be marked with timestamp and when replicating to a newer version it should automatically pull not push new records. why not?"
+>
+> "for backups, do a new backup before shutting down, is it possible?"
+>
+> "for local just run an internal timer every 12 hours. or at shutdown"
+>
+> "same for cloud, if it never shuts down, do a backup every 12 hours"
+>
+> "keep them rolling, backups older than a week get delete"
+>
+> "so let's change the game here, every new write if last backup is older than 3 hours, we backup. change rolling days to 2. min backups to keep 3"
+>
+> "basically when we launch we also load the date of last backup as reference"
+>
+> "add a bit more error and warning logging"
+
+Given while recovering the Azure Cairn from the outage in ADR-046, after three runs of `deploy/azure/deploy.sh` turned out to have deployed nothing at all.
+
+The question "why not?" was answered rather than acted on: Cairn's own sync already works exactly as described, comparing records by timestamp and merging both sides (ADR-023, ADR-030), but Litestream replicates SQLite pages and a linear transaction log, where there is no record to carry a timestamp and no merge to perform. The conclusion was not to make Litestream smarter but to move recovery up to the layer that does have records, which is what makes an export the right shape for a backup: a mirror replicates corruption, an export cannot carry a damaged page.
+
+"Are we doing backups right?" was answered no. `docs/AGENT-OPERATE.md` called the Litestream replica a backup and said "nothing to do", and the only readable copy was a manual `cairn export` suggested "now and then". Measured during the discussion: an export of the live workspace takes 0.089 seconds and 640 KB against a 30-second shutdown grace period, and Litestream 0.5.17 was confirmed to forward SIGTERM to its `-exec` child and wait for it, so a backup on shutdown is viable.
+
+Landed so far in: `docs/decisions/ADR-047.md`, `deploy/azure/deploy.sh`, `docs/DEPLOY-AZURE.md`, `docs/AGENT-OPERATE.md`. The backup engine, the SIGTERM handler and the start-up recovery path are not yet built.
+
+### Stream the last log file over the API, and rotate log files
+
+> "add an api call to stream last logfile contents."
+>
+> "logfile rotation"
+
+Not yet. Raised in reply, and still open: an API cannot serve the log of a process that will not start, which was precisely this incident, and on Container Apps a log file under `/data` does not outlive the container that wrote it because Litestream replicates the database and not arbitrary files. So the question the design has to answer first is where a log lives such that a later boot can read what an earlier failed boot said. Also flagged: a log endpoint must be authenticated and scrubbed before it serves anything, and hard rule 14 means REST, MCP and the CLI each gain the capability or an ADR says why not.
+
+The owner answered all of that the same day:
+
+> "log to blob storage directly for startup and log file for rest. do not incrtease size of sqlite."
+>
+> "try to keep logs clean of secrets. and logs go to a protected, private blob and the stream only to authenticated users."
+>
+> "implement in mcp/cli/api"
+
+That settles the four open points. Start-up writes straight to blob storage, because that is the only place a log survives a container that never finishes starting, and it is reachable before the database is. Everything after start-up goes to a rotating file, which is cheap and needs no network on the write path. The database is explicitly not a log store: SQLite stays the size of the wiki, which also keeps the Litestream replica and the backups small. Secrets are scrubbed on the way in rather than on the way out, so a leak cannot be one forgotten endpoint away. The blob container is private, and the stream endpoint requires a signed-in user. And it lands on all three surfaces, which is hard rule 14 applied rather than excused.
+
+### Ingest an existing wiki from the filesystem
+
+> "add a tool in the cli to ingest an existing wiki from the filesystem"
+
+Not yet. Distinct from `cairn import`, which reads Cairn's own export format and keeps its ids (ADR-016). Ingesting a foreign wiki means deriving stable ids from paths, mapping folders onto the page tree (ADR-024, ADR-026) and turning wikilinks and relative Markdown links into edges. Fits the CLI's constraints as they stand: read files, write over HTTP, never open the database (hard rules 15 and 16). Open question before building: which source format is the real target, since Obsidian, MkDocs, a Notion export and plain Markdown differ mostly in frontmatter and link syntax.
+
 ### Stop the database corrupting, and stop the container starting on a bad one
 
 > "we can restore from laptop, meanwhile we need to figure out how to prevent the db from corrupting and the container from starting."

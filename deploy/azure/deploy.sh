@@ -13,7 +13,11 @@
 #   CAIRN_RG                   resource group (default: cairn)
 #   CAIRN_LOCATION             Azure region (default: swedencentral)
 #   CAIRN_NAME                 app name, part of the address (default: cairn)
-#   CAIRN_IMAGE                image (default: ghcr.io/vespassassina/cairn:latest)
+#   CAIRN_IMAGE                image (default: ghcr.io/vespassassina/cairn:latest,
+#                              the newest release; use :edge for the newest
+#                              commit on main). The tag is resolved to the
+#                              digest it points at now, so a moved tag really
+#                              deploys and an unmoved one says so.
 #   CAIRN_AUTH_PROVIDER        github (default) or oidc
 #   CAIRN_OIDC_ISSUER          for oidc only
 #   CAIRN_OAUTH_CLIENT_ID      from your OAuth app; empty for the first pass
@@ -115,6 +119,58 @@ if [ -n "$CAIRN_OAUTH_CLIENT_ID" ]; then
   fi
 fi
 
+# Container Apps makes a new revision only when the template changes, and a
+# tag such as :latest is the same string however often the image behind it
+# moves. Left as a tag, a redeploy after a new build is a silent no-op: the
+# template is identical, no revision is created, and the old image keeps
+# running. So the tag is resolved to the digest it points at now, and the
+# digest goes in the template (ADR-047).
+#
+# Only ghcr.io is resolved, with an anonymous pull token, because that is where
+# Cairn publishes. Anything else is passed through untouched, with a warning
+# that says what that costs.
+resolve_digest() {
+  local ref="$1" path tag token digest
+  case "$ref" in
+    *@sha256:*) printf '%s' "$ref"; return 0 ;;
+    ghcr.io/*) ;;
+    *) printf '%s' "$ref"; return 0 ;;
+  esac
+  path="${ref#ghcr.io/}"
+  tag=latest
+  case "$path" in *:*) tag="${path##*:}"; path="${path%:*}" ;; esac
+  # No token means the registry could not be reached at all, which is a
+  # network problem rather than a wrong tag: pass the ref through and let the
+  # caller warn.
+  token="$(curl -fsS "https://ghcr.io/token?scope=repository:${path}:pull" 2>/dev/null \
+    | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')"
+  [ -n "$token" ] || { printf '%s' "$ref"; return 0; }
+  digest="$(curl -fsSI \
+    -H "Authorization: Bearer $token" \
+    -H "Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.docker.distribution.manifest.v2+json" \
+    "https://ghcr.io/v2/${path}/manifests/${tag}" 2>/dev/null \
+    | tr -d '\r' | sed -n 's/^[Dd]ocker-[Cc]ontent-[Dd]igest: //p')"
+  # The registry answered but has no such tag. Saying so here is worth more
+  # than letting Azure fail to pull it in a few minutes' time.
+  [ -n "$digest" ] || return 2
+  printf 'ghcr.io/%s@%s' "$path" "$digest"
+}
+
+requested_image="$CAIRN_IMAGE"
+if resolved="$(resolve_digest "$requested_image")"; then
+  CAIRN_IMAGE="$resolved"
+  if [ "$CAIRN_IMAGE" != "$requested_image" ]; then
+    say "image $requested_image is ${CAIRN_IMAGE##*@}"
+  else
+    case "$requested_image" in
+      *@sha256:*) ;;
+      *) say "warning: could not reach the registry to look up the digest for $requested_image, so the tag goes in the template as it is. If that tag has moved since the last deploy, this run will not pick up the new image. To be certain, deploy by digest: CAIRN_IMAGE=$requested_image@sha256:<digest>" ;;
+    esac
+  fi
+else
+  fail "the registry has no image tagged $requested_image. Cairn publishes :latest for each release and :edge for the newest commit on main. Pick one of those, or give a digest: CAIRN_IMAGE=ghcr.io/vespassassina/cairn:edge $0"
+fi
+
 say "registering the Azure services Cairn uses (only slow the first time)"
 az provider register --namespace Microsoft.App --wait >/dev/null
 az provider register --namespace Microsoft.Storage --wait >/dev/null
@@ -164,6 +220,38 @@ trap 'rm -f "$params"' EXIT
 # Git Bash on Windows: az is a Windows program and needs Windows paths.
 native() { if command -v cygpath >/dev/null 2>&1; then cygpath -w "$1"; else printf '%s' "$1"; fi; }
 
+# What was running before this run, so afterwards we can tell a real rollout
+# from a template that did not change, and say which image is being replaced
+# by which (ADR-047). Both empty on a first deploy, when there is no app yet.
+revision_before="$(az containerapp show --resource-group "$CAIRN_RG" --name "$CAIRN_NAME" \
+  --query "properties.latestRevisionName" --output tsv 2>/dev/null | tr -d '\r' || true)"
+image_before="$(az containerapp show --resource-group "$CAIRN_RG" --name "$CAIRN_NAME" \
+  --query "properties.template.containers[0].image" --output tsv 2>/dev/null | tr -d '\r' || true)"
+
+if [ -n "$image_before" ]; then
+  if [ "$image_before" = "$CAIRN_IMAGE" ]; then
+    say "already running this exact image, so this run changes nothing about it"
+  else
+    say "replacing the running image"
+    say "  from  $image_before"
+    say "  to    $CAIRN_IMAGE"
+  fi
+  # A tag left in an earlier template is why a redeploy could silently keep an
+  # old image: the string never changed, so no revision was ever made.
+  case "$image_before" in
+    *@sha256:*) ;;
+    *) say "warning: the running revision was deployed by tag ($image_before) rather than by digest, so earlier redeploys could not tell a moved tag from an unchanged one. This run fixes that by deploying a digest." ;;
+  esac
+fi
+
+case "$requested_image" in
+  *:edge | *:edge@*) say "warning: :edge is the newest commit on main, not a release. It has passed CI but has not been through a release. Use :latest for the newest release." ;;
+esac
+
+if [ "$CAIRN_ALWAYS_ON" = "false" ]; then
+  say "note: this Cairn stops after $CAIRN_IDLE_MINUTES idle minutes, so the first request after a pause waits for it to start"
+fi
+
 say "deploying (a few minutes)"
 az deployment group create \
   --resource-group "$CAIRN_RG" \
@@ -192,16 +280,29 @@ if [ "$deployed" != "true" ] && [ "$deployed" != "True" ]; then
   exit 0
 fi
 
-# The old revision keeps answering while the new one starts, so wait for
-# the new one to be ready before asking Cairn if it is up.
-say "waiting for the new version to start (the first start can take a minute)"
-for _ in $(seq 1 60); do
-  ready="$(az containerapp show --resource-group "$CAIRN_RG" --name "$CAIRN_NAME" \
-    --query "properties.latestReadyRevisionName == properties.latestRevisionName" --output tsv 2>/dev/null | tr -d '\r' || true)"
-  [ "$ready" = "true" ] && break
-  sleep 5
-done
-[ "$ready" = "true" ] || fail "the new version did not start. Look at its logs: az containerapp logs show -g $CAIRN_RG -n $CAIRN_NAME --type system"
+revision_after="$(az containerapp show --resource-group "$CAIRN_RG" --name "$CAIRN_NAME" \
+  --query "properties.latestRevisionName" --output tsv 2>/dev/null | tr -d '\r' || true)"
+
+# No new revision means the template was identical, so nothing rolled out.
+# That is a normal outcome worth saying plainly: waiting for a version that
+# was never created is how a redeploy comes to look like a hang (ADR-047).
+if [ -n "$revision_before" ] && [ "$revision_before" = "$revision_after" ]; then
+  say "no change to deploy: $revision_after already runs this image and these settings"
+  say "  image  ${CAIRN_IMAGE##*/}"
+  say "  If you expected a new version, the image you asked for is the one already running."
+  say "  Deploy a different one with CAIRN_IMAGE, such as: CAIRN_IMAGE=ghcr.io/vespassassina/cairn:edge $0"
+else
+  # The old revision keeps answering while the new one starts, so wait for
+  # the new one to be ready before asking Cairn if it is up.
+  say "waiting for $revision_after to start (the first start can take a minute)"
+  for _ in $(seq 1 60); do
+    ready="$(az containerapp show --resource-group "$CAIRN_RG" --name "$CAIRN_NAME" \
+      --query "properties.latestReadyRevisionName == properties.latestRevisionName" --output tsv 2>/dev/null | tr -d '\r' || true)"
+    [ "$ready" = "true" ] && break
+    sleep 5
+  done
+  [ "$ready" = "true" ] || fail "$revision_after was created but never became ready, after five minutes. The container is starting and failing, so the reason is in its own log rather than here: az containerapp logs show -g $CAIRN_RG -n $CAIRN_NAME --tail 50"
+fi
 
 for _ in $(seq 1 40); do
   if curl -fsS "$url/health" >/dev/null 2>&1; then
@@ -215,4 +316,12 @@ for _ in $(seq 1 40); do
   fi
   sleep 6
 done
-fail "Cairn did not answer at $url/health. Look at its logs: az containerapp logs show -g $CAIRN_RG -n $CAIRN_NAME --follow"
+say ""
+say "warning: the revision started, but Cairn has not answered at $url/health after four minutes."
+say "Azure reporting the revision as healthy is not the same as Cairn being able to serve: the"
+say "container can be starting and failing in a loop while the platform still calls it running (ADR-046)."
+say "Read the container's own log, which is where the reason is:"
+say "  az containerapp logs show -g $CAIRN_RG -n $CAIRN_NAME --tail 50"
+say "Cairn stops on purpose, rather than serve, when the database it restored cannot be vouched for."
+say "If that is what happened, the log names the damaged transaction and what to do about it."
+fail "Cairn did not answer at $url/health"
