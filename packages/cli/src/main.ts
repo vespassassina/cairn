@@ -555,11 +555,17 @@ export async function run(argv: string[], io: Io): Promise<number> {
   };
 
   // Which server: --instance, then CAIRN_URL, then the first registered
-  // instance that answers (ADR-029), then localhost.
+  // instance that answers (ADR-029), then localhost. `chosenBecause`
+  // explains an unnamed pick in an unreachable error, so it never just
+  // states an address with no reason (coding style rule 2, fault 7 of
+  // console-and-search-polish).
   let baseUrl = io.env["CAIRN_URL"] ?? "http://localhost:8787";
+  let chosenBecause: string | undefined =
+    registered.length === 0 ? "the default, since no --instance, CAIRN_URL or registered instance was given" : undefined;
   try {
     if (flags.instance !== undefined) {
       baseUrl = named(flags.instance).url;
+      chosenBecause = undefined;
     } else if (io.env["CAIRN_URL"] === undefined && registered.length > 0 && !OWN_SERVERS.has(command)) {
       if (command === "login" || command === "logout") {
         throw new UsageError(`which instance? cairn ${command} --instance <name>, one of: ${names()}`);
@@ -579,6 +585,9 @@ export async function run(argv: string[], io: Io): Promise<number> {
         io.stderr(`using ${instance.name} (${instance.url}): ${skipped.map((x) => x.name).join(", ")} did not answer\n`);
       }
       baseUrl = instance.url;
+      chosenBecause = `instance "${instance.name}", chosen because none was named`;
+    } else if (io.env["CAIRN_URL"] !== undefined) {
+      chosenBecause = undefined;
     }
   } catch (error) {
     if (!(error instanceof UsageError)) throw error;
@@ -632,6 +641,7 @@ export async function run(argv: string[], io: Io): Promise<number> {
     token,
     userAgent: `cairn-cli/${VERSION}${agent ? ` (${agent})` : ""}`,
     fetch: io.fetch,
+    chosenBecause,
   });
   const out = (json: Json | null, text: () => string) =>
     io.stdout(flags.json ? `${JSON.stringify(json, null, 2)}\n` : text());

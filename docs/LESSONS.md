@@ -13,6 +13,13 @@ Each entry answers four questions:
 
 ## 2026-09-17
 
+### An unreachable Cairn named the address it tried, but never why that one
+
+1. **What happened.** `cairn overview` with no `--instance`, no `CAIRN_URL`, and nothing registered, against a server that was not running, printed "cannot reach Cairn at http://localhost:8787. Is the server running?" That names an address, but not that `localhost:8787` was a default the CLI picked because nothing else was given, which coding style rule 2 requires ("say when a default was used"). Someone who had never set `CAIRN_URL` and did not know the default port could read this and wonder whether they had misconfigured something.
+2. **Cause.** `CairnClient.request`'s catch block in `packages/cli/src/client.ts` only ever had the `baseUrl` to report; nothing upstream told it whether that URL came from an explicit `--instance`, an explicit `CAIRN_URL`, or the hardcoded fallback in `main.ts`. The information existed at the point `baseUrl` was chosen, three functions away, and was never carried forward.
+3. **Fix.** Added an optional `chosenBecause` to `ClientOptions`, set in `main.ts` alongside `baseUrl` itself: `undefined` when `--instance` or `CAIRN_URL` picked it, a description naming the instance when `firstReachable` picked one of several registered instances because none was named, and "the default, since no --instance, CAIRN_URL or registered instance was given" when nothing at all was configured. The unreachable error appends it in parentheses when set. `packages/cli/src/client.ts`, `packages/cli/src/main.ts`, tested in `packages/cli/test/client.test.ts` and `packages/cli/test/cli.test.ts`.
+4. **Lesson.** An error can only say why a default was used if the code that chose the default is still in scope, or passed its reasoning along explicitly, when the error is finally raised three layers later. Carrying a short "why" string alongside a value from the point of choice to the point of failure costs little and is the only way coding style rule 2 can be honoured once the two are in different functions.
+
 ### A reported apostrophe-dropping bug in search snippets did not reproduce
 
 1. **What happened.** The console-and-search-polish spec (fault 4) recorded a report that a search snippet drops an apostrophe, producing "the page s history" in place of "the page's history", with the cause left unestablished because the spec itself was written before anyone had traced it.

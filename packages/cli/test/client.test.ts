@@ -12,6 +12,37 @@ const clientAnswering = (response: Response) =>
   });
 
 describe("what the client makes of a failure", () => {
+  it("says why an unnamed address was tried, on an unreachable Cairn (fault 7, console-and-search-polish)", async () => {
+    const client = new CairnClient({
+      baseUrl: "http://localhost:8787",
+      userAgent: "cairn-test",
+      fetch: async () => {
+        throw new TypeError("fetch failed");
+      },
+      chosenBecause: "the default, since no --instance, CAIRN_URL or registered instance was given",
+    });
+    const error = await client.request("GET", "/pages").catch((caught: unknown) => caught);
+    const api = error as ApiError;
+    expect(api.code).toBe("unreachable");
+    expect(api.message).toContain("http://localhost:8787");
+    expect(api.message).toContain("the default, since no --instance, CAIRN_URL or registered instance was given");
+  });
+
+  it("names only the address when it was given explicitly", async () => {
+    const explicit = new CairnClient({
+      baseUrl: "https://cairn.example.com",
+      userAgent: "cairn-test",
+      fetch: async () => {
+        throw new TypeError("fetch failed");
+      },
+    });
+    const error = await explicit.request("GET", "/pages").catch((caught: unknown) => caught);
+    const api = error as ApiError;
+    expect(api.message).toBe(
+      "cannot reach Cairn at https://cairn.example.com. Is the server running? Start it with pnpm dev, or set CAIRN_URL.",
+    );
+  });
+
   it("explains a gateway timeout, which never reached Cairn at all", async () => {
     const client = clientAnswering(new Response("stream timeout", { status: 504 }));
     const error = await client.request("GET", "/pages").catch((caught: unknown) => caught);

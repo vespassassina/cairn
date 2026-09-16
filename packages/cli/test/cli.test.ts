@@ -334,6 +334,16 @@ describe("cairn", () => {
     expect(stderr).toContain("cannot reach Cairn");
   });
 
+  it("says the address was a default when none was named (fault 7, console-and-search-polish)", async () => {
+    io.fetch = async () => {
+      throw new TypeError("fetch failed");
+    };
+    expect(await cairn("overview")).toBe(1);
+    expect(stderr).toContain("http://localhost:8787");
+    expect(stderr).toContain("the default");
+    expect(stderr).toContain("no --instance, CAIRN_URL");
+  });
+
   it("moves a table under a page and shows a row's links (ADR-024)", async () => {
     const ws = context.workspaceId;
     const home = await context.pages.create(ws, { title: "Peptides", body: "Hub." }, { actor: OWNER });

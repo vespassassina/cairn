@@ -6,6 +6,12 @@ Entries link to the ADR when there is one. A change of direction that has no ADR
 
 ## 2026-09-17
 
+### An unreachable Cairn now says why it tried the address it tried (ADR-056/057, fault 7)
+
+"cannot reach Cairn at http://localhost:8787" named an address but never said that address was a default, chosen because nothing else was given, which coding style rule 2 requires. Added an optional `chosenBecause` to `CairnClient`'s options, set in `main.ts` where `baseUrl` itself is chosen: empty when `--instance` or `CAIRN_URL` named it explicitly, the instance's name when `firstReachable` picked one of several registered instances because none was named, and "the default, since no --instance, CAIRN_URL or registered instance was given" when nothing at all was configured. The unreachable error now appends it. `packages/cli/src/client.ts`, `packages/cli/src/main.ts`, tested in `packages/cli/test/client.test.ts` and `packages/cli/test/cli.test.ts` (acceptance criterion 17). LESSONS entry added.
+
+Verification: `pnpm build`, `pnpm typecheck`, full test suite, `pnpm smoke:cli`, all green.
+
 ### An empty search result now names the query and suggests a next move (ADR-056/057, fault 6)
 
 The CLI already suggested trying a synonym on no matches, but didn't say what it had searched for; the console's empty banner and REST's JSON response said even less. All three, plus the MCP tool's existing `hint` field, now name the query in the message: `Nothing matched "words". Try synonyms, a shorter query, or one distinctive word.` (REST gained the `hint` field it lacked, matching MCP, per hard rule 14). `packages/cli/src/main.ts`, `packages/api/src/web/console.tsx`, `packages/api/src/rest/routes.ts`, `packages/api/src/mcp/tools.ts`, tested in `packages/cli/test/cli.test.ts`, `packages/api/test/console.test.ts`, `packages/api/test/rest.test.ts`, `packages/api/test/mcp.test.ts` (acceptance criterion 16).

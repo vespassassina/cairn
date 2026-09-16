@@ -13,6 +13,13 @@ export interface ClientOptions {
   token?: string | undefined;
   userAgent: string;
   fetch: Fetch;
+  /**
+   * Why this baseUrl, when it was not named explicitly (--instance or
+   * CAIRN_URL), so an unreachable error can say the default was a default
+   * rather than leave the person guessing why this address was tried
+   * (coding style rule 2, fault 7 of console-and-search-polish).
+   */
+  chosenBecause?: string | undefined;
 }
 
 export interface ApiResponse {
@@ -67,10 +74,11 @@ export class CairnClient {
         }),
       );
     } catch (error) {
+      const why = this.options.chosenBecause ? ` (${this.options.chosenBecause})` : "";
       throw new ApiError(
         0,
         "unreachable",
-        `cannot reach Cairn at ${this.options.baseUrl}. Is the server running? Start it with pnpm dev, or set CAIRN_URL.`,
+        `cannot reach Cairn at ${this.options.baseUrl}${why}. Is the server running? Start it with pnpm dev, or set CAIRN_URL.`,
         { cause: error instanceof Error ? error.message : String(error) },
       );
     }
