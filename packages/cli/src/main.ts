@@ -164,7 +164,7 @@ Options
   --json          print the raw API response
   -V, cairn version   print the CLI version
   --limit N, --cursor C
-  --instance NAME     use this registered instance
+  -i, --instance NAME use this registered instance
   CAIRN_URL       server, default http://localhost:8787; takes precedence over instances
   CAIRN_TOKEN     a service token; takes precedence over cairn login
 `;
@@ -201,7 +201,9 @@ const OPTIONS = {
   force: { type: "boolean" },
   "dry-run": { type: "boolean" },
   every: { type: "string" },
-  instance: { type: "string" },
+  // Short form because it is typed on nearly every command aimed at a named
+  // Cairn, the owner's direction of 2026-09-16.
+  instance: { type: "string", short: "i" },
   first: { type: "boolean" },
   start: { type: "string" },
   timeout: { type: "string" },

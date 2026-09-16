@@ -155,6 +155,19 @@ describe("choosing an instance", () => {
     expect(await cairn("login")).toBe(2);
     expect(stderr).toContain("cairn login --instance <name>");
   });
+
+  it("takes -i as the short form of --instance", async () => {
+    await register();
+    await contexts[CLOUD]!.pages.create(contexts[CLOUD]!.workspaceId, { title: "In the cloud", body: "x" }, BY);
+    // The owner asked for this because --instance is typed on almost every
+    // command against a named Cairn, sign-in most of all.
+    expect(await cairn("overview", "-i", "cloud")).toBe(0);
+    expect(stdout).toContain("In the cloud");
+    // And it must be the same flag, not a second one: a wrong name fails the
+    // same way and lists the same names.
+    expect(await cairn("overview", "-i", "nope")).toBe(2);
+    expect(stderr).toContain("Registered: laptop, cloud");
+  });
 });
 
 describe("syncing every instance through a hub", () => {

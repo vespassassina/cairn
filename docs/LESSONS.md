@@ -13,6 +13,13 @@ Each entry answers four questions:
 
 ## 2026-09-16
 
+### pnpm smoke:cli passed against a CLI binary that did not contain the change
+
+1. **What happened.** Added `-i` as the short form of `--instance`, then ran the checks this project asks for after a CLI change: `pnpm typecheck`, the 159 CLI tests, `pnpm build` and `pnpm smoke:cli`. All green. Running the built executable by hand straight afterwards, `./dist/cli/cairn-darwin-arm64 -i azure overview` answered "Unknown option '-i'". The check had passed on a binary compiled before the change existed.
+2. **Cause.** `pnpm build` runs each package's own build and does not compile the CLI executables; that is `pnpm build:cli`, a separate script driving `scripts/build-cli.mjs`. `pnpm smoke:cli` runs whatever is already in `dist/cli`, so with a stale binary there it tests the previous version and says so in the same words it uses when it tests the new one. The smoke test was never wrong about what it ran, only silent about when that was built.
+3. **Fix.** Ran `pnpm build:cli` and then the smoke test again, and confirmed the flag by hand against the deployed Cairn. Nothing in the repository changed, which is the uncomfortable part: the trap is still there for the next person.
+4. **Lesson.** A check that reads a build artefact proves nothing unless the artefact was built from the code under test, and "all green" is the exact output it gives when it is not. After a CLI change, `pnpm build:cli` comes before `pnpm smoke:cli`, and the cheapest confirmation is to run the built binary once by hand on the thing that was just added. This is the third entry on this page in two days where a tool reported success for work that had not happened, after the deploy that deployed nothing and the CI that published no image. The pattern is worth naming: when a step's output cannot distinguish "did the new thing" from "did an old thing", it is not a check.
+
 ### CI was red for four commits, no container image was built, and nobody looked
 
 1. **What happened.** Asked whether everything could be committed, pushed and deployed. The work was already pushed and the local suite was green on all 627 tests, so the answer looked like yes. `gh run list` said otherwise: CI had failed on the last four commits in a row, starting with the shutdown work and continuing through the backups, the cloud archives and the recovery ladder. Because the container image job only runs after the tests pass, no image had been published for any of them. A deploy at that moment would have rolled out the last green commit, `a528168`, and reported success.

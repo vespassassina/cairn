@@ -6,6 +6,10 @@ Entries link to the ADR when there is one. A change of direction that has no ADR
 
 ## 2026-09-16
 
+### -i is now the short form of --instance
+
+The owner's direction, given while signing in to the deployed Cairn: "for CLI cairn login, instead of --instance, also allow -i". Sign-in is where the flag hurts most, because `login` is the one command that cannot go to whichever instance answers, so there is no version of it that skips the flag. It is added as a short form on the existing option rather than as something `login` alone accepts, so it means the same thing on every command and a wrong name fails the same way. `-i` was unclaimed; the CLI had only `-h` and `-V`.
+
 ### The recovery ladder and the Azure blob archive ran for the first time on the real Azure
 
 Deployed to Azure as revision `cairn--0000016`, the first deploy carrying the ladder of ADR-051 and the archives of ADR-050. Both changelog entries below promised this run would be recorded, so here it is.

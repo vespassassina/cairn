@@ -13,6 +13,12 @@ Rules:
 
 ## 2026-09-16
 
+### Give --instance a short form
+
+> "for CLI cairn login, instead of --instance, also allow -i"
+
+Asked while signing in to the Azure Cairn, which is the moment the flag is unavoidable: sign-in is the one command that cannot fall back to whichever instance answers, so the full flag has to be typed. Landed as `short: "i"` on the existing option in `packages/cli/src/main.ts`, which makes it the same flag everywhere rather than a second one on `login` alone, and in the help line and `docs/CLI.md`. `-i` was free; only `-h` and `-V` existed.
+
 ### Build the startup recovery before committing
 
 > "build startup recovery then we commit and deploy"
