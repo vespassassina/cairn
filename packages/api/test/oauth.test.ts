@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Hono } from "hono";
+import type { AuthRecordKind, AuthStore } from "@cairn/core";
 import { createApp } from "../src/app.js";
 import { createContext, type AppContext } from "../src/context.js";
-import { base64url, signJwt } from "../src/oauth/crypto.js";
+import { base64url, sha256, signJwt } from "../src/oauth/crypto.js";
 import type { IdentityProvider } from "../src/oauth/providers.js";
 import { OAuthServer } from "../src/oauth/server.js";
 
@@ -139,6 +140,37 @@ async function signIn(redirect = CLAUDE_REDIRECT, name = "Claude") {
     code_verifier: verifier,
   });
   return { client, verifier, back, tokens };
+}
+
+/**
+ * Wraps a real AuthStore and delays every `putAuth` of one kind by `ms`
+ * (ADR-054): stands in for a slow store write, so a test can put a second
+ * request in the gap between `takeAuth` removing the refresh grant and
+ * `issueTokens` finishing its own write.
+ */
+function delayed(store: AuthStore, kind: AuthRecordKind, ms: number): AuthStore {
+  return {
+    init: () => store.init(),
+    close: () => store.close(),
+    getAuth: (k, key) => store.getAuth(k, key),
+    takeAuth: (k, key) => store.takeAuth(k, key),
+    async putAuth(k, key, value, expiresAt) {
+      if (k === kind) await new Promise((resolve) => setTimeout(resolve, ms));
+      return store.putAuth(k, key, value, expiresAt);
+    },
+  };
+}
+
+/** Rebuilds `app` on an OAuthServer whose refresh_replay writes are slow. */
+function installDelayedReplay(ms: number) {
+  const oauth = new OAuthServer({
+    publicUrl: ISSUER,
+    secrets: [SECRET],
+    provider: fakeProvider,
+    allowedUsers: ["github:owner"],
+    store: delayed(context.auth, "refresh_replay", ms),
+  });
+  app = createApp({ context, token: null, trust: { enabled: false, hosts: [] }, oauth, publicOrigin: ISSUER });
 }
 
 function mcp(accessToken: string | null, body: unknown) {
@@ -368,6 +400,83 @@ describe("refresh tokens", () => {
     expect(revoked.status).toBe(200);
     expect((await token({ grant_type: "refresh_token", refresh_token: refresh, client_id: client })).status).toBe(400);
   });
+});
+
+describe("a second refresh request racing the first (ADR-054)", () => {
+  it("both get the same tokens when the second arrives while the first is still writing its replay record", async () => {
+    const { client, tokens } = await signIn();
+    const first = String(tokens.body["refresh_token"]);
+    installDelayedReplay(200);
+    const ask = () => token({ grant_type: "refresh_token", refresh_token: first, client_id: client });
+
+    const [a, b] = await Promise.all([ask(), ask()]);
+    expect(a.status).toBe(200);
+    expect(b.status).toBe(200);
+    expect(a.body["refresh_token"]).toBe(b.body["refresh_token"]);
+    expect(a.body["access_token"]).toBe(b.body["access_token"]);
+  });
+
+  it("gives up after a bounded wait rather than hanging, when the first never finishes", async () => {
+    const { client, tokens } = await signIn();
+    const first = String(tokens.body["refresh_token"]);
+    // Longer than the server's own wait, so the loser's poll times out
+    // rather than ever finding a replay record.
+    installDelayedReplay(5_000);
+    const ask = async () => {
+      const start = Date.now();
+      const response = await token({ grant_type: "refresh_token", refresh_token: first, client_id: client });
+      return { response, elapsed: Date.now() - start };
+    };
+
+    const [a, b] = await Promise.all([ask(), ask()]);
+    const statuses = [a.response.status, b.response.status].sort();
+    expect(statuses).toEqual([200, 400]);
+    const loser = a.response.status === 400 ? a : b;
+    expect(loser.response.body["error"]).toBe("invalid_grant");
+    // Bounded: the loser did not wait for the 5s write, only its own ~1s poll.
+    expect(loser.elapsed).toBeLessThan(2_000);
+  });
+
+  it("refuses a token that was never issued only after the full wait, and writes nothing", async () => {
+    const { client } = await signIn();
+    const hash = await sha256("never-issued");
+    expect(await context.auth.getAuth("refresh_used", hash)).toBeNull();
+
+    const start = Date.now();
+    const response = await token({ grant_type: "refresh_token", refresh_token: "never-issued", client_id: client });
+    const elapsed = Date.now() - start;
+
+    expect(response.body["error"]).toBe("invalid_grant");
+    // Held for the full poll, not refused on the first check: this is what
+    // gives a genuinely racing request time to finish writing its replay.
+    expect(elapsed).toBeGreaterThanOrEqual(900);
+    expect(await context.auth.getAuth("refresh_used", hash)).toBeNull();
+    expect(await context.auth.getAuth("refresh_replay", hash)).toBeNull();
+  });
+
+  it("refuses a genuinely reused token immediately, with no wait, and revokes the family", async () => {
+    const { client, tokens } = await signIn();
+    const first = String(tokens.body["refresh_token"]);
+    const renewed = await token({ grant_type: "refresh_token", refresh_token: first, client_id: client });
+    expect(renewed.status).toBe(200);
+    afterGrace();
+
+    const reused = await token({ grant_type: "refresh_token", refresh_token: first, client_id: client });
+    expect(reused.body["error"]).toBe("invalid_grant");
+
+    // The theft response did not itself wait: the used record already
+    // existed, so it skipped straight past the polling branch.
+    const second = String(renewed.body["refresh_token"]);
+    expect((await token({ grant_type: "refresh_token", refresh_token: second, client_id: client })).body["error"]).toBe(
+      "invalid_grant",
+    );
+  });
+
+  // Criterion 5 (a refresh against a revoked family is refused immediately)
+  // is already exercised by "stops replaying once the sign-in is revoked,
+  // even inside the window" in the "refresh tokens" block above: revoking
+  // mid-grace leaves a replay record behind, so the revoked check runs on
+  // the first try, with no poll.
 });
 
 describe("console sign-in through the provider", () => {

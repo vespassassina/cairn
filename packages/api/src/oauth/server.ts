@@ -50,6 +50,18 @@ const PENDING_SECONDS = 10 * 60;
  * it, a second use still ends the whole family.
  */
 const REFRESH_GRACE_SECONDS = 60;
+/**
+ * How long to wait, when a refresh token's grant is already gone, for the
+ * concurrent request that took it to finish writing its replay record
+ * (ADR-054). `takeAuth` deletes the grant before `issueTokens` runs, so a
+ * second request that arrives in that gap would otherwise see neither a
+ * grant nor a replay record and be refused as theft, even though the first
+ * request is about to succeed. Comfortably larger than the store write
+ * inside `issueTokens` takes on a cold container; skipped entirely once a
+ * used record already exists, since that is a genuine second use.
+ */
+const REFRESH_RACE_WAIT_MS = 1000;
+const REFRESH_RACE_POLL_MS = 25;
 const SCOPE = "cairn";
 
 export const SESSION_TYP = "cairn-session+jwt";
@@ -112,6 +124,7 @@ interface Replay {
 }
 
 const inSeconds = (seconds: number) => new Date(Date.now() + seconds * 1000).toISOString();
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 const nowSeconds = () => Math.floor(Date.now() / 1000);
 
 function escapeHtml(text: string): string {
@@ -527,7 +540,20 @@ export class OAuthServer {
           // Within the grace window, a second use is the same request arriving
           // twice, so it gets the same answer rather than losing the sign-in
           // (ADR-033). The record's own expiry is what closes the window.
-          const replay = await store.getAuth<Replay>("refresh_replay", hash);
+          let replay = await store.getAuth<Replay>("refresh_replay", hash);
+          const usedBefore = replay ? null : await store.getAuth<{ family: string }>("refresh_used", hash);
+          if (!replay && !usedBefore) {
+            // Neither record exists yet: this may be a concurrent request
+            // that lost the race to take the grant, arriving before the
+            // winner has finished writing its replay record. Wait for it
+            // rather than refuse at once (ADR-054); a genuine theft, where a
+            // used record already exists, is refused immediately below.
+            const deadline = Date.now() + REFRESH_RACE_WAIT_MS;
+            while (!replay && Date.now() < deadline) {
+              await sleep(REFRESH_RACE_POLL_MS);
+              replay = await store.getAuth<Replay>("refresh_replay", hash);
+            }
+          }
           if (replay && !(await store.getAuth("family_revoked", replay.family))) {
             cors(c);
             c.header("cache-control", "no-store");
@@ -535,7 +561,7 @@ export class OAuthServer {
           }
           // Past it, a refresh token used twice was probably stolen: end its
           // whole family.
-          const used = await store.getAuth<{ family: string }>("refresh_used", hash);
+          const used = usedBefore ?? (await store.getAuth<{ family: string }>("refresh_used", hash));
           if (used) await store.putAuth("family_revoked", used.family, { at: new Date().toISOString() }, inSeconds(REFRESH_TOKEN_SECONDS));
           return oauthError(c, 400, "invalid_grant", "The refresh token is unknown, expired or already used.");
         }
@@ -545,8 +571,11 @@ export class OAuthServer {
         if (grant.client_id !== form["client_id"]) return oauthError(c, 400, "invalid_grant", "The token was issued to another client.");
         const { family, ...rest } = grant;
         const tokens = await this.issueTokens(rest, family);
-        // The replay record is written first, so a repeat that arrives while
-        // this is still running is answered rather than treated as a theft.
+        // The replay record is written only after the tokens exist, so a
+        // repeat that arrives while this is still running finds neither a
+        // grant nor a replay record for a moment. The wait above the `!grant`
+        // branch covers exactly that gap (ADR-054); this write is what it is
+        // waiting for.
         await store.putAuth("refresh_replay", hash, { family, tokens } satisfies Replay, inSeconds(REFRESH_GRACE_SECONDS));
         await store.putAuth("refresh_used", hash, { family }, inSeconds(REFRESH_TOKEN_SECONDS));
         cors(c);

@@ -23,7 +23,7 @@ import { checkSources, collectSources, type FoundSource, type SourceCheck } from
 import { fetchPeerDescription, TRUSTED_TABLE_NAME } from "./trust.js";
 import { discover, DISCOVERED_TABLE_NAME } from "./discover.js";
 import { checkInstance, firstReachable, instancesPath, isLoopback, loadInstances, reachable, saveInstances, type Instance } from "./instances.js";
-import { credentialsPath, login, logout, NoSignIn, peekCredentials, storedToken } from "./login.js";
+import { credentialsPath, login, logout, NoSignIn, peekCredentials, REFRESH_TIMEOUT_MS, RefreshFailed, storedToken } from "./login.js";
 import { hookInstalled, installHook, settingsPath, uninstallHook } from "./hook.js";
 import { statusLines, type StatusInput } from "./status.js";
 import {
@@ -469,6 +469,24 @@ function noSignIn(error: NoSignIn, named: boolean): string {
   return `${baseUrl} has no browser sign-in (HTTP ${status}). Check that the address is a Cairn's. A Cairn run with a service token rather than GitHub sign-in takes CAIRN_TOKEN instead of cairn login.`;
 }
 
+/**
+ * What to tell the person when a stored sign-in exists but could not be
+ * refreshed (ADR-054). Only `invalid_grant` means the sign-in is actually
+ * gone; the other two are told the credentials were kept.
+ */
+function refreshFailedMessage(error: RefreshFailed, registered: Instance[]): string {
+  const { baseUrl, reason } = error;
+  const match = registered.find((x) => x.url === baseUrl);
+  const signInAgain = match ? `cairn login --instance ${match.name}` : `CAIRN_URL=${baseUrl} cairn login`;
+  if (reason.kind === "invalid_grant") {
+    return `the sign-in to ${baseUrl} is no longer valid. Sign in again: ${signInAgain}`;
+  }
+  if (reason.kind === "http") {
+    return `${baseUrl} refused to refresh the sign-in (HTTP ${reason.status}): ${reason.message}. The stored sign-in was kept; try again, or ${signInAgain} if it keeps happening.`;
+  }
+  return `could not reach ${baseUrl} to refresh the sign-in (waited ${REFRESH_TIMEOUT_MS / 1000}s): ${reason.message}. The stored sign-in was kept; try again, or run cairn status.`;
+}
+
 export async function run(argv: string[], io: Io): Promise<number> {
   let flags: Flags;
   let positionals: string[];
@@ -555,8 +573,24 @@ export async function run(argv: string[], io: Io): Promise<number> {
     return 0;
   }
 
+  // A stored sign-in that could not be refreshed still leaves the person
+  // with a working command most of the time (many don't need auth, and the
+  // server may just answer 401 on this one); say why and carry on rather
+  // than failing every command over a refresh hiccup (ADR-054).
+  const tokenFor = async (url: string): Promise<string | undefined> => {
+    try {
+      return (await storedToken(url, loginIo)) ?? undefined;
+    } catch (error) {
+      if (error instanceof RefreshFailed) {
+        io.stderr(`${refreshFailedMessage(error, registered)}\n`);
+        return undefined;
+      }
+      throw error;
+    }
+  };
+
   // A service token wins; otherwise a stored sign-in, refreshed if needed.
-  const token = io.env["CAIRN_TOKEN"] ?? (await storedToken(baseUrl, loginIo).catch(() => null)) ?? undefined;
+  const token = io.env["CAIRN_TOKEN"] ?? (await tokenFor(baseUrl));
   const client = new CairnClient({
     baseUrl,
     token,
@@ -573,7 +607,7 @@ export async function run(argv: string[], io: Io): Promise<number> {
   const clientFor = async (url: string) =>
     new CairnClient({
       baseUrl: url,
-      token: (await storedToken(url, loginIo).catch(() => null)) ?? undefined,
+      token: await tokenFor(url),
       userAgent: `cairn-cli/${VERSION} sync${agent ? ` (${agent})` : ""}`,
       fetch: io.fetch,
     });

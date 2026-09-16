@@ -6,6 +6,17 @@ Entries link to the ADR when there is one. A change of direction that has no ADR
 
 ## 2026-09-17
 
+### A sign-in survives a lost race and a slow start (ADR-054)
+
+Implements ADR-054, per `docs/specs/sign-in-resilience.md`. Fixes the defect found on 2026-09-16: the owner's stored Azure sign-in had been deleted with 28 days left on its refresh token, caused by two bugs that only destroy a sign-in together.
+
+1. **Server** (`packages/api/src/oauth/server.ts`): the refresh branch's comment claimed the replay record was written before the used record's check, which is true, but it is not written before `issueTokens` finishes, and `takeAuth` deletes the grant before that write lands. A second request racing the first in that gap saw no grant, no replay record and no used record, and was wrongly refused as `invalid_grant`. The branch now polls for the replay record for up to `REFRESH_RACE_WAIT_MS` (1000ms, 25ms interval) before concluding the token is genuinely unknown, and skips the wait entirely once a used record already exists, so ADR-033's theft detection stays immediate. Four new tests in `packages/api/test/oauth.test.ts` drive two concurrent refresh requests through an `AuthStore` whose `putAuth` is artificially delayed, proving both requests succeed with the same tokens when the delay is short, and that the loser fails after its own bounded wait rather than hanging when the delay is longer than the wait.
+2. **Client** (`packages/cli/src/login.ts`): `storedToken`'s refresh now classifies a failure into three cases instead of catching everything into one deletion. Only a parsed `invalid_grant` response deletes the credentials; any other HTTP error or a network failure (timeout, connection refusal, an unparseable body such as a proxy's HTML page) throws a new `RefreshFailed` error and leaves the credentials in place. The refresh request gets its own 30 second timeout (`REFRESH_TIMEOUT_MS`, longer than Azure's roughly 25 second cold start) via `AbortSignal.timeout`, with one retry on a connection-level failure. `writeCredentials` now takes one server's key and entry rather than the whole file, and re-reads the file immediately before writing, so a process that was asleep refreshing cannot overwrite an entry another process wrote in the meantime. `main.ts` no longer silently swallows a refresh failure: a `RefreshFailed` is printed to stderr with the instance, the address, and the next step (`cairn login --instance <name>` for a real `invalid_grant`, otherwise "try again, or run cairn status"), and the command continues without a token rather than failing outright, since many commands do not need one.
+
+New tests: `packages/cli/test/refresh-resilience.test.ts` covers all three non-`invalid_grant` failure shapes (connection refusal, HTTP 500, unparseable body, simulated timeout) asserting the credentials file is byte-for-byte unchanged and the message names the instance and next step, plus `invalid_grant` deleting credentials and naming the login command, and a concurrency test proving two refreshes for different servers finishing out of order do not erase each other's entry.
+
+`pnpm build`, `pnpm typecheck`, the full test suite (667 tests) and `pnpm smoke:cli` against Node and a freshly compiled Bun executable all pass. The pre-existing OAuth end-to-end tests pass unchanged, per acceptance criterion 10.
+
 ### Cairn is reachable and known without anybody having to remember it (ADR-053)
 
 Implements ADR-053, per `docs/specs/presence.md`. Three pieces:

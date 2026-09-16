@@ -44,7 +44,16 @@ async function readCredentials(path: string): Promise<CredentialFile> {
   }
 }
 
-async function writeCredentials(path: string, file: CredentialFile): Promise<void> {
+/**
+ * Writes one server's entry, re-reading the file first (ADR-054): a process
+ * that has been asleep, refreshing a token, cannot then overwrite an entry a
+ * faster process wrote in the meantime with its own stale in-memory copy.
+ * `entry: null` removes the server's entry instead of setting it.
+ */
+async function writeCredentials(path: string, key: string, entry: Credentials | null): Promise<void> {
+  const file = await readCredentials(path);
+  if (entry) file.servers[key] = entry;
+  else delete file.servers[key];
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
   await writeFile(path, `${JSON.stringify(file, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
   await chmod(path, 0o600).catch(() => undefined); // Windows keeps the profile's own permissions.
@@ -111,6 +120,100 @@ async function tokenRequest(fetcher: Fetch, endpoint: string, params: Record<str
 }
 
 const LOGIN_TIMEOUT_MS = 5 * 60 * 1000;
+
+/**
+ * Larger than the roughly 25 second cold start of a Cairn on Azure's free
+ * tier (ADR-054), so a refresh during a cold start gets a real answer
+ * instead of a timeout that looks like the sign-in itself is broken.
+ */
+export const REFRESH_TIMEOUT_MS = 30_000;
+
+interface RefreshTokens {
+  access_token: string;
+  refresh_token: string;
+  expires_in: number;
+}
+
+/** Why `storedToken` could not refresh a sign-in that exists but is expiring. */
+export type RefreshFailureReason =
+  | { kind: "invalid_grant" }
+  | { kind: "http"; status: number; message: string }
+  | { kind: "network"; message: string };
+
+/**
+ * Thrown by `storedToken` when a sign-in is on record but a refresh did not
+ * succeed. `reason.kind` tells the caller whether the sign-in is actually
+ * gone (`invalid_grant`, the only case where the stored credentials are
+ * deleted) or the refresh merely failed to happen (`http`, `network`), in
+ * which case the credentials are left in place for the next attempt.
+ */
+export class RefreshFailed extends Error {
+  constructor(
+    readonly baseUrl: string,
+    readonly reason: RefreshFailureReason,
+  ) {
+    super(
+      reason.kind === "invalid_grant"
+        ? `the sign-in to ${baseUrl} is no longer valid`
+        : reason.kind === "http"
+          ? `${baseUrl} refused to refresh the sign-in (HTTP ${reason.status}): ${reason.message}`
+          : `could not reach ${baseUrl} to refresh the sign-in: ${reason.message}`,
+    );
+  }
+}
+
+type RefreshOutcome = { ok: true; tokens: RefreshTokens } | ({ ok: false } & RefreshFailureReason);
+
+async function refreshOnce(fetcher: Fetch, endpoint: string, params: Record<string, string>): Promise<Response> {
+  return fetcher(
+    new Request(endpoint, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded", accept: "application/json" },
+      body: new URLSearchParams(params).toString(),
+      signal: AbortSignal.timeout(REFRESH_TIMEOUT_MS),
+    }),
+  );
+}
+
+/**
+ * A refresh request with its own timeout and one retry on a connection-level
+ * failure (ADR-054): a cold container or a dropped connection is often gone
+ * on the next attempt. The result always classifies why, never throws for an
+ * answer the server actually gave.
+ */
+async function refreshRequest(fetcher: Fetch, endpoint: string, params: Record<string, string>): Promise<RefreshOutcome> {
+  let response: Response;
+  try {
+    response = await refreshOnce(fetcher, endpoint, params);
+  } catch {
+    try {
+      response = await refreshOnce(fetcher, endpoint, params);
+    } catch (error) {
+      return { ok: false, kind: "network", message: error instanceof Error ? error.message : String(error) };
+    }
+  }
+  let body: Record<string, unknown>;
+  try {
+    body = (await response.json()) as Record<string, unknown>;
+  } catch {
+    return { ok: false, kind: "network", message: `the answer was not JSON (HTTP ${response.status})` };
+  }
+  if (
+    response.ok &&
+    typeof body["access_token"] === "string" &&
+    typeof body["refresh_token"] === "string" &&
+    typeof body["expires_in"] === "number"
+  ) {
+    return { ok: true, tokens: body as unknown as RefreshTokens };
+  }
+  if (body["error"] === "invalid_grant") return { ok: false, kind: "invalid_grant" };
+  return {
+    ok: false,
+    kind: "http",
+    status: response.status,
+    message: String(body["error_description"] ?? body["error"] ?? response.statusText),
+  };
+}
 
 export async function login(baseUrl: string, io: LoginIo): Promise<Credentials> {
   const meta = await metadata(baseUrl, io.fetch);
@@ -189,10 +292,7 @@ export async function login(baseUrl: string, io: LoginIo): Promise<Credentials> 
       refresh_token: tokens.refresh_token,
       expires_at: Date.now() + tokens.expires_in * 1000,
     };
-    const path = credentialsPath(io.env);
-    const file = await readCredentials(path);
-    file.servers[serverKey(baseUrl)] = credentials;
-    await writeCredentials(path, file);
+    await writeCredentials(credentialsPath(io.env), serverKey(baseUrl), credentials);
     return credentials;
   } finally {
     server.close();
@@ -201,36 +301,47 @@ export async function login(baseUrl: string, io: LoginIo): Promise<Credentials> 
 
 /**
  * A usable access token for this server, refreshed if it is about to expire,
- * or null when there is no sign-in stored.
+ * or null when there is no sign-in stored. Throws `RefreshFailed` when a
+ * sign-in exists but a needed refresh did not succeed; the caller decides
+ * what to tell the person (ADR-054).
  */
 export async function storedToken(baseUrl: string, io: Pick<LoginIo, "fetch" | "env">): Promise<string | null> {
+  const key = serverKey(baseUrl);
   const path = credentialsPath(io.env);
-  const file = await readCredentials(path);
-  const saved = file.servers[serverKey(baseUrl)];
+  const saved = (await readCredentials(path)).servers[key];
   if (!saved) return null;
   if (saved.expires_at - 60_000 > Date.now()) return saved.access_token;
 
-  const meta = await metadata(baseUrl, io.fetch);
+  let endpoint: string;
   try {
-    const tokens = await tokenRequest(io.fetch, meta.token_endpoint, {
-      grant_type: "refresh_token",
-      refresh_token: saved.refresh_token,
-      client_id: saved.client_id,
-    });
-    file.servers[serverKey(baseUrl)] = {
-      client_id: saved.client_id,
-      access_token: tokens.access_token,
-      refresh_token: tokens.refresh_token,
-      expires_at: Date.now() + tokens.expires_in * 1000,
-    };
-    await writeCredentials(path, file);
-    return tokens.access_token;
-  } catch {
-    // The refresh token expired or was revoked: sign in again.
-    delete file.servers[serverKey(baseUrl)];
-    await writeCredentials(path, file);
-    return null;
+    endpoint = (await metadata(baseUrl, io.fetch)).token_endpoint;
+  } catch (error) {
+    // Could not even ask how to refresh: the same "server unreachable"
+    // bucket as a failed refresh request itself.
+    throw new RefreshFailed(baseUrl, { kind: "network", message: error instanceof Error ? error.message : String(error) });
   }
+
+  const outcome = await refreshRequest(io.fetch, endpoint, {
+    grant_type: "refresh_token",
+    refresh_token: saved.refresh_token,
+    client_id: saved.client_id,
+  });
+
+  if (outcome.ok) {
+    const updated: Credentials = {
+      client_id: saved.client_id,
+      access_token: outcome.tokens.access_token,
+      refresh_token: outcome.tokens.refresh_token,
+      expires_at: Date.now() + outcome.tokens.expires_in * 1000,
+    };
+    await writeCredentials(path, key, updated);
+    return updated.access_token;
+  }
+
+  // Only a genuine invalid_grant means the sign-in is actually gone; an HTTP
+  // or network failure leaves it in place for the next attempt.
+  if (outcome.kind === "invalid_grant") await writeCredentials(path, key, null);
+  throw new RefreshFailed(baseUrl, outcome);
 }
 
 /**
@@ -247,8 +358,8 @@ export async function peekCredentials(baseUrl: string, env: Record<string, strin
 /** Forget this server's sign-in, revoking it on the server first. */
 export async function logout(baseUrl: string, io: Pick<LoginIo, "fetch" | "env">): Promise<boolean> {
   const path = credentialsPath(io.env);
-  const file = await readCredentials(path);
-  const saved = file.servers[serverKey(baseUrl)];
+  const key = serverKey(baseUrl);
+  const saved = (await readCredentials(path)).servers[key];
   if (!saved) return false;
   try {
     const meta = await metadata(baseUrl, io.fetch);
@@ -264,7 +375,6 @@ export async function logout(baseUrl: string, io: Pick<LoginIo, "fetch" | "env">
   } catch {
     // Offline or gone: forgetting it locally is still what was asked.
   }
-  delete file.servers[serverKey(baseUrl)];
-  await writeCredentials(path, file);
+  await writeCredentials(path, key, null);
   return true;
 }
