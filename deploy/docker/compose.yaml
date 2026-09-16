@@ -9,6 +9,11 @@ services:
   cairn:
     image: ${CAIRN_IMAGE:-ghcr.io/vespassassina/cairn:latest}
     restart: unless-stopped
+    # `docker stop` allows 10 seconds by default, then kills. That is not
+    # always enough to drain requests, back up and close SQLite, and being
+    # killed part way through is how an unfinished write reaches a replica
+    # (ADR-046). Keep this above CAIRN_SHUTDOWN_SECONDS, which defaults to 25.
+    stop_grace_period: 30s
     env_file: .env
     ports:
       - "${CAIRN_BIND:-127.0.0.1}:8787:8787"

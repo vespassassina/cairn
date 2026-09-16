@@ -67,6 +67,7 @@ A setting that is wrong stops the server with a message naming the setting and t
 | `CAIRN_LANGUAGE` | `en` | The language tag it reports at `/.well-known/cairn.json` |
 | `CAIRN_TOPICS` | none | What it is about, comma-separated, at `/.well-known/cairn.json` |
 | `CAIRN_REPLICA_URL` | set by the Azure template; none on Docker | Where Litestream streams the database: `abs://` on Azure, `s3://` elsewhere. With an empty data folder, Cairn restores from it on start |
+| `CAIRN_SHUTDOWN_SECONDS` | `25` | How long Cairn may take to stop tidily: finish the requests in flight, then close the database so its write-ahead log is checkpointed away (ADR-046). Keep it below the grace period the platform allows, which is 30 seconds on Azure Container Apps and 10 on `docker stop` unless `stop_grace_period` says otherwise. Being killed part way through a shutdown is how an unfinished transaction reaches the replica |
 
 ### Docker only
 

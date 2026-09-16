@@ -43,6 +43,20 @@ The question "why not?" was answered rather than acted on: Cairn's own sync alre
 
 Landed so far in: `docs/decisions/ADR-047.md`, `deploy/azure/deploy.sh`, `docs/DEPLOY-AZURE.md`, `docs/AGENT-OPERATE.md`. The backup engine, the SIGTERM handler and the start-up recovery path are not yet built.
 
+### Two questions that set the recovery order
+
+> "can we avoid running abroken transaction ? why did that happen ?"
+
+> "also if we have backups and the wals are aligned, why don't we start from a backup instead of a restore ?"
+
+Both were answered before any code was written, and both changed the design.
+
+The first sent the investigation back to the evidence rather than to a guess. The answer, in ADR-048: the truncated transaction was written by a Litestream that was killed rather than allowed to finish, and Cairn had no signal handler at all, so we had built the conditions for it. That turned "add a shutdown backup" into "handle the signal first", which is the order the work then followed. The second half of the answer is that a truncated upload is always at the tail of the replica, so dropping it costs one transaction and nothing else, which is why walking back is cheap.
+
+The second question corrected the recovery order. Starting from a backup by default would discard up to three hours of work on every cold start, and then replicate that older state back over the good copy, which is the ADR-046 hazard in a new form. The alignment the question assumes does not exist either: the backup is a logical export with no pages, and Litestream's files are physical page writes keyed to a database file that no longer exists, so they cannot be replayed onto it. That disconnection is the backup's value rather than its limitation, because an export cannot carry a corrupt page. What the question did sharpen is the middle rung: on a failed restore, ask the replica for the newest transaction that both restores and passes its integrity check, before falling back to a backup that is hours older.
+
+So the agreed ladder is: restore, then the newest sound transaction, then the newest verified backup, then stop and say so. The owner's reply to the plan was "ok. deal", with the order set as shutdown first, then the recovery ladder, then the logging.
+
 ### Stream the last log file over the API, and rotate log files
 
 > "add an api call to stream last logfile contents."

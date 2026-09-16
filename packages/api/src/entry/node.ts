@@ -2,8 +2,9 @@ import type { Server } from "node:http";
 import { createAdaptorServer } from "@hono/node-server";
 import { createApp } from "../app.js";
 import { ConfigError, loadConfig } from "../config.js";
-import { createContext } from "../context.js";
+import { closeContext, createContext } from "../context.js";
 import { oauthFromConfig } from "../oauth/setup.js";
+import { installShutdown } from "./shutdown.js";
 
 /**
  * The Node entry point. The only file that knows about a listening socket
@@ -43,9 +44,12 @@ async function main(): Promise<void> {
     selfDescription: config.selfDescription,
   });
 
+  const servers: Server[] = [];
   const [primary, ...optional] = listenAddresses(config.host);
   try {
-    await listen(createAdaptorServer({ fetch: app.fetch }) as Server, config.port, primary!);
+    const server = createAdaptorServer({ fetch: app.fetch }) as Server;
+    await listen(server, config.port, primary!);
+    servers.push(server);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "EADDRINUSE") {
       process.stderr.write(
@@ -61,12 +65,32 @@ async function main(): Promise<void> {
   const bound = [primary!];
   for (const address of optional) {
     try {
-      await listen(createAdaptorServer({ fetch: app.fetch }) as Server, config.port, address);
+      const server = createAdaptorServer({ fetch: app.fetch }) as Server;
+      await listen(server, config.port, address);
+      servers.push(server);
       bound.push(address);
     } catch {
       // No IPv6 loopback, or something else holds it. 127.0.0.1 still serves.
     }
   }
+
+  // Stopping tidily matters most where the database is replicated: a process
+  // killed mid-write leaves Litestream shipping an unfinished transaction
+  // (ADR-046, docs/LESSONS.md).
+  installShutdown({
+    servers,
+    steps: [
+      {
+        name: "closed the database",
+        // SQLite checkpoints the WAL and removes it when the last connection
+        // closes, so this is what leaves the replica a finished file.
+        run: () => closeContext(context),
+      },
+    ],
+    budgetMs: config.shutdownSeconds * 1000,
+    log: (line) => process.stdout.write(`cairn: ${line}\n`),
+    exit: (code) => process.exit(code),
+  });
 
   const auth = [
     config.trustLocal ? `no sign-in for ${config.localHosts.join(", ")}` : null,

@@ -47,6 +47,14 @@ export interface Config {
   contentLicence: string | null;
   /** How this Cairn describes itself at /.well-known/cairn.json (ADR-034). */
   selfDescription: SelfDescriptionConfig;
+  /**
+   * Seconds to finish a tidy shutdown in: drain requests, back up, close the
+   * database (ADR-046). Must be under the platform's own grace period, which
+   * is 30 seconds on Azure Container Apps and 10 on `docker stop` unless the
+   * compose file says otherwise. Being killed part way through a shutdown is
+   * how a truncated transaction reaches the replica.
+   */
+  shutdownSeconds: number;
 }
 
 export interface SelfDescriptionConfig {
@@ -97,6 +105,8 @@ export interface ConfigFile {
   topics?: string[];
   port?: number;
   workspace?: string;
+  /** Seconds allowed for a tidy shutdown. Default 25 (ADR-046). */
+  shutdownSeconds?: number;
   embeddings?: {
     provider?: "local" | "off";
     modelDir?: string;
@@ -277,6 +287,16 @@ export function loadConfig(
     throw new ConfigError(`port must be a number from 1 to 65535, got ${port}`);
   }
 
+  // Deliberately shorter than Azure's 30 second grace period. The margin is
+  // for the platform's own overhead between deciding to stop us and SIGKILL.
+  const shutdownSeconds = Number(env["CAIRN_SHUTDOWN_SECONDS"] ?? file.shutdownSeconds ?? 25);
+  if (!Number.isFinite(shutdownSeconds) || shutdownSeconds < 1 || shutdownSeconds > 600) {
+    throw new ConfigError(
+      `CAIRN_SHUTDOWN_SECONDS must be a number of seconds from 1 to 600, got ${env["CAIRN_SHUTDOWN_SECONDS"] ?? file.shutdownSeconds}. ` +
+        "Keep it below the grace period your platform allows, which is 30 seconds on Azure Container Apps and 10 on docker stop.",
+    );
+  }
+
   // A relative path in the config file means relative to that file, not to
   // wherever the server happened to be started from.
   const base = configPath ? dirname(configPath) : process.cwd();
@@ -296,6 +316,7 @@ export function loadConfig(
     embeddings,
     contentLicence: (env["CAIRN_CONTENT_LICENCE"] ?? file.contentLicence ?? "").trim() || null,
     selfDescription: loadSelfDescription(env, file),
+    shutdownSeconds,
   };
 }
 

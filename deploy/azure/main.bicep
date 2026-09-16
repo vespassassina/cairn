@@ -194,6 +194,11 @@ resource app 'Microsoft.App/containerApps@2025-01-01' = if (deployApp) {
           ]
         }
       ]
+      // Time to stop tidily before SIGKILL: drain requests, back up, close
+      // SQLite so Litestream is left a finished file rather than a moving one
+      // (ADR-046). Thirty seconds is the platform default, stated here so it
+      // is visible next to CAIRN_SHUTDOWN_SECONDS, which must stay under it.
+      terminationGracePeriodSeconds: 30
       // SQLite has one writer, and Litestream one replicator: never more
       // than one replica. Zero when idle, so an unused Cairn costs nothing,
       // unless alwaysOn trades a small bill for no cold starts.
