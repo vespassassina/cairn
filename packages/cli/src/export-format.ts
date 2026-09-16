@@ -54,6 +54,8 @@ export interface ExportTable {
   name: string;
   /** The page it sits under (ADR-024). Absent in exports made before it existed. */
   parent_id?: string | null;
+  /** One short line (ADR-058). Absent in exports made before it existed. */
+  description?: string | null;
   fields: unknown[];
   rows: Array<{ id: string; values: Record<string, unknown>; sources?: string[] }>;
 }

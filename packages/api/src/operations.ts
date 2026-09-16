@@ -2,6 +2,7 @@ import {
   addSources,
   CairnError,
   NotFoundError,
+  PageHasChildrenError,
   parseRowNodeId,
   ValidationError,
   VersionConflictError,
@@ -11,9 +12,10 @@ import {
   type FieldDef,
   type FieldType,
   type Page,
+  type Paged,
   type Revision,
-  type Row,
   type WriteContext,
+  type Row,
 } from "@cairn/core";
 import type { AppContext } from "./context.js";
 
@@ -50,10 +52,16 @@ export function tableJson(table: Table): Record<string, unknown> {
     id: table.id,
     name: table.name,
     parent_id: table.parentId,
+    description: table.description,
     version: table.version,
     updated_at: table.updatedAt,
     fields: table.fields,
   };
+}
+
+/** A page's immediate children, as every surface reports them alongside a read. */
+export function childSummaryJson(child: ChildSummary): Record<string, unknown> {
+  return { id: child.id, title: child.title, has_children: child.hasChildren, changed_at: child.changedAt };
 }
 
 /** A field definition as a request sends it, with no undefined keys. */
@@ -352,6 +360,9 @@ export function describeError(error: unknown, wording: ErrorWording): DescribedE
   if (error instanceof CairnError && error.code === "not_found") {
     return { status: 404, body: { error: "not_found", message: error.message } };
   }
+  if (error instanceof PageHasChildrenError) {
+    return { status: 422, body: { error: "has_children", message: error.message, count: error.count } };
+  }
   return {
     status: 500,
     body: { error: "internal", message: error instanceof Error ? error.message : String(error) },
@@ -415,4 +426,153 @@ export async function moveRecord(
   if (!table) throw new NotFoundError("page or table", id);
   const moved = await context.tables.move(ws, id, parentId, version, by);
   return { kind: "table", id, parent_id: moved.parentId, version: moved.version };
+}
+
+// Walking the tree (ADR-058).
+
+export interface ChildSummary {
+  id: string;
+  title: string;
+  hasChildren: boolean;
+  changedAt: string;
+}
+
+/** Every immediate child of a page, or every top-level page for null, unsorted and unpaged. */
+async function collectChildren(
+  context: AppContext,
+  parentId: string | null,
+): Promise<Page[]> {
+  const all: Page[] = [];
+  let cursor: string | null = null;
+  for (;;) {
+    const batch: Paged<Page> = await context.store.listPages(context.workspaceId, {
+      parentId,
+      limit: 500,
+      cursor,
+    });
+    all.push(...batch.items);
+    if (!batch.cursor) return all;
+    cursor = batch.cursor;
+  }
+}
+
+const CHILDREN_PAGE_LIMIT = 50;
+const MAX_CHILDREN_LIMIT = 200;
+
+function encodeChildrenCursor(offset: number): string {
+  return Buffer.from(`o:${offset}`, "utf8").toString("base64url");
+}
+
+function decodeChildrenCursor(cursor: string | null | undefined): number {
+  if (!cursor) return 0;
+  const match = /^o:(\d+)$/.exec(Buffer.from(cursor, "base64url").toString("utf8"));
+  if (!match) throw new ValidationError([{ field: "cursor", message: "not a cursor from list_children" }]);
+  return Number(match[1]);
+}
+
+/**
+ * Immediate children of a page, in title order, or the top-level pages when
+ * `parentId` is omitted (ADR-058). One surface, three translations: MCP's
+ * `list_children`, `GET /pages?parent=`, and `cairn ls`.
+ */
+export async function listChildren(
+  context: AppContext,
+  options: { parentId?: string | null; cursor?: string | null; limit?: number },
+): Promise<{ items: ChildSummary[]; cursor: string | null }> {
+  const parentId = options.parentId === undefined ? null : options.parentId;
+  const all = await collectChildren(context, parentId);
+  all.sort((a, b) => a.title.localeCompare(b.title) || a.id.localeCompare(b.id));
+  const offset = decodeChildrenCursor(options.cursor);
+  const limit = Math.max(1, Math.min(MAX_CHILDREN_LIMIT, options.limit ?? CHILDREN_PAGE_LIMIT));
+  const slice = all.slice(offset, offset + limit);
+  const items = await Promise.all(
+    slice.map(async (page): Promise<ChildSummary> => {
+      const kids = await context.store.listPages(context.workspaceId, { parentId: page.id, limit: 1 });
+      return { id: page.id, title: page.title, hasChildren: kids.items.length > 0, changedAt: page.editedAt };
+    }),
+  );
+  const nextOffset = offset + slice.length;
+  return { items, cursor: nextOffset < all.length ? encodeChildrenCursor(nextOffset) : null };
+}
+
+/** Up to 8 children plus the count of the rest, for a page read on every surface. */
+export async function childrenPreview(
+  context: AppContext,
+  pageId: string,
+): Promise<{ items: ChildSummary[]; more: number }> {
+  const all = await collectChildren(context, pageId);
+  all.sort((a, b) => a.title.localeCompare(b.title) || a.id.localeCompare(b.id));
+  const shown = all.slice(0, 8);
+  const items = await Promise.all(
+    shown.map(async (page): Promise<ChildSummary> => {
+      const kids = await context.store.listPages(context.workspaceId, { parentId: page.id, limit: 1 });
+      return { id: page.id, title: page.title, hasChildren: kids.items.length > 0, changedAt: page.editedAt };
+    }),
+  );
+  return { items, more: all.length - shown.length };
+}
+
+/**
+ * Delete a page, refusing one that still has children (ADR-058): deleting it
+ * would leave them with no parent to walk back to. History is kept either
+ * way; `get_revision` still reaches whatever a deleted page held.
+ */
+export async function deletePage(
+  context: AppContext,
+  id: string,
+  expectedVersion: string,
+  by: WriteContext,
+): Promise<void> {
+  const children = await collectChildren(context, id);
+  if (children.length > 0) throw new PageHasChildrenError(id, children.length);
+  await context.pages.delete(context.workspaceId, id, expectedVersion, by);
+}
+
+// The changes feed (ADR-013 rule 4, ADR-058).
+
+export function revisionDetail(revision: Revision): Record<string, unknown> {
+  const base = { kind: revision.kind, ...revisionSummary(revision) };
+  if (revision.kind === "page") {
+    const snapshot = revision.snapshot as { title: string };
+    return { ...base, page_id: revision.recordId, title: snapshot.title };
+  }
+  const rowId = revision.recordId.slice((revision.tableId ?? "").length + 1);
+  return { ...base, table_id: revision.tableId, row_id: rowId };
+}
+
+/**
+ * Revisions across the workspace, newest first, until `limit` or `since`
+ * (inclusive). Shared by REST's `GET /changes`, MCP's `changes` tool and
+ * `cairn changes`.
+ */
+export async function listChanges(
+  context: AppContext,
+  options: { since?: string; actorKind?: "user" | "agent"; cursor?: string | null; limit?: number },
+): Promise<{ changes: Revision[]; newest: string | null; cursor: string | null }> {
+  const limit = options.limit ?? 50;
+  const sinceMs = options.since === undefined ? null : Date.parse(options.since);
+  const changes: Revision[] = [];
+  let cursor: string | null = options.cursor ?? null;
+  let reachedSince = false;
+  do {
+    const batch: Paged<Revision> = await context.store.listRecentRevisions(context.workspaceId, {
+      limit: Math.min(limit - changes.length, 100),
+      cursor,
+      ...(options.actorKind === undefined ? {} : { actorKind: options.actorKind }),
+    });
+    for (const revision of batch.items) {
+      if (sinceMs !== null && Date.parse(revision.createdAt) < sinceMs) {
+        reachedSince = true;
+        break;
+      }
+      changes.push(revision);
+    }
+    cursor = batch.cursor;
+  } while (!reachedSince && cursor !== null && changes.length < limit);
+
+  return {
+    changes,
+    newest: changes[0]?.createdAt ?? options.since ?? null,
+    cursor: reachedSince ? null : cursor,
+  };
 }

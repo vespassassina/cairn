@@ -117,16 +117,20 @@ describe("transport and auth", () => {
       [
         "create_table",
         "create_page",
+        "delete_page",
         "get_backlinks",
+        "get_changes",
         "get_history",
         "get_neighbours",
         "get_page",
         "get_revision",
+        "list_children",
         "list_tables",
         "move",
         "query_table",
         "search",
         "update_page",
+        "update_table",
         "upsert_row",
       ].sort(),
     );
@@ -344,6 +348,7 @@ describe("tables in the tree and rows as links (ADR-024)", () => {
     const peptides = await callTool("create_table", {
       name: "Peptides",
       fields: [{ name: "name", type: "text", required: true }],
+      change_note: "A table for the peptides",
     });
     const peptidesId = peptides.data["id"] as string;
     const stacks = await callTool("create_table", {
@@ -353,6 +358,7 @@ describe("tables in the tree and rows as links (ADR-024)", () => {
         { name: "title", type: "text", required: true },
         { name: "components", type: "relation", target: peptidesId, multiple: true },
       ],
+      change_note: "A table for the stacks",
     });
     const stacksId = stacks.data["id"] as string;
 
@@ -402,6 +408,7 @@ describe("table tools", () => {
         { name: "grams", type: "number" },
         { name: "material", type: "select", options: ["pla", "petg"] },
       ],
+      change_note: "A table for the prints",
     });
     const tableId = table.data["id"] as string;
 
@@ -434,6 +441,7 @@ describe("table tools", () => {
         { name: "printed", type: "date", required: true },
         { name: "material", type: "select", options: ["pla", "petg"] },
       ],
+      change_note: "A table for the prints",
     });
 
     const result = await callTool("upsert_row", {
@@ -451,6 +459,7 @@ describe("table tools", () => {
     const table = await callTool("create_table", {
       name: "Parts",
       fields: [{ name: "title", type: "text", required: true }],
+      change_note: "A table for the parts",
     });
     const row = await callTool("upsert_row", {
       table_id: table.data["id"],
@@ -515,6 +524,7 @@ describe("sources (ADR-027)", () => {
     const table = await callTool("create_table", {
       name: "Peptides",
       fields: [{ name: "name", type: "text", required: true }],
+      change_note: "A table for the peptides",
     });
     const row = await callTool("upsert_row", {
       table_id: table.data["id"],
@@ -686,6 +696,7 @@ describe("history tools (ADR-008)", () => {
         { name: "title", type: "text", required: true },
         { name: "grams", type: "number" },
       ],
+      change_note: "A table for the parts",
     });
     const row = await callTool("upsert_row", {
       table_id: table.data["id"],
@@ -727,5 +738,146 @@ describe("history tools (ADR-008)", () => {
     });
     expect(result.isError).toBe(true);
     expect(result.data["error"]).toBe("not_found");
+  });
+});
+
+describe("agent navigation (ADR-058)", () => {
+  it("lists immediate children only, title order, with a working cursor", async () => {
+    const home = await callTool("create_page", { title: "Home", body: "x" });
+    const homeId = home.data["id"] as string;
+    const bravo = await callTool("create_page", { title: "Bravo", body: "x", parent_id: homeId });
+    await callTool("create_page", { title: "Alpha", body: "x", parent_id: homeId });
+    // A grandchild must not appear in Home's own listing.
+    await callTool("create_page", { title: "Grandchild", body: "x", parent_id: bravo.data["id"] as string });
+
+    const first = await callTool("list_children", { page_id: homeId, limit: 1 });
+    expect((first.data["children"] as Array<Record<string, unknown>>).map((c) => c["title"])).toEqual(["Alpha"]);
+    expect(first.data["cursor"]).toBeTruthy();
+
+    const rest = await callTool("list_children", { page_id: homeId, cursor: first.data["cursor"] as string });
+    const titles = (rest.data["children"] as Array<Record<string, unknown>>).map((c) => c["title"]);
+    expect(titles).toEqual(["Bravo"]);
+    expect((rest.data["children"] as Array<Record<string, unknown>>)[0]!["has_children"]).toBe(true);
+  });
+
+  it("agrees with cairn collections (REST GET /pages?parent=root) on the top-level pages (acceptance criterion 8)", async () => {
+    await callTool("create_page", { title: "Root A", body: "x" });
+    await callTool("create_page", { title: "Root B", body: "x" });
+    const nested = await callTool("create_page", { title: "Root C", body: "x" });
+    await callTool("create_page", { title: "Nested", body: "x", parent_id: nested.data["id"] as string });
+
+    const viaTool = await callTool("list_children", {});
+    const restResponse = await app.fetch(
+      new Request("http://localhost/api/v1/pages?parent=root", {
+        headers: { authorization: `Bearer ${TOKEN}`, "user-agent": "cairn-cli/0.1.0 (claude-code)" },
+      }),
+    );
+    const viaRest = (await restResponse.json()) as { pages: Array<Record<string, unknown>> };
+
+    const toolTitles = (viaTool.data["children"] as Array<Record<string, unknown>>).map((c) => c["title"]).sort();
+    const restTitles = viaRest.pages.map((p) => p["title"]).sort();
+    expect(toolTitles).toEqual(restTitles);
+    expect(toolTitles).toEqual(["Root A", "Root B", "Root C"]);
+  });
+
+  it("reports a page's children, capped and counted (acceptance criterion 9)", async () => {
+    const home = await callTool("create_page", { title: "Home", body: "x" });
+    const homeId = home.data["id"] as string;
+    for (let i = 0; i < 10; i++) {
+      await callTool("create_page", { title: `Child ${String(i).padStart(2, "0")}`, body: "x", parent_id: homeId });
+    }
+    const page = await callTool("get_page", { page_id: homeId });
+    expect((page.data["children"] as unknown[]).length).toBe(8);
+    expect(page.data["more_children"]).toBe(2);
+  });
+
+  it("deletes a childless page, keeping its history reachable", async () => {
+    const page = await callTool("create_page", { title: "Gone soon", body: "x" });
+    const id = page.data["id"] as string;
+    const deleted = await callTool("delete_page", { page_id: id, version: page.data["version"], change_note: "No longer needed" });
+    expect(deleted.isError).toBe(false);
+    expect(deleted.data["deleted"]).toBe(id);
+
+    const revision = await callTool("get_revision", { page_id: id, version: page.data["version"] as string });
+    expect(revision.isError).toBe(false);
+  });
+
+  it("refuses to delete a page with children, naming how many", async () => {
+    const home = await callTool("create_page", { title: "Home", body: "x" });
+    await callTool("create_page", { title: "Child", body: "x", parent_id: home.data["id"] as string });
+    const result = await callTool("delete_page", {
+      page_id: home.data["id"],
+      version: home.data["version"],
+      change_note: "Try to remove it anyway",
+    });
+    expect(result.isError).toBe(true);
+    expect(JSON.stringify(result.data)).toContain("1");
+  });
+
+  it("refuses to delete a page with a stale version", async () => {
+    const page = await callTool("create_page", { title: "Stale target", body: "x" });
+    await callTool("update_page", { page_id: page.data["id"], version: page.data["version"], mode: "replace_body", content: "y", change_note: "bump" });
+    const result = await callTool("delete_page", {
+      page_id: page.data["id"],
+      version: page.data["version"],
+      change_note: "Using the old version",
+    });
+    expect(result.isError).toBe(true);
+    expect(result.data["error"]).toBe("version_conflict");
+  });
+
+  it("refuses create_table with no change note, naming the argument (acceptance criterion 12)", async () => {
+    const { body } = await rpc("tools/call", {
+      name: "create_table",
+      arguments: { name: "No note", fields: [{ name: "title", type: "text" }] },
+    });
+    const result = body.result as { isError?: boolean; content?: Array<{ type: string; text: string }> };
+    // Zod rejects the call before the handler runs, so the SDK returns a
+    // protocol-level error rather than the tool's own JSON error body.
+    expect(result.isError === true || body.error !== undefined).toBe(true);
+    const message = result.isError ? result.content![0]!.text : JSON.stringify(body.error);
+    expect(message).toContain("change_note");
+  });
+
+  it("updates a table's schema over MCP, keeping existing rows", async () => {
+    const table = await callTool("create_table", {
+      name: "Filaments",
+      fields: [{ name: "material", type: "text", required: true }],
+      change_note: "Track filament",
+    });
+    const row = await callTool("upsert_row", { table_id: table.data["id"], values: { material: "PLA" } });
+
+    const updated = await callTool("update_table", {
+      table_id: table.data["id"],
+      version: table.data["version"],
+      name: "Filaments",
+      fields: [
+        { name: "material", type: "select", required: true, options: ["PLA", "PETG", "TPU"] },
+        { name: "grams", type: "number" },
+      ],
+      change_note: "Make material a pick list, track weight",
+    });
+    expect(updated.isError).toBe(false);
+    expect((updated.data["fields"] as Array<Record<string, unknown>>).map((f) => f["name"])).toEqual([
+      "material",
+      "grams",
+    ]);
+
+    const stillThere = await callTool("query_table", { table_id: table.data["id"] });
+    expect((stillThere.data["rows"] as Array<Record<string, unknown>>)[0]!["id"]).toBe(row.data["id"]);
+  });
+
+  it("reaches the changes feed over MCP, newest first", async () => {
+    const a = await callTool("create_page", { title: "Feed A", body: "x" });
+    await callTool("create_page", { title: "Feed B", body: "x" });
+
+    const changes = await callTool("get_changes", { limit: 5 });
+    expect(changes.isError).toBe(false);
+    const items = changes.data["changes"] as Array<Record<string, unknown>>;
+    expect(items.length).toBeGreaterThanOrEqual(2);
+    expect(items[0]!["at"] >= items[items.length - 1]!["at"]).toBe(true);
+
+    const since = await callTool("get_changes", { since: a.data["updated_at"] as string });
+    expect(since.isError).toBe(false);
   });
 });

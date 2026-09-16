@@ -6,6 +6,24 @@ Entries link to the ADR when there is one. A change of direction that has no ADR
 
 ## 2026-09-17
 
+### An agent can walk the tree, and MCP catches up with REST and the CLI (ADR-058)
+
+Implements ADR-058, per `docs/specs/agent-navigation.md`. An agent connected only through MCP could not see the page tree at all: the only way to ask what is under a page was `GET /api/v1/pages?parent=` on REST, and MCP was also missing delete, the changes feed, and the ability to change a table's schema, while `create_table` alone among writes took no change note.
+
+1. **`list_children`**, new on all three surfaces: given a page, its immediate children, each with id, title, whether it has children of its own, and when it last changed, paged with a cursor; given nothing, the top-level pages (the collections). MCP: the `list_children` tool. REST: `GET /pages?parent=` (unchanged when `parent` is absent, so export and sync keep their existing full-list behaviour). CLI: `cairn ls [page-id]`, and `cairn collections` is repointed to the same call (a breaking change from its ADR-026 meaning as an alias for `cairn tables`, which the spec's acceptance criteria call for directly).
+2. **Reading a page reports its children.** `get_page` (MCP), `GET /pages/:id` (REST) and `cairn read` (CLI, rewritten from consuming the Markdown response to the plain JSON one so it can add a children block) all cap the list at 8 with a count of the rest and point to `list_children` for more.
+3. **`delete_page`**, new on MCP (REST and the CLI already had it): takes a version token and a required change note, refuses a page that still has children and says how many, and its description says history is kept and `get_revision` still reaches the deleted page's past content.
+4. **`get_changes`**, new on MCP: the changes feed REST and the CLI already served, newest first, with `since` and `actor_kind` filters and a cursor.
+5. **`update_table`**, new on MCP: renames a table, replaces its fields, moves it, or changes its description, given its current version.
+6. **`create_table` now requires `change_note`**, on MCP and REST, matching every other write. This broke every table-creating call site that had never needed one: `cairn trust` and `cairn discover`'s embedded table creation, `cairn sync`'s table-sync `PUT`, and six REST and MCP tests, all fixed to pass one.
+7. **Tables carry a `description`.** Returned by `list_tables`, shown by `cairn tables`, round-tripped through `cairn export`/`cairn import`.
+8. **`cairn create-table` and `cairn update-table`**, new CLI commands. Neither existed before this ADR: the only CLI code that created a table was embedded inside `trust` and `discover` as an implementation detail. Hard rule 14 asks for a reason before a capability is missing from a surface, and none applied here, so both commands were added rather than exempted. Fields are given with a compact spec, the same shape `cairn tables` already prints them in: `name:type[(opt,opt)][->target][[]][*]`, for example `--field "status:select(open,closed)*"` or `--field "owner:relation->pages[]"`. `cairn history` and `cairn revision` also gained the `table-id/row-id` form `cairn links` already had, since MCP's `get_history`/`get_revision` cover rows and the CLI did not.
+9. **The cross-surface parity test**, `packages/api/test/parity.test.ts`: static analysis over the three surfaces' source text (tool names in `mcp/tools.ts`, route method+path in `rest/routes.ts`, command names in the CLI's `main.ts`), mapped onto a canonical capability list, failing when a capability reaches one surface and not the others unless an allow-list entry names the ADR that excuses it. The allow list's first entries are `restore` (ADR-045: a human action, deliberately absent from MCP) and `status`, `hook`, `sync`, `instances`, `start`, `import` (presence.md: these describe or change the local machine running the CLI, not a Cairn workspace). A test proves the check actually fails by removing a name from each surface's extracted set in turn and asserting the check throws.
+
+New contract tests in `packages/api/test/mcp.test.ts` cover `list_children` (immediate children only, title order, cursor), `list_children` with no page agreeing with the REST route `cairn collections` calls, `get_page`'s capped children block, `delete_page` succeeding, refusing a page with children, and refusing a stale version, `create_table` refusing a missing change note by name, and `update_table` and `get_changes` each with a realistic payload.
+
+`pnpm build`, `pnpm typecheck`, the full test suite (703 tests) and `pnpm smoke:cli` against a freshly compiled Bun executable all pass.
+
 ### A sign-in survives a lost race and a slow start (ADR-054)
 
 Implements ADR-054, per `docs/specs/sign-in-resilience.md`. Fixes the defect found on 2026-09-16: the owner's stored Azure sign-in had been deleted with 28 days left on its refresh token, caused by two bugs that only destroy a sign-in together.

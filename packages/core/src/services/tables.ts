@@ -81,11 +81,17 @@ export class TableService {
     id: Id = newTableId(),
   ): Promise<Table> {
     await this.checkSchema(workspaceId, id, input);
-    return this.store.putTable(workspaceId, id, { ...input, parentId: input.parentId ?? null }, null, {
-      version: newVersion(),
-      actor: context.actor,
-      at: new Date().toISOString(),
-    });
+    return this.store.putTable(
+      workspaceId,
+      id,
+      { ...input, parentId: input.parentId ?? null, description: input.description ?? null },
+      null,
+      {
+        version: newVersion(),
+        actor: context.actor,
+        at: new Date().toISOString(),
+      },
+    );
   }
 
   /**
@@ -103,7 +109,8 @@ export class TableService {
     await this.checkSchema(workspaceId, id, input);
     const before = await this.store.getTable(workspaceId, id);
     const parentId = input.parentId !== undefined ? input.parentId : (before?.parentId ?? null);
-    const table = await this.store.putTable(workspaceId, id, { ...input, parentId }, expectedVersion, {
+    const description = input.description !== undefined ? input.description : (before?.description ?? null);
+    const table = await this.store.putTable(workspaceId, id, { ...input, parentId, description }, expectedVersion, {
       version: newVersion(),
       actor: context.actor,
       at: new Date().toISOString(),

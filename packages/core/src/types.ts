@@ -179,6 +179,8 @@ export interface Table {
   fields: FieldDef[];
   /** The page it sits under in the tree, or null at the top (ADR-024). */
   parentId: Id | null;
+  /** One short line, shown in list_tables, the console and the workspace summary (ADR-058). */
+  description: string | null;
   createdAt: string;
   updatedAt: string;
   updatedBy: Actor;
@@ -190,6 +192,8 @@ export interface TableInput {
   fields: FieldDef[];
   /** Omitted on an update: stays where it is. Null: moves to the top. */
   parentId?: Id | null;
+  /** Omitted on an update: stays what it is. Null clears it. */
+  description?: string | null;
 }
 
 export type FieldValue = string | number | boolean | string[] | null;

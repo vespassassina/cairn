@@ -4,15 +4,21 @@ import { MAX_SOURCES, NotFoundError, type Actor, type Page, type Paged, type Rev
 import type { AppContext } from "../context.js";
 import {
   tableJson,
+  childSummaryJson,
+  childrenPreview,
   describeError,
+  deletePage,
   editPage,
   linkJson,
+  listChanges,
+  listChildren,
   moveRecord,
   publishPage,
   toFieldDefs,
   EDIT_MODES,
   pageSummary,
   renderDiff,
+  revisionDetail,
   revisionSummary,
   rowJson,
   sourceChangesJson,
@@ -132,6 +138,9 @@ const schemas = {
       .min(1),
     // The page it sits under. On PUT, leave it out to keep it where it is.
     parent_id: z.string().min(1).nullable().optional(),
+    // Left out on PUT: the table keeps the one it has.
+    description: z.string().max(280).nullable().optional(),
+    change_note: z.string().max(500),
   }),
   publish: z.object({
     id: z.string().min(1),
@@ -263,19 +272,6 @@ function requireIfMatch(c: Context): string {
   return version;
 }
 
-function revisionDetail(revision: Revision): Record<string, unknown> {
-  const base = {
-    kind: revision.kind,
-    ...revisionSummary(revision),
-  };
-  if (revision.kind === "page") {
-    const snapshot = revision.snapshot as { title: string };
-    return { ...base, page_id: revision.recordId, title: snapshot.title };
-  }
-  const rowId = revision.recordId.slice((revision.tableId ?? "").length + 1);
-  return { ...base, table_id: revision.tableId, row_id: rowId };
-}
-
 /**
  * A page or row as REST returns it: what every surface returns, plus the
  * edit time sync orders by (ADR-030). MCP leaves it out; agents read
@@ -365,8 +361,18 @@ export function restRoutes(context: AppContext, callerFor: CallerFor): Hono {
 
   api.get("/pages", async (c) => {
     const parent = c.req.query("parent");
+    // With a parent, this is list_children (ADR-058): title order, child
+    // counts, a cursor over that order. Without one, the full unscoped list
+    // that export and sync already rely on, unchanged.
+    if (parent !== undefined) {
+      const result = await listChildren(context, {
+        parentId: parent === "root" ? null : parent,
+        cursor: c.req.query("cursor") ?? null,
+        limit: limitParam(c, 50),
+      });
+      return c.json({ pages: result.items.map(childSummaryJson), cursor: result.cursor });
+    }
     const page: Paged<Page> = await context.store.listPages(ws, {
-      ...(parent === undefined ? {} : { parentId: parent === "root" ? null : parent }),
       limit: limitParam(c, 50),
       cursor: c.req.query("cursor") ?? null,
     });
@@ -397,7 +403,15 @@ export function restRoutes(context: AppContext, callerFor: CallerFor): Hono {
     if (c.req.query("format") === "markdown") {
       return c.body(pageMarkdown(page), 200, { "content-type": "text/markdown; charset=utf-8" });
     }
-    return c.json({ ...restPage(page), body: page.body });
+    // Immediate children, capped (ADR-058), so an agent sees whether it can
+    // walk further without a second call.
+    const children = await childrenPreview(context, page.id);
+    return c.json({
+      ...restPage(page),
+      body: page.body,
+      children: children.items.map(childSummaryJson),
+      more_children: children.more,
+    });
   });
 
   // Create or replace a whole page at a given id: the import path, which
@@ -449,7 +463,7 @@ export function restRoutes(context: AppContext, callerFor: CallerFor): Hono {
   api.delete("/pages/:id", async (c) => {
     const version = requireIfMatch(c);
     const input = await parseBody(c, schemas.deleteBody);
-    await context.pages.delete(ws, c.req.param("id"), version, by(c, input.change_note));
+    await deletePage(context, c.req.param("id"), version, by(c, input.change_note));
     return c.body(null, 204);
   });
 
@@ -525,8 +539,13 @@ export function restRoutes(context: AppContext, callerFor: CallerFor): Hono {
     const input = await parseBody(c, schemas.createTable);
     const table = await context.tables.create(
       ws,
-      { name: input.name, fields: toFieldDefs(input.fields), parentId: input.parent_id ?? null },
-      by(c, undefined),
+      {
+        name: input.name,
+        fields: toFieldDefs(input.fields),
+        parentId: input.parent_id ?? null,
+        description: input.description ?? null,
+      },
+      by(c, input.change_note),
     );
     c.header("Location", `/api/v1/tables/${encodeURIComponent(table.id)}`);
     return c.json(tableJson(table), 201);
@@ -543,9 +562,10 @@ export function restRoutes(context: AppContext, callerFor: CallerFor): Hono {
         name: input.name,
         fields: toFieldDefs(input.fields),
         ...(input.parent_id === undefined ? {} : { parentId: input.parent_id }),
+        ...(input.description === undefined ? {} : { description: input.description }),
       },
       version,
-      by(c, undefined),
+      by(c, input.change_note),
     );
     c.header("ETag", etag(table.version));
     return c.json(tableJson(table), version === null ? 201 : 200);
@@ -771,33 +791,18 @@ export function restRoutes(context: AppContext, callerFor: CallerFor): Hono {
       throw new BadRequest("actor must be agent or user.", [{ field: "actor", message: "agent or user" }]);
     }
     const limit = limitParam(c, 50);
-    const sinceMs = since === undefined ? null : Date.parse(since);
 
-    // Revisions come newest first. Read until the limit, or until one is older
-    // than `since`. `since` is inclusive: a client drops repeats by version.
-    const changes: Revision[] = [];
-    let cursor: string | null = c.req.query("cursor") ?? null;
-    let reachedSince = false;
-    do {
-      const batch: Paged<Revision> = await context.store.listRecentRevisions(ws, {
-        limit: Math.min(limit - changes.length, 100),
-        cursor,
-        ...(actor === undefined ? {} : { actorKind: actor }),
-      });
-      for (const revision of batch.items) {
-        if (sinceMs !== null && Date.parse(revision.createdAt) < sinceMs) {
-          reachedSince = true;
-          break;
-        }
-        changes.push(revision);
-      }
-      cursor = batch.cursor;
-    } while (!reachedSince && cursor !== null && changes.length < limit);
+    const result = await listChanges(context, {
+      ...(since === undefined ? {} : { since }),
+      ...(actor === undefined ? {} : { actorKind: actor }),
+      cursor: c.req.query("cursor") ?? null,
+      limit,
+    });
 
     return c.json({
-      changes: changes.map(revisionDetail),
-      newest: changes[0]?.createdAt ?? since ?? null,
-      cursor: reachedSince ? null : cursor,
+      changes: result.changes.map(revisionDetail),
+      newest: result.newest,
+      cursor: result.cursor,
     });
   });
 

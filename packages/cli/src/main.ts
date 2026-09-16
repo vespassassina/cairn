@@ -98,10 +98,12 @@ const HELP = `cairn ${VERSION}: a wiki and tables your agents can write to, with
 Read
   cairn overview                          what Cairn holds: collections, tables, tags
   cairn search <words...>                 search by keyword, and by meaning for English text
-  cairn read <page-id>                    a page as Markdown, with its version
+  cairn read <page-id>                    a page as Markdown, with its version, and its children
+  cairn ls [page-id]                      that page's immediate children, one per line; omit
+                                          page-id for the top-level pages (also cairn collections)
   cairn links <page-id | table-id/row-id> what it links to and what links to it
-  cairn history <page-id>                 who changed it, when and why
-  cairn revision <page-id> <version>      one old version, with a diff
+  cairn history <page-id | table-id/row-id>            who changed it, when and why
+  cairn revision <page-id | table-id/row-id> <version>  one old version, with a diff
   cairn peek <page-id> <version>          one old version in full, changing nothing
   cairn changes [--since T] [--agents|--people]   what changed, newest first
 
@@ -125,6 +127,13 @@ Write (every write is a revision the owner can review and undo)
 Tables
   cairn tables                            names, ids, fields and where each sits
       relation fields link rows: field->table-id, [] when a list
+  cairn create-table <name> --field "name:type[(opt,opt)][->target][[]][*]"...
+      [--parent PAGE] [--description "..."] --note "why this table exists"
+      types: text, number, date, select, multi_select, checkbox, url, relation
+      (opt,opt) for select/multi_select; ->target for relation ([] when a list; * when required)
+  cairn update-table <table-id> --title NAME --field "..."... --version V --note "why"
+      replaces the whole field list; existing rows keep values a dropped field held,
+      just no longer queryable. --version from cairn tables
   cairn rows <table-id> [--where "field op value"]... [--sort field[:desc]]
       ops: eq ne lt lte gt gte contains in exists
   cairn row <table-id> <row-id>
@@ -206,6 +215,8 @@ const OPTIONS = {
   where: { type: "string", multiple: true },
   sort: { type: "string", multiple: true },
   set: { type: "string", multiple: true },
+  field: { type: "string", multiple: true },
+  description: { type: "string" },
   id: { type: "string" },
   since: { type: "string" },
   agents: { type: "boolean" },
@@ -322,6 +333,31 @@ function parseSet(pairs: string[]): Record<string, unknown> {
     values[pair.slice(0, at)] = literal(pair.slice(at + 1));
   }
   return values;
+}
+
+const FIELD_SPEC =
+  /^([^:]+):(text|number|date|select|multi_select|checkbox|url|relation)(\(([^)]*)\))?(->([^[*]+))?(\[\])?(\*)?$/;
+
+/**
+ * A field spec, in the same name:type->target[]* shape `cairn tables`
+ * already prints, so an agent can round-trip what it reads.
+ */
+function parseField(raw: string): Record<string, unknown> {
+  const match = FIELD_SPEC.exec(raw.trim());
+  if (!match) {
+    throw new UsageError(
+      `cannot read --field "${raw}". Use name:type, such as --field "title:text*" or --field "status:select(open,closed)" or --field "owner:relation->pages[]"`,
+    );
+  }
+  const [, name, type, , options, , target, multiple, required] = match;
+  return {
+    name,
+    type,
+    ...(options ? { options: options.split(",").map((o) => o.trim()).filter(Boolean) } : {}),
+    ...(target ? { target } : {}),
+    ...(multiple ? { multiple: true } : {}),
+    ...(required ? { required: true } : {}),
+  };
 }
 
 type Json = Record<string, unknown>;
@@ -900,11 +936,36 @@ export async function run(argv: string[], io: Io): Promise<number> {
 
       case "read": {
         const id = need(args[0], "page id");
-        const response = await client.request(
-          "GET",
-          `/pages/${encodeURIComponent(id)}${flags.json ? "" : "?format=markdown"}`,
-        );
-        out(response.json, () => `${response.text}\n`);
+        const { json } = await client.request("GET", `/pages/${encodeURIComponent(id)}`);
+        out(json, () => {
+          const p = json as Json;
+          const updatedBy = p["updated_by"] as Json | undefined;
+          const front = [
+            "---",
+            `id: ${String(p["id"])}`,
+            `title: ${JSON.stringify(p["title"])}`,
+            `version: ${String(p["version"])}`,
+            `tags: ${JSON.stringify(p["tags"])}`,
+            ...(list(p["sources"]).length > 0 ? [`sources: ${JSON.stringify(p["sources"])}`] : []),
+            `verified: ${p["verified_at"] ?? "never"}`,
+            `updated: ${String(p["updated_at"])} by ${String(updatedBy?.["kind"])} ${JSON.stringify(updatedBy?.["name"])}`,
+            "---",
+            "",
+            String(p["body"] ?? ""),
+          ].join("\n");
+          const children = list(p["children"]);
+          const more = Number(p["more_children"] ?? 0);
+          const childLine = (c: Json) => `  ${String(c["id"])}  ${String(c["title"])}${c["has_children"] ? " >" : ""}`;
+          const childrenBlock =
+            children.length > 0
+              ? `\n\nchildren:\n${children.map(childLine).join("\n")}${
+                  more > 0 ? `\n  … and ${more} more: cairn ls ${id}` : ""
+                }`
+              : more > 0
+                ? `\n\nchildren: ${more}, see cairn ls ${id}`
+                : "";
+          return `${front}${childrenBlock}\n`;
+        });
         return 0;
       }
 
@@ -933,11 +994,13 @@ export async function run(argv: string[], io: Io): Promise<number> {
       }
 
       case "history": {
-        const id = need(args[0], "page id");
-        const { json } = await client.request(
-          "GET",
-          `/pages/${encodeURIComponent(id)}/history${query({ limit: flags.limit })}`,
-        );
+        const id = need(args[0], "page id, or table-id/row-id");
+        const slash = id.indexOf("/");
+        const path =
+          slash > 0
+            ? `/tables/${encodeURIComponent(id.slice(0, slash))}/rows/${encodeURIComponent(id.slice(slash + 1))}/history`
+            : `/pages/${encodeURIComponent(id)}/history`;
+        const { json } = await client.request("GET", `${path}${query({ limit: flags.limit })}`);
         out(json, () =>
           `${list(json?.["revisions"])
             .map((r) => `${String(r["version"])}  ${String(r["at"])}  ${by(r["by"])}${r["note"] ? `  "${String(r["note"])}"` : ""}`)
@@ -947,12 +1010,14 @@ export async function run(argv: string[], io: Io): Promise<number> {
       }
 
       case "revision": {
-        const id = need(args[0], "page id");
+        const id = need(args[0], "page id, or table-id/row-id");
         const version = need(args[1], "version");
-        const { json } = await client.request(
-          "GET",
-          `/pages/${encodeURIComponent(id)}/revisions/${encodeURIComponent(version)}`,
-        );
+        const slash = id.indexOf("/");
+        const path =
+          slash > 0
+            ? `/tables/${encodeURIComponent(id.slice(0, slash))}/rows/${encodeURIComponent(id.slice(slash + 1))}/revisions/${encodeURIComponent(version)}`
+            : `/pages/${encodeURIComponent(id)}/revisions/${encodeURIComponent(version)}`;
+        const { json } = await client.request("GET", path);
         out(json, () =>
           `${String(json?.["version"])}  ${String(json?.["at"])}  ${by(json?.["by"])}\n` +
           list(json?.["sources_added"] as unknown).map((source) => `+ source: ${String(source)}\n`).join("") +
@@ -1111,8 +1176,7 @@ export async function run(argv: string[], io: Io): Promise<number> {
         return 0;
       }
 
-      case "tables":
-      case "collections": {
+      case "tables": {
         const { json } = await client.request("GET", "/tables");
         out(json, () =>
           `${list(json?.["tables"])
@@ -1124,6 +1188,65 @@ export async function run(argv: string[], io: Io): Promise<number> {
             })
             .join("\n") || "no tables"}\n`,
         );
+        return 0;
+      }
+
+      case "create-table": {
+        const name = need(args[0], "table name");
+        const fields = (flags.field ?? []).map(parseField);
+        if (fields.length === 0) {
+          throw new UsageError('missing --field, such as --field "title:text*"');
+        }
+        const { json } = await client.request("POST", "/tables", {
+          body: {
+            name,
+            fields,
+            ...(flags.parent ? { parent_id: flags.parent } : {}),
+            ...(flags.description ? { description: flags.description } : {}),
+            change_note: need(note, "--note, saying why this table exists"),
+          },
+        });
+        out(json, () => written(json));
+        return 0;
+      }
+
+      case "update-table": {
+        const cid = need(args[0], "table id");
+        const name = need(flags.title, "--title, the table's new name");
+        const fields = (flags.field ?? []).map(parseField);
+        if (fields.length === 0) {
+          throw new UsageError('missing --field, such as --field "title:text*". A schema update replaces the whole field list');
+        }
+        const { json } = await client.request("PUT", `/tables/${encodeURIComponent(cid)}`, {
+          body: {
+            name,
+            fields,
+            ...(flags.parent !== undefined ? { parent_id: flags.parent } : {}),
+            ...(flags.description !== undefined ? { description: flags.description } : {}),
+            change_note: need(note, "--note, saying why this table changed"),
+          },
+          ifMatch: need(flags.version, "--version, from cairn tables"),
+        });
+        out(json, () => written(json));
+        return 0;
+      }
+
+      // The top-level pages, the collections everything else sits under
+      // (ADR-058). A thin call to the same listing `cairn ls` uses.
+      case "collections":
+      case "ls": {
+        const parent = args[0] ?? "root";
+        const { json } = await client.request(
+          "GET",
+          `/pages${query({ parent, limit: flags.limit, cursor: flags.cursor })}`,
+        );
+        out(json, () => {
+          const lines = list(json?.["pages"]).map(
+            (p) => `${String(p["id"])}  ${String(p["title"])}${p["has_children"] ? "  >" : ""}`,
+          );
+          const more = json?.["cursor"] ? `\nmore: --cursor ${String(json["cursor"])}` : "";
+          return `${lines.join("\n") || "no children"}${more}\n`;
+        });
         return 0;
       }
 
@@ -1245,6 +1368,7 @@ export async function run(argv: string[], io: Io): Promise<number> {
               name: String(table["name"]),
               // A root export leaves out pages above the root, so a parent there is dropped.
               parent_id: typeof table["parent_id"] === "string" && (!flags.root || pages.some((p) => p.id === table["parent_id"])) ? table["parent_id"] : null,
+              description: (table["description"] as string | null | undefined) ?? null,
               fields: table["fields"] as unknown[],
               rows,
             });
@@ -1320,6 +1444,7 @@ export async function run(argv: string[], io: Io): Promise<number> {
                       { name: "note", type: "text" },
                       { name: "added_at", type: "date" },
                     ],
+                    change_note: "Created by cairn trust, on first use",
                   },
                 })
               ).json?.["id"],
@@ -1391,6 +1516,7 @@ export async function run(argv: string[], io: Io): Promise<number> {
                         { name: "depth", type: "number" },
                         { name: "added_at", type: "date" },
                       ],
+                      change_note: "Created by cairn discover, on first use",
                     },
                   })
                 ).json?.["id"],
@@ -1520,12 +1646,27 @@ export async function run(argv: string[], io: Io): Promise<number> {
             }
             if (!parentExists.get(parentId)) parentId = null;
           }
-          const schema = { name: table.name, fields: table.fields, parent_id: parentId };
+          const schema = {
+            name: table.name,
+            fields: table.fields,
+            parent_id: parentId,
+            description: table.description ?? null,
+            change_note: change,
+          };
           const current = await maybe(client, path);
+          // change_note isn't part of the table's own state, and differs on every run.
+          const { change_note: _changeNote, ...comparable } = schema;
           if (current === null) {
             tableTally.created += 1;
             if (!dry) await client.request("PUT", path, { body: schema });
-          } else if (stable({ name: current.json?.["name"], fields: current.json?.["fields"], parent_id: current.json?.["parent_id"] ?? null }) === stable(schema)) {
+          } else if (
+            stable({
+              name: current.json?.["name"],
+              fields: current.json?.["fields"],
+              parent_id: current.json?.["parent_id"] ?? null,
+              description: current.json?.["description"] ?? null,
+            }) === stable(comparable)
+          ) {
             tableTally.unchanged += 1;
           } else {
             tableTally.updated += 1;

@@ -355,14 +355,14 @@ describe("tables in the tree and rows as links (ADR-024)", () => {
     const homeId = String(home.json["id"]);
     const peptides = await call("/tables", {
       method: "POST",
-      body: { name: "Peptides", parent_id: homeId, fields: [{ name: "name", type: "text", required: true }, { name: "page", type: "relation" }, { name: "related", type: "relation", target: "col_self_placeholder" }] },
+      body: { name: "Peptides", parent_id: homeId, fields: [{ name: "name", type: "text", required: true }, { name: "page", type: "relation" }, { name: "related", type: "relation", target: "col_self_placeholder" }], change_note: "A table for the peptides" },
     });
     expect(peptides.status).toBe(422);
     expect(JSON.stringify(peptides.json)).toContain("related");
 
     const created = await call("/tables", {
       method: "POST",
-      body: { name: "Peptides", parent_id: homeId, fields: [{ name: "name", type: "text", required: true }, { name: "page", type: "relation" }] },
+      body: { name: "Peptides", parent_id: homeId, fields: [{ name: "name", type: "text", required: true }, { name: "page", type: "relation" }], change_note: "A table for the peptides" },
     });
     expect(created.status).toBe(201);
     expect(created.json["parent_id"]).toBe(homeId);
@@ -379,7 +379,7 @@ describe("tables in the tree and rows as links (ADR-024)", () => {
     const kept = await call(`/tables/${cid}`, {
       method: "PUT",
       headers: { "if-match": `"${String(created.json["version"])}"` },
-      body: { name: "Peptides", fields: [{ name: "name", type: "text", required: true }, { name: "page", type: "relation" }] },
+      body: { name: "Peptides", fields: [{ name: "name", type: "text", required: true }, { name: "page", type: "relation" }], change_note: "No real change" },
     });
     expect(kept.json["parent_id"]).toBe(homeId);
 
@@ -409,6 +409,7 @@ describe("tables and rows", () => {
           { name: "grams", type: "number" },
           { name: "failed", type: "checkbox" },
         ],
+        change_note: "A table for the prints",
       },
     });
     expect(created.status).toBe(201);
@@ -483,7 +484,7 @@ describe("tables and rows", () => {
 
 describe("the paths from before tables were called tables (ADR-026)", () => {
   it("answers under /collections as under /tables", async () => {
-    const created = await call("/collections", { method: "POST", body: { name: "Old client", fields: [{ name: "title", type: "text" }] } });
+    const created = await call("/collections", { method: "POST", body: { name: "Old client", fields: [{ name: "title", type: "text" }], change_note: "A table via the old path" } });
     expect(created.status).toBe(201);
     const cid = String(created.json["id"]);
     expect((await call(`/collections/${cid}/rows`, { method: "POST", body: { values: { title: "Still works" } } })).status).toBe(201);
@@ -583,7 +584,7 @@ describe("edit times (ADR-030)", () => {
   });
 
   it("takes an exact edit time for a row, with the whole row only", async () => {
-    const table = await call("/tables", { method: "POST", body: { name: "Doses", fields: [{ name: "name", type: "text" }] } });
+    const table = await call("/tables", { method: "POST", body: { name: "Doses", fields: [{ name: "name", type: "text" }], change_note: "A table for doses" } });
     const cid = String(table.json["id"]);
     const put = await call(`/tables/${cid}/rows/row_1`, {
       method: "PUT",
@@ -662,7 +663,7 @@ describe("sources (ADR-027)", () => {
   it("replaces a row's sources with sources, adds with add_sources, and refuses both", async () => {
     const table = await call("/tables", {
       method: "POST",
-      body: { name: "Peptides", fields: [{ name: "name", type: "text", required: true }] },
+      body: { name: "Peptides", fields: [{ name: "name", type: "text", required: true }], change_note: "A table for the peptides" },
     });
     const cid = String(table.json["id"]);
     const created = await call(`/tables/${cid}/rows`, {

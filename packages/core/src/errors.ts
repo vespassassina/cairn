@@ -61,3 +61,19 @@ export class UnsupportedError extends CairnError {
     super(`adapter does not support ${capability}`, "unsupported");
   }
 }
+
+/**
+ * A page cannot be deleted while it still has children (ADR-058): deleting it
+ * would orphan them, with no parent left to walk back to.
+ */
+export class PageHasChildrenError extends CairnError {
+  constructor(
+    readonly id: Id,
+    readonly count: number,
+  ) {
+    super(
+      `page ${id} has ${count} child page${count === 1 ? "" : "s"}. Move or delete them first, or move ${id} itself; deleting it would leave them with no parent.`,
+      "has_children",
+    );
+  }
+}

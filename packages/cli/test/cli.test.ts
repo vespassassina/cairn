@@ -185,10 +185,10 @@ describe("cairn", () => {
     );
     expect(await cairn("tables")).toBe(0);
     expect(stdout).toContain("Prints  (title:text*, grams:number, material:select)");
-    // The command's name before ADR-026 still works.
-    const listed = stdout;
+    // cairn collections is the top-level pages (ADR-058), not tables: with
+    // none created in this test, it lists none.
     expect(await cairn("collections")).toBe(0);
-    expect(stdout).toBe(listed);
+    expect(stdout).toBe("no children\n");
 
     expect(await cairn("upsert", table.id, "--set", "title=Canopy", "--set", "grams=22", "--set", "material=TPU")).toBe(0);
     expect(await cairn("upsert", table.id, "--set", "title=Mount", "--set", "grams=14", "--set", "material=PLA")).toBe(0);
@@ -201,6 +201,47 @@ describe("cairn", () => {
     expect(stderr).toContain("validation_failed");
     expect(stderr).toContain("title:");
     expect(stderr).toContain("grams:");
+  });
+
+  it("creates a table's schema from the CLI, then changes it (ADR-058)", async () => {
+    expect(
+      await cairn(
+        "create-table",
+        "Spools",
+        "--field",
+        "material:select(PLA,PETG,TPU)*",
+        "--field",
+        "prints:relation->pages[]",
+        "--note",
+        "Track filament on hand",
+      ),
+    ).toBe(0);
+    const created = /^ok (\S+) version (\S+)$/.exec(stdout.trim());
+    expect(created).not.toBeNull();
+    const [, cid, version] = created!;
+
+    expect(await cairn("tables")).toBe(0);
+    expect(stdout).toContain("Spools  (material:select*, prints:relation[])");
+
+    expect(
+      await cairn(
+        "update-table",
+        cid!,
+        "--title",
+        "Spools",
+        "--field",
+        "material:select(PLA,PETG,TPU,ABS)*",
+        "--version",
+        version!,
+        "--note",
+        "Add ABS as an option",
+      ),
+    ).toBe(0);
+    const table = await context.tables.get(context.workspaceId, cid!);
+    expect(table.fields.find((f) => f.name === "material")).toMatchObject({ options: ["PLA", "PETG", "TPU", "ABS"] });
+
+    expect(await cairn("create-table", "Bad")).toBe(2);
+    expect(stderr).toContain("--field");
   });
 
   it("records sources with --source, adds more on later writes, and prints them (ADR-027)", async () => {

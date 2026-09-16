@@ -5,13 +5,19 @@ import { budgetList, budgetText, DEFAULT_TOKEN_BUDGET } from "../budget.js";
 import type { AppContext } from "../context.js";
 import {
   tableJson,
+  childSummaryJson,
+  childrenPreview,
+  deletePage,
   describeError,
   editPage,
   EDIT_MODES,
   linkJson,
+  listChanges,
+  listChildren,
   moveRecord,
   pageSummary,
   renderDiff,
+  revisionDetail,
   revisionSummary,
   rowJson,
   sourceChangesJson,
@@ -82,6 +88,35 @@ const VERIFIED = z
   .optional()
   .describe("true if you re-checked the page's facts and they still hold. Works with empty content in append mode.");
 
+// Required, unlike CHANGE_NOTE: a table has no write history to fall back on
+// (ADR-058), so this is the only record of why it exists.
+const REQUIRED_CHANGE_NOTE = z
+  .string()
+  .max(500)
+  .describe(
+    "One line saying why you're creating this table. Shown to the owner next to the change in their review of recent edits. Write it for them, not for yourself.",
+  );
+
+const FIELDS = z
+  .array(
+    z.object({
+      name: z.string().min(1),
+      type: z.enum(["text", "number", "date", "select", "multi_select", "checkbox", "url", "relation"]),
+      required: z.boolean().optional(),
+      options: z.array(z.string()).optional(),
+      target: z.string().optional(),
+      multiple: z.boolean().optional(),
+    }),
+  )
+  .min(1);
+
+const TABLE_DESCRIPTION = z
+  .string()
+  .max(280)
+  .nullable()
+  .optional()
+  .describe("One short line, shown in list_tables, the console and the workspace summary.");
+
 export function registerTools(server: McpServer, context: AppContext, actor: Actor): void {
   const ws = context.workspaceId;
   const by = (note: string | undefined) => ({ actor, note: note ?? null });
@@ -141,7 +176,8 @@ export function registerTools(server: McpServer, context: AppContext, actor: Act
       description:
         "Full page content as Markdown, with its version token. Keep the version: update_page needs it. " +
         "Set include_backlinks to see which pages link here, which often surfaces context the user did not mention. " +
-        "A long page is truncated, and next_offset lets you continue.",
+        "A long page is truncated, and next_offset lets you continue. " +
+        "Lists up to 8 immediate children with more_children for the rest; call list_children to walk further or see more of them.",
       inputSchema: {
         page_id: z.string(),
         include_backlinks: z.boolean().optional(),
@@ -155,6 +191,7 @@ export function registerTools(server: McpServer, context: AppContext, actor: Act
         const backlinks = include_backlinks
           ? await context.pages.backlinks(ws, page_id)
           : null;
+        const children = await childrenPreview(context, page_id);
 
         return json({
           ...pageSummary(page),
@@ -164,7 +201,66 @@ export function registerTools(server: McpServer, context: AppContext, actor: Act
           backlinks:
             backlinks?.map((edge) => ({ page_id: edge.sourceId, type: edge.type })) ??
             undefined,
+          children: children.items.length > 0 ? children.items.map(childSummaryJson) : undefined,
+          more_children: children.more > 0 ? children.more : undefined,
         });
+      } catch (error) {
+        return toolError(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "list_children",
+    {
+      title: "List a page's children",
+      description:
+        "Immediate children of a page, in title order, each with whether it has children of its own. " +
+        "Omit page_id for the top-level pages, the same set cairn collections shows. Call again with cursor to see the rest.",
+      inputSchema: {
+        page_id: z.string().optional().describe("Omit for the top-level pages."),
+        cursor: z.string().optional().describe("From a previous truncated result."),
+        limit: z.number().int().min(1).max(200).optional(),
+      },
+    },
+    async ({ page_id, cursor, limit }): Promise<ToolResult> => {
+      try {
+        const result = await listChildren(context, {
+          parentId: page_id ?? null,
+          cursor: cursor ?? null,
+          ...(limit === undefined ? {} : { limit }),
+        });
+        return json({
+          children: result.items.map(childSummaryJson),
+          cursor: result.cursor,
+          hint:
+            result.items.length === 0
+              ? "No children. This page has no pages beneath it, or is itself a leaf."
+              : undefined,
+        });
+      } catch (error) {
+        return toolError(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "delete_page",
+    {
+      title: "Delete a page",
+      description:
+        "Delete a page. Refused when it still has children, naming how many: move or delete them first, or move this page itself instead of deleting it. " +
+        "Its history is kept either way; get_revision still reaches whatever it held before you deleted it. Needs its current version, from get_page.",
+      inputSchema: {
+        page_id: z.string(),
+        version: z.string().describe("From get_page. Not optional."),
+        change_note: CHANGE_NOTE,
+      },
+    },
+    async ({ page_id, version, change_note }): Promise<ToolResult> => {
+      try {
+        await deletePage(context, page_id, version, by(change_note));
+        return json({ deleted: page_id });
       } catch (error) {
         return toolError(error);
       }
@@ -357,41 +453,93 @@ export function registerTools(server: McpServer, context: AppContext, actor: Act
       description:
         "Create a table with a typed schema. Field types: text, number, date, select, multi_select, checkbox, url, relation. " +
         "select and multi_select need an options list. A relation links to pages, or to a table's rows with target (its own id allowed); multiple holds a list. " +
-        "Mark a field required only when a row is meaningless without it. parent_id: the page it sits under.",
+        "Mark a field required only when a row is meaningless without it. parent_id: the page it sits under. change_note is required: say why this table exists.",
       inputSchema: {
         name: z.string().min(1),
         parent_id: z.string().optional(),
-        fields: z
-          .array(
-            z.object({
-              name: z.string().min(1),
-              type: z.enum([
-                "text",
-                "number",
-                "date",
-                "select",
-                "multi_select",
-                "checkbox",
-                "url",
-                "relation",
-              ]),
-              required: z.boolean().optional(),
-              options: z.array(z.string()).optional(),
-              target: z.string().optional(),
-              multiple: z.boolean().optional(),
-            }),
-          )
-          .min(1),
+        description: TABLE_DESCRIPTION,
+        fields: FIELDS,
+        change_note: REQUIRED_CHANGE_NOTE,
       },
     },
-    async ({ name, fields, parent_id }): Promise<ToolResult> => {
+    async ({ name, fields, parent_id, description, change_note }): Promise<ToolResult> => {
       try {
         const table = await context.tables.create(
           ws,
-          { name, fields: toFieldDefs(fields), parentId: parent_id ?? null },
-          by(undefined),
+          { name, fields: toFieldDefs(fields), parentId: parent_id ?? null, description: description ?? null },
+          by(change_note),
         );
-        return json({ id: table.id, name: table.name, version: table.version });
+        return json(tableJson(table));
+      } catch (error) {
+        return toolError(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "update_table",
+    {
+      title: "Change a table's schema",
+      description:
+        "Rename a table, change its fields, move it, or change its description. Existing rows keep their values; a field you drop stays on rows that still hold it but is no longer queryable. " +
+        "Needs its current version, from list_tables.",
+      inputSchema: {
+        table_id: z.string(),
+        version: z.string().describe("From list_tables. Not optional."),
+        name: z.string().min(1),
+        fields: FIELDS,
+        parent_id: z.string().nullable().optional().describe("Omit to leave it where it is."),
+        description: TABLE_DESCRIPTION,
+        change_note: CHANGE_NOTE,
+      },
+    },
+    async ({ table_id, version, name, fields, parent_id, description, change_note }): Promise<ToolResult> => {
+      try {
+        const table = await context.tables.update(
+          ws,
+          table_id,
+          {
+            name,
+            fields: toFieldDefs(fields),
+            ...(parent_id === undefined ? {} : { parentId: parent_id }),
+            ...(description === undefined ? {} : { description }),
+          },
+          version,
+          by(change_note),
+        );
+        return json(tableJson(table));
+      } catch (error) {
+        return toolError(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "get_changes",
+    {
+      title: "Recent changes across the workspace",
+      description:
+        "Revisions newest first: what changed, who changed it, and when. Pass since with an earlier call's newest to see only what's new. Call again with cursor to go further back.",
+      inputSchema: {
+        since: z.string().optional().describe("An ISO 8601 time, such as a previous call's newest."),
+        actor_kind: z.enum(["user", "agent"]).optional().describe("Only changes made by a person, or only by an agent."),
+        cursor: z.string().optional().describe("From a previous call, to go further back."),
+        limit: z.number().int().min(1).max(100).optional(),
+      },
+    },
+    async ({ since, actor_kind, cursor, limit }): Promise<ToolResult> => {
+      try {
+        const result = await listChanges(context, {
+          ...(since === undefined ? {} : { since }),
+          ...(actor_kind === undefined ? {} : { actorKind: actor_kind }),
+          cursor: cursor ?? null,
+          ...(limit === undefined ? {} : { limit }),
+        });
+        return json({
+          changes: result.changes.map(revisionDetail),
+          newest: result.newest,
+          cursor: result.cursor,
+        });
       } catch (error) {
         return toolError(error);
       }

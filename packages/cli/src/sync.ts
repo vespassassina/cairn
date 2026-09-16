@@ -450,7 +450,10 @@ export async function apply(
           parent = null;
         }
         await write(action, () =>
-          client.request("PUT", `/tables/${encodeURIComponent(source.id)}`, { body: { ...source.content, parent_id: parent }, ifMatch }),
+          client.request("PUT", `/tables/${encodeURIComponent(source.id)}`, {
+            body: { ...source.content, parent_id: parent, change_note: note(action) },
+            ifMatch,
+          }),
         );
       } else if (kind === "page") {
         let parent = (source.content["parent_id"] as string | null) ?? null;

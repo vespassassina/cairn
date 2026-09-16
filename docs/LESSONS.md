@@ -11,6 +11,15 @@ Each entry answers four questions:
 3. **Fix.** What changed, with the commit or file.
 4. **Lesson.** What to do differently next time. This is the part worth reading.
 
+## 2026-09-17
+
+### Requiring a field on one write broke three other layers that quietly relied on it being optional
+
+1. **What happened.** Making `create_table`'s `change_note` required (ADR-058, decision 5) was a one-line schema change. Running the full test suite after it showed 31 failures, in three places that had nothing to do with the ADR being implemented: `cairn trust` and `cairn discover`'s embedded `POST /tables` calls, `cairn sync`'s table-sync `PUT`, and half a dozen REST and MCP tests that created or updated tables without a note.
+2. **Cause.** A required field on a shared schema is a change to every caller of that schema, not just the one the ADR was about. `create_table`'s zod schema is used by the REST `POST /tables` and `PUT /tables/:cid` handlers alike, and every CLI and test code path that ever called either of them without a change note had been relying on it being optional, silently, since nothing forced them to say why. The MCP SDK made this harder to see at first: a zod validation failure on tool input returns a plain "MCP error ..." string instead of the app's normal JSON error body, which broke a test helper's `JSON.parse` call with a confusing stack trace rather than a clear assertion failure.
+3. **Fix.** Fixed each call site and test in turn, re-running the affected file after each fix, then the full suite, until it was green (31 failures, then 13, then 7, then 0). `cairn trust` and `cairn discover` got literal change notes describing why the table exists; `cairn sync` reused the `note()` helper it already used for pages and rows; the REST and MCP tests each got a change note appropriate to what they were testing.
+4. **Lesson.** Before tightening a schema shared across surfaces, grep for every caller first, not just the ones the current task touches: `POST /tables` and `PUT /tables/:cid` alone had four call sites outside any test file. When a required-field change is made, expect the test suite to have more failures than the one behaviour being changed, and treat every one of them as a real caller to fix, not noise to silence. And when an MCP SDK error comes back as a bare string instead of JSON, that usually means input validation rejected the call before the tool's own code ran; check the schema before the handler.
+
 ## 2026-09-16
 
 ### A flaky test was the visible end of a real bug in shutdown
