@@ -63,6 +63,13 @@ await build({
   entryPoints: [join(repo, "packages", "adapter-embeddings-local", "src", "fetch-model.ts")],
   outfile: join(out, "fetch-model.mjs"),
 });
+// The start script runs this before the server, to bring a database back when
+// the replica will not give it one it can vouch for (ADR-051).
+await build({
+  ...common,
+  entryPoints: [join(repo, "packages", "api", "src", "entry", "recover.ts")],
+  outfile: join(out, "recover.mjs"),
+});
 
 writeFileSync(
   join(out, "package.json"),
@@ -81,4 +88,6 @@ writeFileSync(
     2,
   )}\n`,
 );
-process.stdout.write("bundled dist/server/server.mjs and fetch-model.mjs, with package.json for the native dependencies\n");
+process.stdout.write(
+  "bundled dist/server/server.mjs, recover.mjs and fetch-model.mjs, with package.json for the native dependencies\n",
+);

@@ -70,64 +70,23 @@ if [ -z "${CAIRN_REPLICA_URL:-}" ]; then
     oops "Stop this container, then either restore $DIR from a backup, or move $DB aside and import an export with: cairn import <folder>"
     exit 1
   fi
-  exec node /app/server.mjs
+  exec node "${CAIRN_APP_DIR:-/app}/server.mjs"
 fi
 
 say "litestream $(litestream version 2>/dev/null || echo '(version unknown)')"
 say "replica: $CAIRN_REPLICA_URL"
 
-# Access to storage can take a minute to arrive after a first deploy, while
-# Azure grants the app's identity its role, and a network error is worth
-# another try. A replica that cannot be decoded is neither of those: retrying
-# it only burns the restart and hides the reason, so stop at the first one and
-# say what is wrong (ADR-046).
-attempt=1
-limit=12
-restore_log="$(mktemp)"
-
-say "restoring $DB from the replica, if it has a copy"
-while :; do
-  if litestream restore -if-db-not-exists -if-replica-exists -o "$DB" "$CAIRN_REPLICA_URL" >"$restore_log" 2>&1; then
-    if [ -s "$restore_log" ]; then cat "$restore_log"; fi
-    break
-  fi
-  cat "$restore_log" >&2
-  if grep -qiE 'decode|corrupt|malformed|checksum|EOF' "$restore_log"; then
-    oops "error: the replica at $CAIRN_REPLICA_URL cannot be read back: its copy of the database is damaged."
-    oops "No number of restarts will change that, so Cairn stops here rather than start on data it cannot vouch for."
-    oops "What is in the replica, for the record:"
-    litestream ltx -level all "$CAIRN_REPLICA_URL" >&2 || oops "(litestream ltx could not list it either)"
-    oops "Next steps, in the order worth trying:"
-    oops "1. Restore an earlier point in time deliberately, picking a timestamp from the list above:"
-    oops "     litestream restore -timestamp <RFC3339> -o $DB $CAIRN_REPLICA_URL"
-    oops "2. If another Cairn holds this workspace, take it from there instead:"
-    oops "     cairn export <folder>   on the Cairn that has the data"
-    oops "     cairn import <folder>   into this one, once it is running"
-    oops "3. Redeploy with an empty database only once you are certain nothing else"
-    oops "   holds a newer copy, because the first write overwrites the replica."
-    exit 1
-  fi
-  if [ "$attempt" -ge "$limit" ]; then
-    oops "error: could not reach the replica at $CAIRN_REPLICA_URL after $attempt attempts over $((limit * 10)) seconds. This reads as a network or permission problem rather than damaged data. Check that the app's managed identity still holds Storage Blob Data Contributor on that account, and that the storage account allows this container's network."
-    exit 1
-  fi
-  say "restore attempt $attempt failed, and looks temporary; retrying in 10 seconds"
-  attempt=$((attempt + 1))
-  sleep 10
-done
-
-if [ -f "$DB" ]; then
-  if ! check_db; then
-    oops "error: the database restored from $CAIRN_REPLICA_URL did not pass its integrity check."
-    oops "Cairn stops rather than replicate it, because streaming a damaged database back would overwrite the replica's own history."
-    oops "What is in the replica, for the record:"
-    litestream ltx -level all "$CAIRN_REPLICA_URL" >&2 || oops "(litestream ltx could not list it either)"
-    oops "Restore an earlier point in time deliberately with: litestream restore -timestamp <RFC3339> -o $DB $CAIRN_REPLICA_URL"
-    exit 1
-  fi
-else
-  say "the replica holds no database yet, so this Cairn starts empty and becomes its first copy"
+# Everything from here is the recovery ladder (ADR-051), and it lives in Node
+# rather than in this script because it needs the replica, the backup archive
+# and SQLite itself. In order: the local database if it is sound, a plain
+# restore, the newest point in the replica that restores and passes its
+# integrity check, then the newest backup that does. It exits non-zero when it
+# has nothing it can vouch for, and this script stops with it, because ADR-046's
+# rule still holds: never serve, and never replicate, a database we cannot
+# vouch for.
+if ! node "${CAIRN_APP_DIR:-/app}/recover.mjs"; then
+  exit 1
 fi
 
 # Flags must come before the paths.
-exec litestream replicate -exec "node /app/server.mjs" "$DB" "$CAIRN_REPLICA_URL"
+exec litestream replicate -exec "node ${CAIRN_APP_DIR:-/app}/server.mjs" "$DB" "$CAIRN_REPLICA_URL"

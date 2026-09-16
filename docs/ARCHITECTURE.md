@@ -80,7 +80,8 @@ With several Cairns registered by name in `instances.json` (ADR-029), the CLI se
 ## Deployment
 
 1. **Local:** `pnpm dev`, tsx running the TypeScript directly.
-2. **Container:** `pnpm build:server` bundles the server with esbuild into one file. The image holds that file, Node and Litestream, and is published by CI to `ghcr.io/vespassassina/cairn`.
+2. **Container:** `pnpm build:server` bundles the server with esbuild into one file, and the recovery step into a second. The image holds both, Node and Litestream, and is published by CI to `ghcr.io/vespassassina/cairn`.
+   Where there is a replica, `docker/start.sh` runs recovery before the server (ADR-051). It climbs down a ladder, each rung losing more than the one above: the database already on disk if it passes `integrity_check`, a plain restore from the replica, the newest point in the replica that restores and reads back, then the newest backup that does. If none of them works it exits non-zero and the container stops, because ADR-046 holds that Cairn must never serve, and never replicate, a database it cannot vouch for. The decision is in `packages/api/src/recovery/ladder.ts`, free of Litestream and of any cloud; the wiring is in `packages/api/src/entry/recover.ts`.
 3. **Own server (ADR-020):** `deploy/docker/compose.yaml` runs the image with the database on a mounted local volume at `/data`. A Litestream replica is optional.
 4. **Azure (ADR-018):** Container Apps, one replica at most, zero when idle. The database is on the container's disk; Litestream restores it from Blob Storage on start and streams every change back, through the app's managed identity. `deploy/azure/main.bicep` and `deploy.sh` create it all.
 

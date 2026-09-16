@@ -13,6 +13,14 @@ Rules:
 
 ## 2026-09-16
 
+### Build the startup recovery before committing
+
+> "build startup recovery then we commit and deploy"
+
+Given as a correction: the previous instruction had been to commit, push and redeploy the cloud archives, and this replaced it. The archives were only half the answer. They gave Cairn somewhere to recover from, and nothing yet climbed down to it, so a deploy at that point would have shipped backups that still nothing would ever read.
+
+It completes the earlier direction of the same day, "when starting and db corrupted, catch the error, log, then move the broken version (rename) then check for backup", quoted in full below. Landed in `docs/decisions/ADR-051.md`, `packages/api/src/recovery/ladder.ts`, `packages/api/src/entry/recover.ts` and `docker/start.sh`.
+
 ### Backups belong in the platform's own object storage
 
 > "on azure the backup must go to blob, on aws on s3 and so on."

@@ -13,6 +13,13 @@ Each entry answers four questions:
 
 ## 2026-09-16
 
+### The recovery ladder deleted the evidence it promised to keep
+
+1. **What happened.** The recovery ladder (ADR-051) promises that a database Cairn will not open is moved aside and kept, never deleted, because rows can still be pulled out of it by hand. A test of exactly that, a damaged local database plus a sound backup to recover from, asserted that the outcome named where the broken file had been kept and got `null`.
+2. **Cause.** The keeping was written into the wrong rung. Rung 4, the backup rung, moved whatever was at the database path aside before installing the backup. But rung 3 walks back through the replica, and to do that it has to clear the path before each attempted restore, so it called `discard` on the database first. By the time rung 4 looked, the owner's damaged database had been deleted by rung 3 and there was nothing left to keep.
+3. **Fix.** The file is now set aside at rung 1, the moment Cairn decides it will not use it and before any lower rung writes to that path. `discard` below that point can only ever remove fragments of the current run's own work. `packages/api/src/recovery/ladder.ts`.
+4. **Lesson.** A promise about a file has to be kept at the last moment the file still exists, not at the point in the code where the promise reads well. Rungs 3 and 4 were written to be independent, and the independence was the bug: rung 3 reasonably owned the database path, rung 4 reasonably expected to find the original there, and nothing in either one said which of them was right. When several steps write to the same path, decide once, at the top, what happens to what was already there. The test that caught this asserted the consequence, where the broken file ended up, rather than the action, that `moveAside` was called; an assertion on the call would have passed against a ladder that deleted the file a step earlier.
+
 ### Three deploys in a row deployed nothing, and the script said the opposite
 
 1. **What happened.** Recovering from the restart loop below needed a container carrying the ADR-046 fix. `deploy/azure/deploy.sh` was run three times. Each run printed "deploying (a few minutes)", then "waiting for the new version to start (the first start can take a minute)", then hung and failed with "the new version did not start. Look at its logs". The logs showed the container crash-looping on the same error as before, which read as "the fix did not work". `az containerapp revision list` showed the truth: still `cairn--0000015`, created 2026-09-15T20:38:56, before the incident. No new revision had been created by any of the three runs.
