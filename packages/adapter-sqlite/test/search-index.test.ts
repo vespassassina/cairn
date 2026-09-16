@@ -38,6 +38,22 @@ describe("SqliteSearchIndex", () => {
     await index.close();
   });
 
+  it("keeps a straight or curly apostrophe in a snippet (fault 4, console-and-search-polish)", async () => {
+    const index = new SqliteSearchIndex();
+    await index.init();
+    await index.replaceChunksForPage(WS, "pg_apo_straight", [
+      { id: "pg_apo_straight:0", pageId: "pg_apo_straight", ordinal: 0, headingPath: [], text: "The page's history is long." },
+    ]);
+    await index.replaceChunksForPage(WS, "pg_apo_curly", [
+      { id: "pg_apo_curly:0", pageId: "pg_apo_curly", ordinal: 0, headingPath: [], text: "The page’s notes are short." },
+    ]);
+    const result = await index.search(WS, { query: "page" });
+    const snippets = result.hits.map((h) => h.snippet).join(" ");
+    expect(snippets).toContain("'s");
+    expect(snippets).toContain("’s");
+    await index.close();
+  });
+
   it("recreates an index built with the old tokenizer and asks for a rebuild", async () => {
     const location = tempDatabase();
     const old = new DatabaseSync(location);

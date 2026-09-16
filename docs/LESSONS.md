@@ -13,6 +13,13 @@ Each entry answers four questions:
 
 ## 2026-09-17
 
+### A reported apostrophe-dropping bug in search snippets did not reproduce
+
+1. **What happened.** The console-and-search-polish spec (fault 4) recorded a report that a search snippet drops an apostrophe, producing "the page s history" in place of "the page's history", with the cause left unestablished because the spec itself was written before anyone had traced it.
+2. **Cause.** None found. FTS5's `snippet()` is documented to copy the original stored text verbatim between token offsets recorded at index time, independent of how the tokenizer split that text for matching, and every test run here confirmed that documented behaviour holds under the current setup: SQLite 3.53.4 via Node's built-in `node:sqlite`, tokenizer `porter unicode61 remove_diacritics 2`. Straight and curly apostrophes were both preserved across many query terms, snippet-window positions, and sentence shapes, tested both against raw FTS5 SQL and against the full `SqliteSearchIndex.search()` path end to end. Reading `packages/core/src/indexer/chunk.ts` (stores Markdown verbatim, no punctuation normalisation) and `packages/core/src/search/terms.ts` (tokenizes the query string, not stored text) found nothing that could touch a stored apostrophe either. The symptom may have come from an older SQLite build, a different tokenizer configuration, or a one-off rendering glitch that has since been overtaken by other changes; nothing in the current code path reproduces it.
+3. **Fix.** No code change, because no fault was found to fix. Added a regression test, `packages/adapter-sqlite/test/search-index.test.ts` ("keeps a straight or curly apostrophe in a snippet"), asserting a snippet built from text with each apostrophe form keeps it, so a future regression here is caught immediately instead of relying on a bug report to notice.
+4. **Lesson.** A spec item written as "the cause is not established" is a hypothesis, not a confirmed bug, and confirming or ruling it out is itself the deliverable even when the answer is "it does not reproduce." Recording that finding with what was checked, rather than either guessing at a fix or leaving the item open, turns an unreproducible report into a permanent test instead of a recurring question.
+
 ### A misspelled filter field returned "no rows" instead of an error
 
 1. **What happened.** `cairn rows <table> --where "nosuch eq 1"` printed "no rows" for a table that had rows, with no hint that `nosuch` was not a real field. The same silent miss existed over REST and MCP: any typo in a `where` or `sort` field name simply matched nothing rather than being refused.

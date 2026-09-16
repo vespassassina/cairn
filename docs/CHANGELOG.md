@@ -6,6 +6,12 @@ Entries link to the ADR when there is one. A change of direction that has no ADR
 
 ## 2026-09-17
 
+### The reported apostrophe-dropping snippet bug does not reproduce, and is now a regression test (ADR-056/057, fault 4)
+
+Fault 4 of `docs/specs/console-and-search-polish.md` had no established cause, and the spec calls that out as a real risk: fixing the wrong thing, or fixing something already fixed, would be worse than leaving it open. Traced the candidate causes the spec names (stored-text normalisation, a typographic apostrophe handled differently from a straight one) and several more (query tokenization, console HTML escaping, MCP/REST pass-through) through the code, then reproduced the full `SqliteSearchIndex.search()` path end to end with both apostrophe forms, several query terms, and forced snippet-window boundaries. None reproduced the symptom: FTS5's `snippet()` correctly copies the original stored text verbatim, apostrophes included, under the current SQLite version (3.53.4) and tokenizer (`porter unicode61 remove_diacritics 2`). No code change follows, since no fault was found. Added a regression test asserting a snippet built from either apostrophe form keeps it, so the behaviour stays pinned. `packages/adapter-sqlite/test/search-index.test.ts` (acceptance criterion 14). LESSONS entry added.
+
+Verification: `pnpm build`, `pnpm typecheck`, full test suite, `pnpm smoke:cli`, all green.
+
 ### The CLI stops repeating itself on a conflict, a bad filter field is refused by name, and a note-less write says so (ADR-056/057, faults 1 to 3)
 
 Begins the "eight smaller faults" from `docs/specs/console-and-search-polish.md` (ADR-056, ADR-057). Three of the eight are done.
