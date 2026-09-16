@@ -124,16 +124,24 @@ describe("runShutdown", () => {
     expect(log.join("\n")).toContain("blob storage refused the write");
   });
 
-  it("abandons a step that runs out of time, and names it", async () => {
+  it("abandons a step that runs out of time, names it, and still runs the steps after it", async () => {
     const server = await listening((_, response) => response.end("ok"));
     const log: string[] = [];
+    const ran: string[] = [];
 
     const code = await runShutdown(
       {
         servers: [server],
         steps: [
+          // A backup stuck on blob storage, which is the real case: the
+          // network gives no answer and no error.
           { name: "backed up", run: () => new Promise<void>(() => {}) },
-          { name: "closed the database", run: async () => {} },
+          {
+            name: "closed the database",
+            run: async () => {
+              ran.push("closed");
+            },
+          },
         ],
         budgetMs: 150,
         log: (line) => log.push(line),
@@ -145,9 +153,42 @@ describe("runShutdown", () => {
     const said = log.join("\n");
     expect(said).toContain('"backed up"');
     expect(said).toContain("ran out of time");
-    // The later step has no budget left and is skipped, said out loud rather
-    // than silently: the platform is about to kill us either way.
+    // The point of the whole file. A step that hangs gets its own share of the
+    // budget and no more, so it cannot starve the step that closes the
+    // database, which is the one that leaves Litestream a finished file.
+    // Before this, the hanging step took the entire remaining budget and the
+    // close survived only by however many milliseconds rounding left it.
+    expect(ran).toEqual(["closed"]);
+    expect(said).toContain("closed the database, in");
+  });
+
+  it("skips a step there is genuinely no time for, and says which", async () => {
+    const server = await listening((_, response) => response.end("ok"));
+    const log: string[] = [];
+    const ran: string[] = [];
+
+    // No budget at all: every step is skipped, and each is named. Saying so is
+    // the whole value here, because the platform is about to kill us anyway
+    // and the log is all anybody will have.
+    const code = await runShutdown(
+      {
+        servers: [server],
+        steps: [
+          { name: "backed up", run: async () => void ran.push("backed up") },
+          { name: "closed the database", run: async () => void ran.push("closed") },
+        ],
+        budgetMs: 0,
+        log: (line) => log.push(line),
+      },
+      "SIGTERM",
+    );
+
+    expect(code).toBe(1);
+    expect(ran).toEqual([]);
+    const said = log.join("\n");
+    expect(said).toContain('no time left for "backed up"');
     expect(said).toContain('no time left for "closed the database"');
+    expect(said).toContain("CAIRN_SHUTDOWN_SECONDS");
   });
 
   it("gives up on a request that will not finish rather than overrun the budget", async () => {

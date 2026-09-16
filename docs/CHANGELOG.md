@@ -6,6 +6,14 @@ Entries link to the ADR when there is one. A change of direction that has no ADR
 
 ## 2026-09-16
 
+### A shutdown step that hangs can no longer starve the one that closes the database
+
+Found by a test that failed on macOS in CI having passed everywhere else, including locally: it asserted that a step with no budget left is skipped, and on that run the step ran instead, with about a millisecond to spare. The flake was real but it was the smaller half of the problem. The reason the margin was a millisecond is that a step took the entire remaining budget, so the step after it got whatever rounding left behind.
+
+That is exactly the failure ADR-048 was written to prevent, one level down. The drain phase already caps itself at half the budget, and the comment there says why: a handler stuck on something outside our control must not be able to spend the time that closing the database needs. Backing up is such a step. It talks to blob storage, which can hang without answering or failing, and closing the database is what checkpoints the write-ahead log and leaves Litestream a finished file. A backup stuck on a slow upload could take the whole budget and leave the database open to be killed mid-write, which is the outage of 2026-09-15 all over again.
+
+So a step now gets an equal share of what is left rather than all of it, worked out from the clock on each pass, which means a step that finishes early gives its share back and a step that hangs is bounded. With the default two steps, a backup that hangs costs half the budget and the close still has the other half. The test was rewritten to assert the property worth having, that a hanging step is named and the steps after it still run, and a second test covers the skip path deterministically with no budget at all. Ran five times over to confirm it is no longer a coin toss.
+
 ### Two registered Cairns are offered a schedule, and the default interval is now four hours
 
 The owner's direction: "paired instance should sync every few hours automatically". `cairn sync install` had been there since ADR-029 and had never been run, including on the owner's own pair, which is the worst shape this feature can take: two Cairns a person believes are paired, drifting apart at whatever rate they are edited. Nothing was broken about the command. It was one line in a help listing, and somebody who has just registered a second Cairn has no reason to read further. So the offer is now made at the moment a pair comes into being, which is the one moment the person is certainly thinking about the pair, and never again once a job exists. ADR-052.

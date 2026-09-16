@@ -106,8 +106,15 @@ export async function runShutdown(
   }
 
   let failed = false;
-  for (const step of steps) {
-    const remaining = left();
+  for (const [index, step] of steps.entries()) {
+    // Each step gets an equal share of what is left, rather than all of it.
+    // This is the rule draining follows above, for the same reason: backing up
+    // talks to blob storage, which can hang for as long as it likes, and
+    // closing the database is what actually protects the replica. A step that
+    // hangs must not be able to spend the time the steps after it need. A step
+    // that finishes early gives its share back, because the share is worked
+    // out again from the clock on every pass.
+    const remaining = Math.floor(left() / (steps.length - index));
     if (remaining <= 0) {
       log(
         `warning: no time left for "${step.name}", so it was skipped. ` +
