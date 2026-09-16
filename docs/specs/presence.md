@@ -65,10 +65,10 @@ New command, its logic in a new `packages/cli/src/status.ts`. It prints one line
 1. Which instance answered, its name and address, and its version. Not ok: not answering, followed by `cairn start`.
 2. Signed in or not, and when the access token expires. Not ok: `cairn login --instance <name>`.
 3. When the last sync ran and in which direction. Not ok when it is older than twice the installed interval.
-4. Embeddings pending, from the existing health or overview endpoint. Not ok when the number is not falling between two runs.
-5. The scheduled job: installed or not, its interval, and its command.
+4. Embeddings pending, from `/health`. Simplified from the design above: a single invocation has no earlier run to compare against, so this line reports the count and stays ok rather than trying to judge a trend it cannot see. A later pass could persist the previous count next to the credentials file and compare, if the plain count turns out not to be enough.
+5. The scheduled job: installed or not, and whether it still runs the pre-ADR-053 `cairn sync` rather than `cairn start`.
 6. The session hook: installed or not.
-7. The database: its size and when it was last backed up, from the health endpoint.
+7. **Deferred.** The database's size and last-backup age, from the health endpoint. `/health` does not report either today, and `BackupEngine` (`packages/api/src/backup/engine.ts`) keeps its last-backup time in a private field with no accessor, so wiring this in means adding one, passing the backup engine into `createApp()`'s options in `app.ts`, and threading that through `entry/node.ts`. That is a second piece of plumbing, not a small addition, and it is left for a follow-up rather than folded into this slice.
 
 `--json` prints the same facts as one object, for an agent, with stable field names per coding style rule 4.
 

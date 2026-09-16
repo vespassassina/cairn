@@ -23,7 +23,9 @@ import { checkSources, collectSources, type FoundSource, type SourceCheck } from
 import { fetchPeerDescription, TRUSTED_TABLE_NAME } from "./trust.js";
 import { discover, DISCOVERED_TABLE_NAME } from "./discover.js";
 import { checkInstance, firstReachable, instancesPath, isLoopback, loadInstances, reachable, saveInstances, type Instance } from "./instances.js";
-import { credentialsPath, login, logout, NoSignIn, storedToken } from "./login.js";
+import { credentialsPath, login, logout, NoSignIn, peekCredentials, storedToken } from "./login.js";
+import { hookInstalled, installHook, settingsPath, uninstallHook } from "./hook.js";
+import { statusLines, type StatusInput } from "./status.js";
 import {
   describeInterval,
   LAUNCHD_LABEL,
@@ -156,7 +158,7 @@ Several Cairns: a laptop and a cloud copy, say, kept as one
   cairn instances remove <name>
   cairn start                                     start the first if it is down, then sync them all
   cairn sync [--every 4h] [--dry-run]             sync the first that answers with each of the others
-  cairn sync install [--every 4h] [--dry-run]     run that sync on a schedule, as a background job
+  cairn sync install [--every 4h] [--dry-run]     run cairn start on a schedule, as a background job
                                                   offered when you register a second Cairn; 4h by default
   cairn sync uninstall
   With instances registered, every command goes to the first that answers; --instance NAME picks one.
@@ -166,6 +168,15 @@ Signing in (only for a server that uses OAuth; localhost needs none)
                                           or --instance names; tokens are kept for that server
   cairn whoami                            who the server thinks you are
   cairn logout                            revoke and forget this server's sign-in
+
+Presence
+  cairn status [--json]                   instance, sign-in, sync, embeddings, job and hook, all
+                                          in one screen; every not-ok line carries its fix command
+  cairn hook install [--yes]              a Claude Code SessionStart hook that runs
+                                          cairn overview --brief, so a fresh session starts
+                                          knowing what the workspace holds
+  cairn hook status                       installed or not, and where
+  cairn hook uninstall                    remove it
 
 Options
   --json          print the raw API response
@@ -216,10 +227,12 @@ const OPTIONS = {
   timeout: { type: "string" },
   from: { type: "string", multiple: true },
   depth: { type: "string" },
+  brief: { type: "boolean" },
+  yes: { type: "boolean" },
 } as const;
 
 /** Commands that choose their own servers, so never probe for one. */
-const OWN_SERVERS = new Set(["instances", "start", "sync"]);
+const OWN_SERVERS = new Set(["instances", "start", "sync", "hook", "status"]);
 
 /** How long cairn start waits for an instance it started. */
 const START_WAIT_MS = 90_000;
@@ -499,6 +512,12 @@ export async function run(argv: string[], io: Io): Promise<number> {
       }
       const { instance, skipped } = await firstReachable(registered, io.fetch);
       if (!instance) {
+        // A session hook has nowhere to report an error: say so in one line
+        // instead of failing the session it is starting.
+        if (command === "overview" && flags.brief) {
+          io.stdout("Cairn is not answering. Start it: cairn start\n");
+          return 0;
+        }
         io.stderr(`error: none of your instances answered: ${registered.map((x) => `${x.name} (${x.url})`).join(", ")}\n`);
         return 1;
       }
@@ -679,7 +698,7 @@ export async function run(argv: string[], io: Io): Promise<number> {
       await exec("launchctl", ["bootout", `${domain}/${LAUNCHD_LABEL}`]);
       const loaded = await exec("launchctl", ["bootstrap", domain, path]);
       if (loaded.code !== 0) throw new Error(`launchctl could not load ${path}: ${loaded.output.trim()}`);
-      io.stdout(`installed: cairn sync at login and every ${every}, as ${LAUNCHD_LABEL}. Output in ${log}\nRemove it with: cairn sync uninstall\n`);
+      io.stdout(`installed: cairn start at login and every ${every}, as ${LAUNCHD_LABEL}. Output in ${log}\nRemove it with: cairn sync uninstall\n`);
       return 0;
     }
     if (platform === "win32") {
@@ -693,7 +712,7 @@ export async function run(argv: string[], io: Io): Promise<number> {
       }
       const created = await exec("schtasks", taskArgs);
       if (created.code !== 0) throw new Error(`schtasks could not create the task: ${created.output.trim()}`);
-      io.stdout(`installed: cairn sync every ${every}, as the scheduled task "${WINDOWS_TASK}"\nRemove it with: cairn sync uninstall\n`);
+      io.stdout(`installed: cairn start every ${every}, as the scheduled task "${WINDOWS_TASK}"\nRemove it with: cairn sync uninstall\n`);
       return 0;
     }
     const dir = systemdDir(home, io.env);
@@ -712,7 +731,7 @@ export async function run(argv: string[], io: Io): Promise<number> {
     await exec("systemctl", ["--user", "daemon-reload"]);
     const enabled = await exec("systemctl", ["--user", "enable", "--now", `${SYSTEMD_UNIT}.timer`]);
     if (enabled.code !== 0) throw new Error(`systemctl could not start the timer: ${enabled.output.trim()}`);
-    io.stdout(`installed: cairn sync a minute after boot and every ${every}, as ${SYSTEMD_UNIT}.timer. Output in ${log}\nRemove it with: cairn sync uninstall\n`);
+    io.stdout(`installed: cairn start a minute after boot and every ${every}, as ${SYSTEMD_UNIT}.timer. Output in ${log}\nRemove it with: cairn sync uninstall\n`);
     return 0;
   };
 
@@ -814,7 +833,14 @@ export async function run(argv: string[], io: Io): Promise<number> {
       }
 
       case "overview": {
-        const { json } = await client.request("GET", "/overview");
+        const brief = flags.brief === true;
+        // A session hook calls this with nowhere to report an error, so an
+        // unreachable Cairn is not a failure: one line, and how to fix it.
+        if (brief && !(await reachable(baseUrl, io.fetch))) {
+          io.stdout(`Cairn (${baseUrl}) is not answering. Start it: cairn start\n`);
+          return 0;
+        }
+        const { json } = await client.request("GET", `/overview${query({ brief: brief ? "true" : undefined })}`);
         out(json, () => `${String(json?.["text"])}\n`);
         return 0;
       }
@@ -1647,6 +1673,98 @@ export async function run(argv: string[], io: Io): Promise<number> {
           }
           await new Promise((resolve) => setTimeout(resolve, every));
         }
+      }
+
+      case "hook": {
+        const [action] = args;
+        const path = settingsPath(home);
+        if (action === "install") {
+          const result = await installHook(path, { ...(io.ask ? { ask: io.ask } : {}), stderr: io.stderr }, flags.yes === true);
+          if (result.outcome === "installed") {
+            io.stdout(`${result.existed ? "added to" : "created"} ${path}. A fresh Claude Code session now starts with cairn overview --brief\n`);
+            return 0;
+          }
+          if (result.outcome === "already-installed") {
+            io.stdout(`already installed in ${path}\n`);
+            return 0;
+          }
+          io.stderr(result.outcome === "declined" ? "not installed\n" : "no answer; not installed. Pass --yes to install without asking\n");
+          return 1;
+        }
+        if (action === "uninstall") {
+          const removed = await uninstallHook(path).catch((error: unknown) => {
+            throw new UsageError(error instanceof Error ? error.message : String(error));
+          });
+          io.stdout(removed ? `removed the session hook from ${path}\n` : `no cairn session hook in ${path}\n`);
+          return 0;
+        }
+        if (action === "status" || action === undefined) {
+          const installed = await hookInstalled(path);
+          out({ installed, path, command: "cairn overview --brief" }, () =>
+            installed ? `installed in ${path}, running: cairn overview --brief\n` : `not installed. Add it: cairn hook install\n`,
+          );
+          return 0;
+        }
+        throw new UsageError(`cannot do "cairn hook ${action}". Use install, uninstall or status`);
+      }
+
+      case "status": {
+        const instance = flags.instance !== undefined ? named(flags.instance) : (registered.find((x) => x.url === baseUrl) ?? null);
+        const isReachable = await reachable(baseUrl, io.fetch);
+        let version: string | null = null;
+        let embeddingsPending: number | null = null;
+        if (isReachable) {
+          try {
+            const response = await io.fetch(new Request(`${baseUrl.replace(/\/+$/, "")}/health`));
+            const body = (await response.json()) as { server?: { version?: string }; semantic_search?: { pending?: number } };
+            version = body.server?.version ?? null;
+            embeddingsPending = typeof body.semantic_search?.pending === "number" ? body.semantic_search.pending : null;
+          } catch {
+            // Answered to the reachability probe but not to this: leave both unknown.
+          }
+        }
+
+        const needsSignIn = !isLoopback(baseUrl);
+        const peeked = needsSignIn ? await peekCredentials(baseUrl, io.env) : null;
+
+        const others = registered.filter((x) => x.url !== baseUrl);
+        let lastSync: StatusInput["lastSync"] = null;
+        for (const other of others) {
+          const state = await loadState(await statePath(credentials, baseUrl, other.url), baseUrl, other.url);
+          if (state.last_sync && (!lastSync || state.last_sync > lastSync.at)) lastSync = { at: state.last_sync, withName: other.name };
+        }
+
+        const installed = await jobInstalled();
+        let stale = false;
+        if (installed && platform !== "win32") {
+          const jobFile = platform === "darwin" ? launchdPath(home) : join(systemdDir(home, io.env), `${SYSTEMD_UNIT}.service`);
+          const text = await readFile(jobFile, "utf8").catch(() => "");
+          stale = /<string>sync<\/string>|"sync"/.test(text) && !/<string>start<\/string>|"start"/.test(text);
+        }
+
+        const input: StatusInput = {
+          instanceName: instance?.name ?? null,
+          baseUrl,
+          reachable: isReachable,
+          version,
+          signedIn: peeked !== null,
+          expiresAt: peeked?.expiresAt ?? null,
+          needsSignIn,
+          lastSync,
+          pairCount: others.length,
+          embeddingsPending,
+          jobInstalled: installed,
+          jobStale: stale,
+          hookInstalled: await hookInstalled(settingsPath(home)),
+          now: Date.now(),
+        };
+        const lines = statusLines(input);
+        const anyBad = lines.some((line) => !line.ok);
+        out(
+          { status: lines },
+          () => `${lines.map((line) => `${line.ok ? "ok" : "!!"}  ${line.text}`).join("\n")}\n`,
+        );
+        return anyBad ? 1 : 0;
       }
 
       default:

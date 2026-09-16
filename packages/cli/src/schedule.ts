@@ -53,7 +53,7 @@ export function launchdPlist(job: Job): string {
     `  <string>${LAUNCHD_LABEL}</string>`,
     "  <key>ProgramArguments</key>",
     "  <array>",
-    strings([...job.program, "sync"]),
+    strings([...job.program, "start"]),
     "  </array>",
     "  <key>StartInterval</key>",
     `  <integer>${Math.round(job.everyMs / 1000)}</integer>`,
@@ -81,11 +81,11 @@ export function systemdUnits(job: Job): { service: string; timer: string } {
   const env = Object.entries(job.env).map(([key, value]) => `Environment=${systemdArg(`${key}=${value}`)}`);
   const service = [
     "[Unit]",
-    "Description=Keep the registered Cairn instances in sync (cairn sync)",
+    "Description=Keep the local Cairn running and the registered instances in sync (cairn start)",
     "",
     "[Service]",
     "Type=oneshot",
-    `ExecStart=${[...job.program, "sync"].map(systemdArg).join(" ")}`,
+    `ExecStart=${[...job.program, "start"].map(systemdArg).join(" ")}`,
     ...env,
     `StandardOutput=append:${job.log}`,
     `StandardError=append:${job.log}`,
@@ -94,7 +94,7 @@ export function systemdUnits(job: Job): { service: string; timer: string } {
   const seconds = Math.round(job.everyMs / 1000);
   const timer = [
     "[Unit]",
-    "Description=Run cairn sync on a schedule",
+    "Description=Run cairn start on a schedule",
     "",
     "[Timer]",
     "OnBootSec=1min",
@@ -120,7 +120,7 @@ export function schtasksArgs(job: Job): string[] {
   const minutes = Math.max(1, Math.ceil(job.everyMs / 60_000));
   const schedule = minutes % 60 === 0 ? ["/SC", "HOURLY", "/MO", String(minutes / 60)] : ["/SC", "MINUTE", "/MO", String(minutes)];
   if (minutes > 1439 && minutes % 60 !== 0) throw new Error("on Windows, an interval over a day must be whole hours");
-  const run = [...job.program, "sync"].map(windowsArg).join(" ");
+  const run = [...job.program, "start"].map(windowsArg).join(" ");
   return ["/Create", "/F", "/TN", WINDOWS_TASK, ...schedule, "/TR", run];
 }
 

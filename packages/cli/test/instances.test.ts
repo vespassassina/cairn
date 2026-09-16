@@ -135,10 +135,10 @@ describe("registering instances", () => {
     expect(await cairn("instances", "add", "cloud", CLOUD)).toBe(0);
     expect(asked).toHaveLength(1);
     expect(asked[0]).toContain("every 4h");
-    expect(stdout).toContain("installed: cairn sync at login and every 4h");
+    expect(stdout).toContain("installed: cairn start at login and every 4h");
     // Installed for real, through the same path cairn sync install uses.
     const plist = await readFile(join(config, "Library", "LaunchAgents", "dev.cairn.sync.plist"), "utf8");
-    expect(plist).toContain("<string>sync</string>");
+    expect(plist).toContain("<string>start</string>");
     expect(plist).toContain(`<integer>${4 * 60 * 60}</integer>`);
   });
 
@@ -312,7 +312,7 @@ describe("cairn sync install", () => {
     await register();
     expect(await cairn("sync", "install", "--every", "2h")).toBe(0);
     const plist = await readFile(join(config, "Library", "LaunchAgents", "dev.cairn.sync.plist"), "utf8");
-    expect(plist).toContain("<string>/usr/local/lib/node_modules/@cairn/cli/dist/bin.js</string>\n    <string>sync</string>");
+    expect(plist).toContain("<string>/usr/local/lib/node_modules/@cairn/cli/dist/bin.js</string>\n    <string>start</string>");
     expect(plist).toContain("<integer>7200</integer>");
     expect(plist).toContain(`<key>XDG_CONFIG_HOME</key>\n    <string>${config}</string>`);
     expect(calls.map((call) => call.args[0])).toEqual(["bootout", "bootstrap"]);
@@ -360,13 +360,71 @@ describe("the job files", () => {
     const odd = { ...job, program: ["/Users/me/a&b/cairn"], env: { XDG_CONFIG_HOME: '/home/me/100% "real"' } };
     expect(launchdPlist(odd)).toContain("<string>/Users/me/a&amp;b/cairn</string>");
     const { service, timer } = systemdUnits(odd);
-    expect(service).toContain('ExecStart="/Users/me/a&b/cairn" "sync"');
+    expect(service).toContain('ExecStart="/Users/me/a&b/cairn" "start"');
     expect(service).toContain('Environment="XDG_CONFIG_HOME=/home/me/100%% \\"real\\""');
     expect(timer).toContain("OnUnitActiveSec=3600s");
   });
 
   it("counts in hours or minutes for Task Scheduler, and quotes a path with spaces", () => {
-    expect(schtasksArgs(job)).toEqual(["/Create", "/F", "/TN", "Cairn sync", "/SC", "HOURLY", "/MO", "1", "/TR", '"C:\\Program Files\\cairn\\cairn.exe" sync']);
+    expect(schtasksArgs(job)).toEqual(["/Create", "/F", "/TN", "Cairn sync", "/SC", "HOURLY", "/MO", "1", "/TR", '"C:\\Program Files\\cairn\\cairn.exe" start']);
     expect(schtasksArgs({ ...job, everyMs: 90_000 }).slice(4, 8)).toEqual(["/SC", "MINUTE", "/MO", "2"]);
+  });
+});
+
+describe("cairn status", () => {
+  it("reports ok on a reachable, single-instance, loopback machine with no job or hook needed", async () => {
+    expect(await cairn("instances", "add", "laptop", LAPTOP)).toBe(0);
+    expect(await cairn("status", "--instance", "laptop")).toBe(0);
+    expect(stdout).toMatch(/^ok {2}laptop \(http:\/\/localhost:4101\) answered, version/);
+    expect(stdout).toContain("ok  no sign-in needed");
+    expect(stdout).toContain("ok  one instance registered, nothing to sync");
+    expect(stdout).toContain("no scheduled job (nothing to sync)");
+    expect(stdout).toContain("cairn hook install");
+  });
+
+  it("prints not-ok lines and exits non-zero when the server is down and a job is needed but absent", async () => {
+    await register();
+    down.add(LAPTOP);
+    expect(await cairn("status", "--instance", "laptop")).toBe(1);
+    expect(stdout).toContain("!!  laptop (http://localhost:4101) is not answering. Start it: cairn start");
+    expect(stdout).toContain("no scheduled job. Run: cairn sync install");
+  });
+
+  it("--json prints stable field names and never a token", async () => {
+    expect(await cairn("instances", "add", "laptop", LAPTOP)).toBe(0);
+    expect(await cairn("status", "--instance", "laptop", "--json")).toBe(0);
+    const body = JSON.parse(stdout) as { status: Array<{ field: string; ok: boolean; text: string }> };
+    expect(body.status.map((line) => line.field)).toEqual(["instance", "sign_in", "sync", "embeddings", "job", "hook"]);
+    expect(JSON.stringify(body)).not.toMatch(/[A-Za-z0-9_-]{20,}/);
+  });
+});
+
+describe("cairn hook", () => {
+  it("installs a SessionStart hook and reports it in cairn status", async () => {
+    expect(await cairn("hook", "install", "--yes")).toBe(0);
+    expect(stdout).toContain("cairn overview --brief");
+    const settings = JSON.parse(await readFile(join(config, ".claude", "settings.json"), "utf8"));
+    expect(settings.hooks.SessionStart[0].hooks[0]._cairn).toBe("cairn-overview");
+
+    expect(await cairn("instances", "add", "laptop", LAPTOP)).toBe(0);
+    expect(await cairn("status", "--instance", "laptop")).toBe(0);
+    expect(stdout).toContain("ok  session hook installed");
+  });
+
+  it("status says installed or not, without changing anything", async () => {
+    expect(await cairn("hook", "status")).toBe(0);
+    expect(stdout).toContain("not installed. Add it: cairn hook install");
+    await cairn("hook", "install", "--yes");
+    expect(await cairn("hook", "status")).toBe(0);
+    expect(stdout).toContain("installed in");
+    expect(stdout).toContain("cairn overview --brief");
+  });
+
+  it("uninstalls cleanly, leaving other settings untouched", async () => {
+    await cairn("hook", "install", "--yes");
+    expect(await cairn("hook", "uninstall")).toBe(0);
+    expect(stdout).toContain("removed the session hook");
+    const settings = JSON.parse(await readFile(join(config, ".claude", "settings.json"), "utf8"));
+    expect(settings.hooks?.SessionStart).toBeUndefined();
   });
 });

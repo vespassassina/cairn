@@ -37,6 +37,9 @@ const MAX_LIMIT = 200;
 /** Characters for /overview. Larger than the initialize budget, still bounded. */
 const OVERVIEW_BUDGET = 4_000;
 
+/** Characters for /overview?brief=true (ADR-053): about 200 tokens, for a session hook. */
+const BRIEF_OVERVIEW_BUDGET = 800;
+
 /** Pages read for one export page of results. Personal scale (PRD goal 2). */
 const MAX_EXPORT_SCAN = 20_000;
 
@@ -317,7 +320,8 @@ export function restRoutes(context: AppContext, callerFor: CallerFor): Hono {
   // (ADR-012), with more room, since only a caller who asks pays for it.
 
   api.get("/overview", async (c) => {
-    return c.json({ text: await workspaceSummary(context, OVERVIEW_BUDGET) });
+    const brief = c.req.query("brief") === "true";
+    return c.json({ text: await workspaceSummary(context, brief ? BRIEF_OVERVIEW_BUDGET : OVERVIEW_BUDGET) });
   });
 
   // Who the server thinks you are, so a CLI or a deploy script can check its

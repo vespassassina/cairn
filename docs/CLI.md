@@ -324,6 +324,14 @@ Or register it once and use its name, which also works the same on Windows: `cai
 
 A local Cairn needs no sign-in at all.
 
+## Check everything at once: status
+
+`cairn status` (with `--instance` or `CAIRN_URL`) is one screen for whether Cairn is actually reachable, instead of five separate things to check by hand: the instance, sign-in, sync with your other registered Cairns, embeddings still to compute, the scheduled job, and the session hook below (ADR-053). Every line that is not ok names the command that fixes it. `cairn status --json` for a script.
+
+## Start a session already knowing what is there: hook
+
+`cairn hook install` adds a Claude Code SessionStart hook that runs `cairn overview --brief` at the start of every session, so a fresh session opens already knowing what collections and tables the workspace holds, rather than finding out only once a tool happens to be called. It asks before writing to `~/.claude/settings.json`, touching only its own entry; `--yes` skips the question. `cairn hook uninstall` removes it, leaving the rest of that file untouched.
+
 ## Teach Claude Code to use it
 
 The skill in `skills/cairn` tells Claude Code when and how to use `cairn`: check it before answering, save what lasts, give every write a note. It costs about 115 tokens per session until used.

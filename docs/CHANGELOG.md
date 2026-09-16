@@ -6,6 +6,20 @@ Entries link to the ADR when there is one. A change of direction that has no ADR
 
 ## 2026-09-17
 
+### Cairn is reachable and known without anybody having to remember it (ADR-053)
+
+Implements ADR-053, per `docs/specs/presence.md`. Three pieces:
+
+1. **`cairn hook install`** (`packages/cli/src/hook.ts`, new): adds a Claude Code SessionStart hook that runs `cairn overview --brief`, so a fresh session opens already knowing what the workspace holds. It reads and writes `~/.claude/settings.json`, touching only its own tagged entry (`_cairn: "cairn-overview"`) and leaving every other key byte-identical, since that file belongs to Claude Code, not Cairn. Prints the exact change and asks before writing, the same shape `cairn sync install` already uses; `--yes` skips the question. `cairn hook status` and `cairn hook uninstall` complete the set.
+2. **`cairn overview --brief`**: the `/overview` route takes a `brief=true` query param that bounds the summary to `BRIEF_OVERVIEW_BUDGET` (800 characters, about 200 tokens) instead of the usual 4,000. Against the owner's own 105-page workspace it comes back at 503 characters, naming both tables and both collections. When Cairn cannot be reached, `overview --brief` exits zero and prints one line naming `cairn start`, because a session hook has nowhere to report a failure and should never block the session it is starting.
+3. **`cairn status`**: one screen, `packages/cli/src/status.ts`, for whether Cairn is actually reachable, replacing five separate things to check by hand. Reports the instance, sign-in, sync with other registered Cairns, embeddings pending, the scheduled job, and the session hook; every not-ok line carries its fix command. Sign-in and job state come from local files, so they are still reported even when the server itself cannot be reached, which is what lets it show three simultaneous problems in one run. A new `peekCredentials` in `login.ts` reads the credentials file without the side effects `storedToken` has (refreshing, deleting on failure), since a status check must not sign anyone out just by running.
+
+The scheduled job (`packages/cli/src/schedule.ts`) now runs `cairn start` instead of `cairn sync` on all three platforms, so a laptop that was off overnight starts itself before syncing rather than syncing nothing. `cairn status` notices a job file that still says `sync` and says to reinstall.
+
+Two things from the spec's design are scoped down, noted in `docs/specs/presence.md` itself: the embeddings-pending line reports a plain count rather than a trend, since one invocation has no earlier run to compare against; and database size and last-backup age are left out of `/health` entirely, since `BackupEngine`'s last-backup time is a private field with no accessor and wiring it through `app.ts` and `entry/node.ts` is its own piece of plumbing.
+
+`docs/AGENT-OPERATE.md` and `docs/CLI.md` both open their health checks and troubleshooting with `cairn status`. `pnpm build`, `pnpm typecheck`, the full test suite (656 tests, including new coverage for `hook.ts`, `status.ts` and the CLI wiring), and `pnpm smoke:cli` against both the Node path and a freshly compiled Bun executable all pass.
+
 ### The workspace summary gets its own guaranteed budget, so it stops going empty on a real workspace (ADR-055)
 
 Implements ADR-055. `buildInstructions` used to give the summary whatever was left of a 2,200 character total after the fixed instructions, which on the owner's 104-page workspace was 303 characters: enough to name no collections at all. `SUMMARY_BUDGET` (700 characters) is now a floor the summary always gets, and `FIXED_INSTRUCTIONS_CEILING` (1,500 characters) bounds the fixed text so it can never eat into that floor again; a test enforces the ceiling directly rather than relying on someone noticing the total creep up. `INSTRUCTIONS_BUDGET` moved to 2,400 to cover both with room to spare, and `SERVER_INSTRUCTIONS` was rewritten from 1,895 to 1,418 characters, moving detail that already lives in `skills/cairn/SKILL.md` out of the text every MCP session pays for.

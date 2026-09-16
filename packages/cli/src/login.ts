@@ -233,6 +233,17 @@ export async function storedToken(baseUrl: string, io: Pick<LoginIo, "fetch" | "
   }
 }
 
+/**
+ * Reads what is on record for this server without refreshing or deleting
+ * anything, for `cairn status` (ADR-053): a status check must not have the
+ * side effect of signing the person out.
+ */
+export async function peekCredentials(baseUrl: string, env: Record<string, string | undefined>): Promise<{ expiresAt: number } | null> {
+  const file = await readCredentials(credentialsPath(env));
+  const saved = file.servers[serverKey(baseUrl)];
+  return saved ? { expiresAt: saved.expires_at } : null;
+}
+
 /** Forget this server's sign-in, revoking it on the server first. */
 export async function logout(baseUrl: string, io: Pick<LoginIo, "fetch" | "env">): Promise<boolean> {
   const path = credentialsPath(io.env);
