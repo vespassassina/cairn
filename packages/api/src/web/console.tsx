@@ -27,9 +27,9 @@ import {
 import { OWNER, type AppContext } from "../context.js";
 import { moveRecord, publishPage } from "../operations.js";
 import { ASSET_VERSION, CONSOLE_CSS, CONSOLE_JS, documentTitle, FAVICON_SVG, HEAD_TAGS, ICON_180_PNG, ICON_512_PNG, MANIFEST } from "./assets.js";
-import { ActorPill, ageOf, Banner, DiffView, Layout, Verified, When } from "./layout.js";
+import { ActorPill, ageOf, Banner, DiffView, Layout, setFooterFactsProvider, Verified, When } from "./layout.js";
 import { createMarkdownRenderer, pageHref, type LinkResolver } from "./markdown.js";
-import { wikiHref } from "./public.js";
+import { wikiHref, type SelfDescription } from "./public.js";
 import { isSameOrigin, SESSION_COOKIE, sessionValue, timingSafeEqual } from "./session.js";
 import type { OAuthServer } from "../oauth/server.js";
 import type { Actor } from "@cairn/core";
@@ -59,6 +59,10 @@ export interface ConsoleOptions {
    * must use this instead of the request's own URL.
    */
   publicOrigin?: string | null;
+  /** How this Cairn describes itself, named in the footer as the instance. */
+  selfDescription?: SelfDescription | null;
+  /** Epoch ms of the newest backup, read for the footer (ADR-056/057 fault 8). */
+  backupStatus?: (() => number | null) | null;
 }
 
 const renderMarkdown = createMarkdownRenderer();
@@ -85,7 +89,12 @@ const SECURITY_HEADERS: Record<string, string> = {
 const PUBLIC_PATHS = [/^\/health$/, /^\/mcp/, /^\/api(\/|$)/, /^\/assets\//, /^\/favicon\.ico$/, /^\/login$/, /^\/oauth\//, /^\/\.well-known\//, /^\/w(\/|$)/, /^\/sitemap\.xml$/, /^\/robots\.txt$/, /^\/webmention$/];
 
 async function render(c: Context, element: Child, status: 200 | 400 | 404 | 409 = 200) {
-  const body = await (element as Promise<string> | string);
+  // `<Layout>` is an async component (it awaits the footer facts), so its
+  // JSXNode.toString() itself returns a Promise rather than a string: a
+  // template literal cannot await that, and stringifies it eagerly, so the
+  // Promise is resolved here before interpolation (ADR-056/057 fault 8).
+  const stringified = (element as { toString(): string | Promise<string> }).toString();
+  const body = stringified instanceof Promise ? await stringified : stringified;
   return c.html(`<!doctype html>${body}`, status);
 }
 
@@ -783,6 +792,13 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
   const expectedSession = token === null ? Promise.resolve(null) : sessionValue(token);
   const oauth = options.oauth ?? null;
   const publicOrigin = options.publicOrigin ?? null;
+  const instanceName = options.selfDescription?.name ?? ws;
+  const backupStatus = options.backupStatus ?? null;
+  setFooterFactsProvider(async () => ({
+    instance: instanceName,
+    pageCount: (await allPages(context)).length,
+    lastBackupAt: backupStatus?.() ?? null,
+  }));
   // Who is signed in, per request. A person signed in through the provider is
   // named in history; the dev token and local trust write as the owner.
   const signedInAs = new WeakMap<Request, Actor>();

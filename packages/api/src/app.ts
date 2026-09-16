@@ -42,6 +42,12 @@ export interface AppOptions {
    * and short-lived commands, which back up nothing.
    */
   onWrite?: () => void;
+  /**
+   * Epoch milliseconds of the newest backup (0: none yet, null: unknown or
+   * backups off), read by the console footer and /health (ADR-056/057
+   * fault 8). Absent when there is no backup engine.
+   */
+  backupStatus?: () => number | null;
 }
 
 /** How a request got in, for attribution and for GET /api/v1/me. */
@@ -237,6 +243,8 @@ export function createApp(options: AppOptions): Hono {
     trust,
     oauth,
     publicOrigin: options.publicOrigin ?? null,
+    selfDescription: options.selfDescription ?? null,
+    backupStatus: options.backupStatus ?? null,
   });
 
   // The published wiki (ADR-032). Registered after the console so the console's

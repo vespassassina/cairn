@@ -11,6 +11,35 @@ import { ASSET_VERSION, documentTitle, HEAD_TAGS } from "./assets.js";
 
 export type Section = "collections" | "recent" | "tables" | "freshness" | "search" | "none";
 
+/** The facts fault 8 (ADR-056/057) puts in the console footer. */
+export interface FooterFacts {
+  instance: string;
+  pageCount: number;
+  /** Epoch ms of the newest backup, 0 if none exists yet, or null if unknown/off. */
+  lastBackupAt: number | null;
+}
+
+/**
+ * A single provider for the footer facts, set once by `registerConsole`.
+ *
+ * A prop would have to thread through all 21 call sites that build a
+ * `<Layout>` in console.tsx. Exactly one console runs per process, and tests
+ * run their `it()` blocks sequentially, so a module-level singleton carries
+ * the same value a prop would, without touching every call site for one
+ * footer line (ADR-056/057 fault 8).
+ */
+let footerFactsProvider: (() => Promise<FooterFacts>) | null = null;
+
+export function setFooterFactsProvider(provider: () => Promise<FooterFacts>): void {
+  footerFactsProvider = provider;
+}
+
+function backupLine(lastBackupAt: number | null): string {
+  if (lastBackupAt === null) return "backup status unknown";
+  if (lastBackupAt === 0) return "no backup yet";
+  return `last backup ${ageOf(new Date(lastBackupAt).toISOString())}`;
+}
+
 export const Layout: FC<{
   title: string;
   section: Section;
@@ -21,59 +50,70 @@ export const Layout: FC<{
    */
   here?: string | null;
   children: Child;
-}> = ({ title, section, query, here, children }) => (
-  <html lang="en">
-    <head>
-      <meta charset="utf-8" />
-      {raw(HEAD_TAGS)}
-      <title>{documentTitle(title)}</title>
-      <link rel="stylesheet" href={`/assets/console.css?v=${ASSET_VERSION}`} />
-    </head>
-    <body>
-      <div class="ak-wrap">
-        <header class="cairn-top">
-          <a class="cairn-brand" href="/">
-            Cairn
-          </a>
-          <nav aria-label="Sections">
-            <a href="/" aria-current={section === "collections" ? "page" : undefined}>
-              Collections
+}> = async ({ title, section, query, here, children }) => {
+  const facts = footerFactsProvider ? await footerFactsProvider() : null;
+  return (
+    <html lang="en">
+      <head>
+        <meta charset="utf-8" />
+        {raw(HEAD_TAGS)}
+        <title>{documentTitle(title)}</title>
+        <link rel="stylesheet" href={`/assets/console.css?v=${ASSET_VERSION}`} />
+      </head>
+      <body>
+        <div class="ak-wrap">
+          <header class="cairn-top">
+            <a class="cairn-brand" href="/">
+              Cairn
             </a>
-            <a href="/changes" aria-current={section === "recent" ? "page" : undefined}>
-              Recent changes
-            </a>
-            <a href="/t" aria-current={section === "tables" ? "page" : undefined}>
-              Tables
-            </a>
-            <a href="/freshness" aria-current={section === "freshness" ? "page" : undefined}>
-              Freshness
-            </a>
-          </nav>
-          <form action="/search" method="get" role="search">
-            <input
-              class="ak-input"
-              type="search"
-              name="q"
-              id="q"
-              value={query ?? ""}
-              placeholder="Search pages   /"
-              aria-label="Search pages"
-            />
-            <a class="ak-btn" href={here ? `/new?parent=${encodeURIComponent(here)}` : "/new"}>
-              New page
-            </a>
-          </form>
-        </header>
-        <main>{children}</main>
-        <footer class="ak-footer">
-          Every change is kept and can be restored. Agents write directly; this is where you
-          review what they wrote.
-        </footer>
-      </div>
-      <script src={`/assets/console.js?v=${ASSET_VERSION}`} defer></script>
-    </body>
-  </html>
-);
+            <nav aria-label="Sections">
+              <a href="/" aria-current={section === "collections" ? "page" : undefined}>
+                Collections
+              </a>
+              <a href="/changes" aria-current={section === "recent" ? "page" : undefined}>
+                Recent changes
+              </a>
+              <a href="/t" aria-current={section === "tables" ? "page" : undefined}>
+                Tables
+              </a>
+              <a href="/freshness" aria-current={section === "freshness" ? "page" : undefined}>
+                Freshness
+              </a>
+            </nav>
+            <form action="/search" method="get" role="search">
+              <input
+                class="ak-input"
+                type="search"
+                name="q"
+                id="q"
+                value={query ?? ""}
+                placeholder="Search pages   /"
+                aria-label="Search pages"
+              />
+              <a class="ak-btn" href={here ? `/new?parent=${encodeURIComponent(here)}` : "/new"}>
+                New page
+              </a>
+            </form>
+          </header>
+          <main>{children}</main>
+          <footer class="ak-footer">
+            <p>
+              Every change is kept and can be restored. Agents write directly; this is where you
+              review what they wrote.
+            </p>
+            {facts ? (
+              <p class="ak-small">
+                {facts.instance} · {facts.pageCount} page{facts.pageCount === 1 ? "" : "s"} ·{" "}
+                {backupLine(facts.lastBackupAt)}
+              </p>
+            ) : null}
+          </footer>
+        </div>
+        <script src={`/assets/console.js?v=${ASSET_VERSION}`} defer></script>
+      </body>
+    </html>
+  );
+};
 
 /** Who made a change, in words as well as colour. */
 export const ActorPill: FC<{ actor: Actor }> = ({ actor }) =>

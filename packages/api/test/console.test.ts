@@ -804,6 +804,30 @@ describe("collections are the home page (ADR-026)", () => {
   });
 });
 
+describe("footer shows instance, page count and last backup (ADR-056/057 fault 8)", () => {
+  it("names the instance, page count and that no backup has run yet, by default", async () => {
+    const { html } = await get("/");
+    expect(html).toContain("ws_console");
+    expect(html).toContain("0 pages");
+    expect(html).toContain("backup status unknown");
+  });
+
+  it("shows the self-described instance name, real page count and last backup age", async () => {
+    app = createApp({
+      context,
+      token: TOKEN,
+      selfDescription: { name: "Diego's Cairn", description: null, language: "en", topics: null },
+      backupStatus: () => Date.now() - 60 * 60 * 1000,
+    });
+    cookie = await signIn();
+    await context.pages.create(context.workspaceId, { title: "Peptides", body: "Notes." }, { actor: OWNER });
+    const { html } = await get("/");
+    expect(html).toContain("Diego&#39;s Cairn");
+    expect(html).toContain("1 page");
+    expect(html).toContain("last backup");
+  });
+});
+
 describe("publishing from the console (ADR-032)", () => {
   it("offers to publish a private page, and says publication stays on this server", async () => {
     const page = await context.pages.create(context.workspaceId, { title: "Peptides", body: "Notes." }, { actor: OWNER });

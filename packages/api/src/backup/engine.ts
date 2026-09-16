@@ -93,6 +93,15 @@ export class BackupEngine {
   }
 
   /**
+   * Epoch milliseconds of the newest backup, 0 if none exists yet, or null if
+   * `start()` has not run (or failed) so the age is not known at all. Read by
+   * the console footer (ADR-056/057 fault 8) and `/health`.
+   */
+  lastBackupAt(): number | null {
+    return this.lastAt;
+  }
+
+  /**
    * Read the age of the newest backup, once, at startup. Without this a fresh
    * container assumes it has never backed up and takes one on its first
    * request, which on a platform that starts a container per idle period means

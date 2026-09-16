@@ -6,6 +6,18 @@ Entries link to the ADR when there is one. A change of direction that has no ADR
 
 ## 2026-09-17
 
+### The console footer now shows the instance, page count and last backup (ADR-056/057, fault 8)
+
+`cairn status`'s facts were nowhere a person looking at the console could see them, and the spec asked for exactly three of them in the footer: the instance, the page count and when the last backup ran. Re-reading the spec text showed this only needed the console footer to change, not `cairn status` itself: `packages/cli/src/status.ts` already documents page count and backup age as deliberately out of `cairn status`'s scope (ADR-053 decision 4), and the console runs in the same process as the backup engine and document store, so it can read both directly without going through `/health` or a new CLI field.
+
+Added `BackupEngine.lastBackupAt()` (epoch ms of the newest backup, 0 if none yet, null if not known), threaded through `AppOptions.backupStatus` and `entry/node.ts` to `ConsoleOptions.backupStatus`, alongside `ConsoleOptions.selfDescription` for the instance name. Rather than thread a new prop through the 21 call sites that build a `<Layout>` in `console.tsx`, `layout.tsx` gained a single module-level `setFooterFactsProvider`, called once by `registerConsole`, which `Layout` (now an async component) awaits once per render. Exactly one console runs per process, and the test suite runs sequentially, so a singleton carries the value safely without an `AsyncLocalStorage` with no precedent elsewhere in the codebase.
+
+Making `Layout` async surfaced an unrelated latent bug in `render()`: a `JSXNode.toString()` that resolves asynchronously returns a `Promise`, which a template literal cannot stringify, and previously would have thrown `Internal Server Error` the moment any console page grew an async child. Fixed `render()` to resolve that promise before interpolating.
+
+`packages/api/src/backup/engine.ts`, `packages/api/src/app.ts`, `packages/api/src/entry/node.ts`, `packages/api/src/web/console.tsx`, `packages/api/src/web/layout.tsx`, tested in `packages/api/test/console.test.ts` (acceptance criterion 18). No LESSONS entry: fault 8 is not in criterion 19's list.
+
+Verification: `pnpm build`, `pnpm typecheck`, full test suite (714 passed), `pnpm smoke:cli`, all green.
+
 ### An unreachable Cairn now says why it tried the address it tried (ADR-056/057, fault 7)
 
 "cannot reach Cairn at http://localhost:8787" named an address but never said that address was a default, chosen because nothing else was given, which coding style rule 2 requires. Added an optional `chosenBecause` to `CairnClient`'s options, set in `main.ts` where `baseUrl` itself is chosen: empty when `--instance` or `CAIRN_URL` named it explicitly, the instance's name when `firstReachable` picked one of several registered instances because none was named, and "the default, since no --instance, CAIRN_URL or registered instance was given" when nothing at all was configured. The unreachable error now appends it. `packages/cli/src/client.ts`, `packages/cli/src/main.ts`, tested in `packages/cli/test/client.test.ts` and `packages/cli/test/cli.test.ts` (acceptance criterion 17). LESSONS entry added.
