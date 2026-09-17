@@ -406,9 +406,26 @@ const SourcesSection: FC<{ sources: readonly string[] }> = ({ sources }) =>
   );
 
 /**
- * Publishing a page, and taking it down again (ADR-032). Publishing runs down
- * the tree, so a page can be public because something above it is; that case
- * says where to go to change it, because changing it here would be wrong.
+ * The publish/unpublish action itself (ADR-032), styled and placed like the
+ * other page-header buttons (Edit, Add child, ...). Only rendered when this
+ * page's own state decides the matter; when a page above it is what actually
+ * publishes it, there is nothing to toggle here (see PublishControl below).
+ */
+const PublishButton: FC<{ page: Page }> = ({ page }) => (
+  <form method="post" action={`${pageHref(page.id)}/publish`}>
+    <input type="hidden" name="version" value={page.version} />
+    <input type="hidden" name="public" value={page.public ? "false" : "true"} />
+    <button class="ak-btn" type="submit">
+      {page.public ? "Make private" : "Publish this page and everything under it"}
+    </button>
+  </form>
+);
+
+/**
+ * The publish explanation and status in the rail (ADR-032). Publishing runs
+ * down the tree, so a page can be public because something above it is; that
+ * case says where to go to change it, because changing it here would be
+ * wrong. The action button itself lives in the page header (PublishButton).
  */
 const PublishControl: FC<{ page: Page; publishedVia: Page | null }> = ({ page, publishedVia }) => (
   <>
@@ -421,13 +438,6 @@ const PublishControl: FC<{ page: Page; publishedVia: Page | null }> = ({ page, p
         <p class="ak-small">
           <a href={wikiHref(page.id)}>{wikiHref(page.id)}</a>
         </p>
-        <form method="post" action={`${pageHref(page.id)}/publish`}>
-          <input type="hidden" name="version" value={page.version} />
-          <input type="hidden" name="public" value="false" />
-          <button class="ak-btn" type="submit">
-            Make private
-          </button>
-        </form>
       </>
     ) : publishedVia ? (
       <p class="ak-small">
@@ -436,16 +446,7 @@ const PublishControl: FC<{ page: Page; publishedVia: Page | null }> = ({ page, p
         make that page private.
       </p>
     ) : (
-      <>
-        <p class="ak-small">Private. Only someone signed in to this Cairn can read it.</p>
-        <form method="post" action={`${pageHref(page.id)}/publish`}>
-          <input type="hidden" name="version" value={page.version} />
-          <input type="hidden" name="public" value="true" />
-          <button class="ak-btn" type="submit">
-            Publish this page and everything under it
-          </button>
-        </form>
-      </>
+      <p class="ak-small">Private. Only someone signed in to this Cairn can read it.</p>
     )}
     <p class="ak-small ak-soft">
       Publishing belongs to this server. It never travels with sync, export or import, so
@@ -1266,6 +1267,10 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
                 <a class="ak-btn ak-btn-primary" href={`${pageHref(page.id)}/edit`}>
                   Edit
                 </a>
+                <a class="ak-btn" href={`/new?parent=${encodeURIComponent(page.id)}`}>
+                  Add child
+                </a>
+                {publishedVia ? null : <PublishButton page={page} />}
                 <a class="ak-btn" href={`${pageHref(page.id)}/history`}>
                   History
                 </a>
@@ -1322,11 +1327,6 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
             <AgentConnect origin={new URL(c.req.url).origin} />
             <h3>Page</h3>
             <p class="ak-small ak-mono">{page.id}</p>
-            <p>
-              <a class="ak-small" href={`/new?parent=${encodeURIComponent(page.id)}`}>
-                New child page
-              </a>
-            </p>
           </aside>
         </div>
       </Layout>,

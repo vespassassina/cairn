@@ -13,6 +13,10 @@ Rules:
 
 ## 2026-09-17
 
+### "the add child should be next to the edit button, similar style. also the publish button. fix then we release"
+
+Moved "Add child" (previously a small text link in the rail) and the publish/unpublish toggle (previously its own button under "Published" in the rail) into the page header, styled as `.ak-btn` alongside Edit. Landed in `packages/api/src/web/console.tsx` and `docs/CHANGELOG.md`, this commit. "Then we release": next step is cutting a release tag once this is committed and pushed, per the same day's finding that `deploy/azure/deploy.sh`'s default `:latest` image only moves on a tag, not on every `main` push.
+
 ### A page-actions menu like docs.fabricplan.com's, then "yes build that"
 
 > "i like the top right menu here, the one that allows me to open the page in another tool, share, send etc: https://docs.fabricplan.com/"

@@ -6,6 +6,10 @@ Entries link to the ADR when there is one. A change of direction that has no ADR
 
 ## 2026-09-17
 
+### Moved Add child and Publish into the page header, next to Edit
+
+The owner asked for "Add child" (previously a small text link at the bottom of the rail) and the publish/unpublish toggle (previously its own button under "Published" in the rail) to sit next to Edit in the page header, styled like the other header buttons. `PublishControl` (`packages/api/src/web/console.tsx`) is split: a new `PublishButton` renders just the form and button, placed in the header's `.ak-row` alongside Edit, History and the PDF buttons; `PublishControl` keeps the explanatory text and status in the rail. The header button is omitted when a page above this one is what actually publishes it (nothing to toggle here in that case). The earlier header-row `flex-wrap` fix (below) is what lets this row take two more buttons without breaking.
+
 ### Gave the container-start test's setup hook more time on CI
 
 `packages/api/test/container-start.test.ts` builds a 4000-row SQLite database in `beforeEach`, and its default 10s Vitest hook timeout had failed the whole file outright on `ubuntu-latest` and `ubuntu-24.04-arm`, on three separate unrelated commits (confirmed via `gh run list`, not a one-off: never reproduced locally, at 4.1s total). The most recent instance blocked the header-button CSS fix below from ever getting a new `:edge` image, so `deploy/azure/deploy.sh` twice reported deploying nothing. Raised the hook's timeout to 30s; the database build itself is unchanged. See `docs/LESSONS.md` for the investigation.
