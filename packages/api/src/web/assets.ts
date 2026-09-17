@@ -158,6 +158,13 @@ const CAIRN_CSS = `
 .ak-pagehead{ min-width:0 }
 .ak-pagehead > div{ min-width:0 }
 .ak-pagehead h1{ overflow-wrap:anywhere }
+/* The title's min-width:0 above also shrinks its sibling .ak-row (the
+   action buttons), and a plain flex row with no wrap answers that by
+   squeezing each button's own text instead of moving to a new line: four
+   buttons wrapped "PDF (page + subtree)" into three narrow lines that
+   overflowed into the rail next to it. Wrapping the row itself, as a
+   whole button at a time, is what the row is short on room for. */
+.ak-pagehead .ak-row{ flex-wrap:wrap; justify-content:flex-end }
 .ak-prose table{ display:block; overflow-x:auto; max-width:100% }
 
 /* On paper: no chrome, just the article. artifactkit's print.css already

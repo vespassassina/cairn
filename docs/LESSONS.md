@@ -13,6 +13,13 @@ Each entry answers four questions:
 
 ## 2026-09-17
 
+### A fourth header button wrapped its own text instead of moving to a new line, and overflowed into the rail
+
+1. **What happened.** The owner sent a screenshot of the deployed console: the new "PDF (page + subtree)" button wrapped "PDF (page + subtree)" across three narrow lines and spilled visually out of its column, overlapping the "Linked from" list in the rail next to it.
+2. **Cause.** `.ak-pagehead > div{ min-width:0 }` (added for ADR-056, so a long title can wrap instead of forcing a scrollbar) applies to every direct child `div` of `.ak-pagehead`, not only the title block it was written for. The button row (`.ak-row`, wrapping Edit/History/PDF/PDF-subtree) is also a direct child `div`, so adding a fourth, longer-labelled button gave that rule something new to squeeze: with no `flex-wrap` of its own, the row's flex-shrink let the browser narrow the *whole row* below its buttons' combined width, and the individual button, not the row, absorbed the shrink by wrapping its own text.
+3. **Fix.** `packages/api/src/web/assets.ts` (`CAIRN_CSS`): added `.ak-pagehead .ak-row{ flex-wrap:wrap; justify-content:flex-end }`, so a row short on space wraps whole buttons onto a second line instead of shrinking one button's text. Checked at desktop, 1528×414 (the width in the screenshot) and mobile (375×812).
+4. **Lesson.** A `min-width:0` rule scoped to "every direct child of X" quietly widens its own blast radius the next time a sibling child is added under X — it does not fail loudly, it degrades layout only past a width nobody tested. When a shared rule like this exists, check what it now selects before shipping a new sibling into that container, not just whether the new element itself renders. No automated screenshot check would have caught this either: `pnpm test` and a look at the empty desktop-width page both looked fine; only a real narrow-viewport screenshot with the row actually full showed it.
+
 ### A version conflict at the terminal quoted REST's own words back at itself
 
 1. **What happened.** `cairn edit` on a stale page printed `error: version_conflict: Page changed since you read it. Read it again, merge your change, and retry with the new ETag in If-Match.` A person at a terminal has no ETag and no If-Match; those are REST concepts, not CLI ones, and the CLI had never sent a header by that name.
