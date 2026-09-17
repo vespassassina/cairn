@@ -310,18 +310,26 @@ const Tree: FC<{ pages: Page[]; tables?: Table[]; currentId?: string | undefined
   // Inside a collection, only its tree (ADR-026): the root heads it.
   const root = rootId ? byId.get(rootId) : undefined;
   return (
-    <nav class="cairn-tree" aria-label={root ? `The ${root.title} collection` : "Pages"}>
-      {root ? (
-        <p class="ak-eyebrow">
-          <a href={pageHref(root.id)} aria-current={root.id === currentId ? "page" : undefined}>
-            {root.title}
-          </a>
-        </p>
-      ) : (
-        <p class="ak-eyebrow">Pages</p>
-      )}
-      {branch(root ? root.id : null)}
-    </nav>
+    // A native <details>, closed by default, one level above the branches'
+    // own <details> elements: the same mechanism, so the phone layout needs
+    // no script to collapse the tree (ADR-056). The summary is hidden above
+    // the single-column breakpoint, where the tree stays open regardless of
+    // this element's own open/closed state (assets.ts).
+    <details class="cairn-tree-toggle">
+      <summary>Pages in this collection</summary>
+      <nav class="cairn-tree" aria-label={root ? `The ${root.title} collection` : "Pages"}>
+        {root ? (
+          <p class="ak-eyebrow">
+            <a href={pageHref(root.id)} aria-current={root.id === currentId ? "page" : undefined}>
+              {root.title}
+            </a>
+          </p>
+        ) : (
+          <p class="ak-eyebrow">Pages</p>
+        )}
+        {branch(root ? root.id : null)}
+      </nav>
+    </details>
   );
 };
 

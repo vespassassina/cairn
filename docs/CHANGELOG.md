@@ -6,6 +6,18 @@ Entries link to the ADR when there is one. A change of direction that has no ADR
 
 ## 2026-09-17
 
+### The console works on a phone: one column, a collapsed tree, no sideways scrolling (ADR-056)
+
+The review of 2026-09-16 found the console unusable on a phone: a fixed two-column grid, a page tree always expanded and taking the first screenful, 13px tap targets, and long titles or wide tables forcing horizontal scroll. ADR-056 called for a single-column layout below 700px with no client-side script, since the console (ADR-009) is server-rendered only.
+
+`.cairn-page` drops to one column and the rail stacks below the body at that width. The page tree, already built from native `<details>`/`<summary>` for its branches (ADR-026), gained one more `<details class="cairn-tree-toggle">` around the whole tree, with a summary reading "Pages in this collection": closed by default, opening on tap through the browser's own disclosure widget, no script involved. Its summary is hidden and its content forced visible above the breakpoint, so desktop is unchanged. Tree links and the top navigation gained a 44px minimum tap height below the breakpoint. Long page titles now wrap instead of forcing a scrollbar (`overflow-wrap:anywhere`, plus `min-width:0` on the flex ancestors that were refusing to shrink), and markdown tables scroll inside their own box the way code blocks already did, rather than widening the page.
+
+Making the tree's visibility survive a closed `<details>` surfaced a genuine CSS bug, written up in `docs/LESSONS.md` today: Chromium hides closed `<details>` content through an internal `::details-content` box, not by setting `display:none` on the children, so the first version of this fix looked right in `getComputedStyle` but rendered as an empty column. Fixed by also overriding `content-visibility` on that pseudo-element, scoped above the breakpoint so the tree still defaults to closed on the phone layout itself.
+
+`packages/api/src/web/assets.ts`, `packages/api/src/web/console.tsx`, tested in `packages/api/test/console.test.ts` (acceptance criteria 3 and 4). No LESSONS entry required by criterion 19 (not one of the eight numbered faults), but one was added anyway per coding style rule 5, since it was a real bug that misled a `getComputedStyle` check.
+
+Verification: `pnpm build`, `pnpm typecheck`, full test suite (715 passed), `pnpm smoke:cli`, live check in a browser at 375px and desktop widths, all green.
+
 ### The console footer now shows the instance, page count and last backup (ADR-056/057, fault 8)
 
 `cairn status`'s facts were nowhere a person looking at the console could see them, and the spec asked for exactly three of them in the footer: the instance, the page count and when the last backup ran. Re-reading the spec text showed this only needed the console footer to change, not `cairn status` itself: `packages/cli/src/status.ts` already documents page count and backup age as deliberately out of `cairn status`'s scope (ADR-053 decision 4), and the console runs in the same process as the backup engine and document store, so it can read both directly without going through `/health` or a new CLI field.

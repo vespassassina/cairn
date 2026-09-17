@@ -794,6 +794,14 @@ describe("collections are the home page (ADR-026)", () => {
     expect(tree).not.toContain("pg_garden");
   });
 
+  it("wraps the tree in a details element, closed by default, that opens on tap with no script (ADR-056)", async () => {
+    const { html } = await get("/p/pg_bpc");
+    const start = html.indexOf("<details class=\"cairn-tree-toggle\">");
+    expect(start).toBeGreaterThan(-1);
+    expect(html.slice(start, start + 60)).not.toContain(" open");
+    expect(html).toContain("<summary>Pages in this collection</summary>");
+  });
+
   it("sends old addresses to their new places", async () => {
     const pages = await app.fetch(new Request(`${ORIGIN}/pages`, { headers: { cookie } }));
     expect(pages.status).toBe(301);

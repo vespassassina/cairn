@@ -55,6 +55,37 @@ const CAIRN_CSS = `
 .cairn-tree a:hover{ color:var(--ak-ink) }
 .cairn-tree a[aria-current="page"]{ color:var(--ak-accent); font-weight:600 }
 
+/* The tree's own <details> wrapper (ADR-056). Above the phone breakpoint its
+   summary is never shown, and its content stays visible whether or not the
+   element itself is "open": the collapse only exists below the breakpoint.
+   Recent Chromium collapses a closed <details> by giving its whole content
+   an internal ::details-content box with content-visibility:hidden, not by
+   setting display:none on the children directly, so overriding display on
+   .cairn-tree alone left it visible-but-zero-sized: both need overriding,
+   and only above the breakpoint, or the tree would default to open on the
+   phone layout too. */
+.cairn-tree-toggle > summary{ display:none }
+@media (min-width: 701px){
+  .cairn-tree-toggle:not([open]) > .cairn-tree{ display:block }
+  .cairn-tree-toggle:not([open])::details-content{
+    content-visibility:visible; block-size:auto; overflow:visible;
+  }
+}
+
+/* Single column below 700px: the tree, the body and the rail stack in that
+   order, source order already matching (ADR-056). */
+@media (max-width: 700px){
+  .cairn-page{ grid-template-columns:1fr }
+  .cairn-rail{ grid-column:1 }
+  .cairn-top .ak-input{ min-width:0; width:100% }
+  .cairn-tree,.cairn-rail{ position:static; max-height:none; overflow:visible }
+  .cairn-tree-toggle > summary{
+    display:flex; align-items:center; cursor:pointer; min-height:44px;
+    font-size:13px; font-weight:600;
+  }
+  .cairn-tree a,.cairn-top nav a{ min-height:44px; display:flex; align-items:center }
+}
+
 /* A link to a page that does not exist yet. Dashed as well as coloured, so
    colour is not the only signal. */
 .ak-prose a.cairn-missing{ color:var(--ak-neg); text-decoration-style:dashed }
@@ -115,8 +146,16 @@ const CAIRN_CSS = `
 .cairn-collection{ display:block; padding:var(--ak-s4); border:1px solid var(--ak-rule); border-radius:var(--ak-radius);
   background:var(--ak-surface); color:var(--ak-ink); text-decoration:none }
 .cairn-collection:hover{ border-color:var(--ak-accent) }
-.cairn-collection h2{ color:var(--ak-accent); margin-bottom:var(--ak-s2) }
+.cairn-collection h2{ color:var(--ak-accent); margin-bottom:var(--ak-s2); overflow-wrap:anywhere }
 .cairn-collection p{ margin:0 0 var(--ak-s2) }
+
+/* Long titles wrap instead of forcing a scrollbar; a page's own markdown
+   tables scroll inside their own box rather than widening the page, matching
+   what .ak-prose pre already does for code blocks (ADR-056). */
+.ak-pagehead{ min-width:0 }
+.ak-pagehead > div{ min-width:0 }
+.ak-pagehead h1{ overflow-wrap:anywhere }
+.ak-prose table{ display:block; overflow-x:auto; max-width:100% }
 `;
 
 /**
