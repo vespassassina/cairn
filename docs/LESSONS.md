@@ -13,6 +13,13 @@ Each entry answers four questions:
 
 ## 2026-09-17
 
+### The console's own "connect an agent" instructions told people to use http on a Cairn that only answers https
+
+1. **What happened.** The owner reported that the MCP-connect link on the console pages was wrong: it read `http://...` where the deployed Cairn is only reachable at `https://...`.
+2. **Cause.** `AgentConnect` (`packages/api/src/web/console.tsx`) built the MCP address from `new URL(c.req.url).origin`, the scheme the request arrived with at the container itself. Behind Azure Container Apps' ingress, which ends TLS and forwards to the container over plain HTTP, that is always `http`, regardless of what a visitor's browser used. The fix for exactly this already existed one scope up: `registerConsole` accepts a `publicOrigin` option and uses it for `originOk` and `secureCookie`. `AgentConnect` was the one place still reading the request's own URL instead.
+3. **Fix.** Rebuilt the component (renamed `ConnectSection`) to take its address from `publicOrigin`, falling back to the request's origin only when none is configured, matching the pattern already used in `public.tsx`. Also moved it off every page's rail (where it repeated on each of potentially hundreds of pages) onto the collections home page as one "Connect an agent" section, and added the CLI's install/register/login commands alongside the existing MCP ones, per the owner's request. Covered both with tests in `packages/api/test/console.test.ts`, including one that sets `publicOrigin` to an `https` address and asserts the request's own `http` scheme never leaks into the output.
+4. **Lesson.** When a page needs "the address people actually use" rather than "the address this request happened to arrive on," there is almost always one already-solved place in the codebase to copy from (here, `originOk`/`secureCookie`). Grep for how the same question was answered elsewhere before deriving it fresh from `c.req.url`, especially for anything user-facing that gets copy-pasted into a shell.
+
 ### The CSS fix redeployed to nothing, twice, because an unrelated test kept timing out in CI
 
 1. **What happened.** After fixing the header-button wrap bug (below) and pushing it, the owner ran `deploy/azure/deploy.sh` and it reported "already running this exact image, so this run changes nothing about it" — twice. No new `:edge` image existed to deploy, because CI's `test (ubuntu-latest)` job had failed on that commit, so the downstream image-publish job never ran.

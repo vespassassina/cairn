@@ -13,6 +13,10 @@ Rules:
 
 ## 2026-09-17
 
+### "the online link on the cairn pages to add the mcp is wrong. it's http, should be https. remove from there and add on the index page instructions to install and add this cairn (via mcp and cli)"
+
+The per-page "Open in an agent" panel built its MCP address from the request's own URL, which is `http` behind Azure Container Apps' TLS-ending proxy even though the public address is `https`. Fixed by building the address from `publicOrigin` instead (the same value `originOk`/`secureCookie` already use), and moved the whole panel off every page onto the collections home page as "Connect an agent", now covering both MCP and the CLI (install, register, sign in). Landed in `packages/api/src/web/console.tsx`, `packages/api/test/console.test.ts` and `docs/CHANGELOG.md`, this commit.
+
 ### "why it logs me out of the azure one so often ? can the token survive longer ?"
 
 Asked alongside a sync-progress-bar request (see the CHANGELOG for the sync work, once built). Investigated `packages/api/src/oauth/server.ts`: the console's sign-in cookie was a fixed 7-day JWT that never renewed on activity, so a session expired at the same wall-clock time regardless of how often the console was used. Offered two fixes via `AskUserQuestion`: sliding renewal, or just extending the fixed duration. The owner chose sliding renewal. Landed in `packages/api/src/oauth/server.ts`, `packages/api/src/web/console.tsx`, `packages/api/test/oauth.test.ts` and `docs/CHANGELOG.md`, this commit.

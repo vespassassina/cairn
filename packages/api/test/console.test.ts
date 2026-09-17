@@ -899,11 +899,36 @@ describe("PDF export from the console", () => {
   });
 });
 
-describe("connecting a coding agent from the console", () => {
-  it("gives the Claude Code command for this Cairn's own MCP address", async () => {
-    const page = await context.pages.create(context.workspaceId, { title: "Peptides", body: "Notes." }, { actor: OWNER });
-    const { html } = await get(`/p/${page.id}`);
+describe("connecting an agent from the console home page", () => {
+  it("gives the Claude Code MCP command and the CLI commands for this Cairn's own address", async () => {
+    const { html } = await get("/");
     expect(html).toContain(`claude mcp add --transport http cairn ${ORIGIN}/mcp`);
     expect(html).toContain("vscode:mcp/install?");
+    expect(html).toContain("npm install -g @vespassassina/cairncli");
+    expect(html).toContain(`cairn instances add ws_console ${ORIGIN}`);
+    expect(html).toContain("cairn login --instance ws_console");
+  });
+
+  it("does not offer this on every page, only on the home page", async () => {
+    const page = await context.pages.create(context.workspaceId, { title: "Peptides", body: "Notes." }, { actor: OWNER });
+    const { html } = await get(`/p/${page.id}`);
+    expect(html).not.toContain("claude mcp add");
+  });
+
+  it("uses the configured public origin, not the request's own scheme, so a TLS-ending proxy does not turn https into http", async () => {
+    const PUBLIC = "https://cairn.example.com";
+    app = createApp({ context, token: TOKEN, publicOrigin: PUBLIC });
+    const loginResponse = await app.fetch(
+      new Request(`${ORIGIN}/login`, {
+        method: "POST",
+        headers: { origin: PUBLIC, "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ token: TOKEN, next: "/" }),
+      }),
+    );
+    cookie = (loginResponse.headers.get("set-cookie") ?? "").split(";")[0]!;
+    const { html } = await get("/");
+    expect(html).toContain(`claude mcp add --transport http cairn ${PUBLIC}/mcp`);
+    expect(html).toContain(`cairn instances add ws_console ${PUBLIC}`);
+    expect(html).not.toContain(`${ORIGIN}/mcp`);
   });
 });

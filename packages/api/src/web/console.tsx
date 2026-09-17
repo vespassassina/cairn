@@ -456,22 +456,32 @@ const PublishControl: FC<{ page: Page; publishedVia: Page | null }> = ({ page, p
 );
 
 /**
- * Connecting a coding agent to this Cairn's own MCP server, so it can read
- * and write here directly instead of being told the address by hand. Origin
- * comes from the request, not a config value, so the command is right
- * whether this is reached at localhost or a deployed address (ADR-013:
- * MCP, REST and the CLI all reach the same server; this just hands a person
- * the address). Console-only, like Publish: no REST or CLI form, because
- * this sets up the person's own tool, not something an agent does for them.
+ * Connecting a coding agent to this Cairn, either through its MCP server or
+ * through the CLI, so it can read and write here directly instead of being
+ * told the address by hand. Shown once, on the collections home page, not on
+ * every page (ADR-013: MCP, REST and the CLI all reach the same server; this
+ * just hands a person the address). `origin` must be the address people
+ * actually use, not the request's own URL: behind a proxy that ends TLS
+ * (Azure Container Apps, most reverse proxies) the server itself sees plain
+ * http, and a command built from that would tell an agent to connect over
+ * http to a server that only answers https.
  */
-const AgentConnect: FC<{ origin: string }> = ({ origin }) => {
+const ConnectSection: FC<{ origin: string; instanceName: string }> = ({ origin, instanceName }) => {
   const mcpUrl = `${origin}/mcp`;
   const claudeCommand = `claude mcp add --transport http cairn ${mcpUrl}`;
   const vscodeUri = `vscode:mcp/install?${encodeURIComponent(JSON.stringify({ name: "cairn", type: "http", url: mcpUrl }))}`;
+  const cliInstall = "npm install -g @vespassassina/cairncli";
+  const cliRegister = `cairn instances add ${instanceName} ${origin}`;
+  const cliLogin = `cairn login --instance ${instanceName}`;
   return (
-    <>
-      <h3>Open in an agent</h3>
-      <p class="ak-small">Connect a coding agent to this Cairn's MCP server, so it can read and write directly.</p>
+    <section class="cairn-group">
+      <h2>Connect an agent</h2>
+      <p class="ak-small">
+        Either way reaches the same Cairn. MCP is built into Claude Desktop, Claude on the web, and VS Code. The
+        CLI is lighter for Claude Code (about 115 tokens a session, against about 3,100 for MCP) and works from a
+        shell without an MCP client at all.
+      </p>
+      <h3>Via MCP</h3>
       <p class="ak-small">
         <button type="button" class="ak-btn" data-ak-copy={claudeCommand}>
           Copy the Claude Code command
@@ -483,7 +493,24 @@ const AgentConnect: FC<{ origin: string }> = ({ origin }) => {
           Connect to VS Code
         </a>
       </p>
-    </>
+      <p class="ak-small ak-soft">
+        Claude Desktop or Claude on the web: add a custom connector with <span class="ak-mono">{mcpUrl}</span>.
+      </p>
+      <h3>Via CLI</h3>
+      <p class="ak-small">Install the CLI once, then register and sign in to this Cairn:</p>
+      <p class="ak-small ak-mono">{cliInstall}</p>
+      <p class="ak-small ak-mono">{cliRegister}</p>
+      <p class="ak-small ak-mono">{cliLogin}</p>
+      <p class="ak-small">
+        <button type="button" class="ak-btn" data-ak-copy={`${cliInstall}\n${cliRegister}\n${cliLogin}`}>
+          Copy all three
+        </button>
+      </p>
+      <p class="ak-small ak-soft">
+        Other install methods, sync between two Cairns, and Claude Code's skill file: `docs/CLI.md` in the
+        repository.
+      </p>
+    </section>
   );
 };
 
@@ -1086,6 +1113,7 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
             </ul>
           </section>
         ) : null}
+        <ConnectSection origin={publicOrigin ?? new URL(c.req.url).origin} instanceName={instanceName} />
       </Layout>,
     );
   });
@@ -1331,7 +1359,6 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
               </p>
             )}
             <PublishControl page={page} publishedVia={publishedVia} />
-            <AgentConnect origin={new URL(c.req.url).origin} />
             <h3>Page</h3>
             <p class="ak-small ak-mono">{page.id}</p>
           </aside>
