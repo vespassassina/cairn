@@ -87,6 +87,36 @@ describe("cairn", () => {
     expect(stdout).toContain("synonym");
   });
 
+  it("shows a page once, with a count of the passages it did not print (ADR-057, criteria 8, 9)", async () => {
+    stdin = [
+      "## First",
+      "",
+      "zoetropic appears here first.",
+      "",
+      "## Second",
+      "",
+      "zoetropic appears here too.",
+      "",
+      "## Third",
+      "",
+      "zoetropic and more zoetropic.",
+      "",
+      "## Fourth",
+      "",
+      "a fourth zoetropic mention.",
+    ].join("\n");
+    expect(await cairn("create", "--title", "Zoetropic notes")).toBe(0);
+    stdin = null;
+
+    await eventually(async () => {
+      expect(await cairn("search", "zoetropic")).toBe(0);
+      expect(stdout).toContain("more passage");
+    });
+
+    const idLines = stdout.split("\n").filter((line) => /^pg_/.test(line));
+    expect(idLines).toHaveLength(1);
+  });
+
   it("publishes a page and takes it down again, and says where it is readable", async () => {
     const { id, version } = await createLog();
     expect(await cairn("publish", id)).toBe(2);

@@ -187,9 +187,10 @@ describe("page tools", () => {
 
     const found = await callTool("search", { query: "adhesion" });
     expect(found.data["mode"]).toBe("keyword");
-    const hits = found.data["hits"] as Array<Record<string, unknown>>;
-    expect(hits[0]!["page_id"]).toBe(pageId);
-    expect(hits[0]!["heading_path"]).toEqual(["Print log", "Failures"]);
+    const pages = found.data["pages"] as Array<Record<string, unknown>>;
+    expect(pages[0]!["page_id"]).toBe(pageId);
+    const passages = pages[0]!["passages"] as Array<Record<string, unknown>>;
+    expect(passages[0]!["heading_path"]).toEqual(["Print log", "Failures"]);
 
     const read = await callTool("get_page", { page_id: pageId });
     expect(read.data["body"]).toContain("bed adhesion");
@@ -198,9 +199,42 @@ describe("page tools", () => {
 
   it("tells Claude to retry differently when nothing matches", async () => {
     const result = await callTool("search", { query: "zzzznotaword" });
-    expect(result.data["hits"]).toEqual([]);
+    expect(result.data["pages"]).toEqual([]);
     expect(result.data["hint"]).toContain("zzzznotaword");
     expect(result.data["hint"]).toContain("synonyms");
+  });
+
+  it("groups a page's matches together, capped at three passages, and never repeats a page (ADR-057, criteria 8, 9)", async () => {
+    await callTool("create_page", {
+      title: "Zoetropic notes",
+      body: [
+        "## First",
+        "",
+        "zoetropic appears here first.",
+        "",
+        "## Second",
+        "",
+        "zoetropic appears here too.",
+        "",
+        "## Third",
+        "",
+        "zoetropic and more zoetropic.",
+        "",
+        "## Fourth",
+        "",
+        "a fourth zoetropic mention.",
+      ].join("\n"),
+    });
+
+    const found = await callTool("search", { query: "zoetropic" });
+    const pages = found.data["pages"] as Array<Record<string, unknown>>;
+    expect(pages).toHaveLength(1);
+    const passages = pages[0]!["passages"] as unknown[];
+    expect(passages.length).toBeLessThanOrEqual(3);
+    expect(pages[0]!["more_passages"]).toBe(4 - passages.length);
+
+    const ids = pages.map((p) => p["page_id"]);
+    expect(new Set(ids).size).toBe(ids.length);
   });
 
   it("returns a usable error for a page that does not exist", async () => {
@@ -609,9 +643,9 @@ describe("freshness (ADR-028)", () => {
     await callTool("create_page", { title: "Semax", body: "A nootropic heptapeptide, also a nasal spray." });
 
     const found = await callTool("search", { query: "heptapeptide" });
-    const hits = found.data["hits"] as Array<Record<string, unknown>>;
-    expect(hits.find((hit) => hit["page_id"] === cited.data["id"])!["verified_at"]).toBe(cited.data["verified_at"]);
-    expect(hits.find((hit) => hit["page_id"] !== cited.data["id"])).not.toHaveProperty("verified_at");
+    const pages = found.data["pages"] as Array<Record<string, unknown>>;
+    expect(pages.find((page) => page["page_id"] === cited.data["id"])!["verified_at"]).toBe(cited.data["verified_at"]);
+    expect(pages.find((page) => page["page_id"] !== cited.data["id"])).not.toHaveProperty("verified_at");
   });
 });
 

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { Actor, Revision } from "@cairn/core";
-import { budgetList, budgetText, DEFAULT_TOKEN_BUDGET } from "../budget.js";
+import { budgetList, budgetPages, budgetText, DEFAULT_TOKEN_BUDGET } from "../budget.js";
 import type { AppContext } from "../context.js";
 import {
   tableJson,
@@ -20,6 +20,7 @@ import {
   revisionDetail,
   revisionSummary,
   rowJson,
+  searchPages,
   sourceChangesJson,
   verifiedTimes,
   toFieldDefs,
@@ -126,40 +127,47 @@ export function registerTools(server: McpServer, context: AppContext, actor: Act
     {
       title: "Search pages",
       description:
-        "Search page content by keyword, and by meaning for English text when embeddings are enabled. The result's `mode` field says which one answered: `hybrid` (keyword and meaning) or `keyword` (meaning unavailable); it is not a setting you choose. Returns page ids, heading paths and snippets, not whole pages: read a page with get_page once you know which one you want. " +
+        "Search page content by keyword, and by meaning for English text when embeddings are enabled. The result's `mode` field says which one answered: `hybrid` (keyword and meaning) or `keyword` (meaning unavailable); it is not a setting you choose. A page appears once, with its best matching passages attached, not whole pages: read a page with get_page once you know which one you want. `limit` counts pages, not passages. " +
         "A keyword match needs most of your words on the page, in any form (tendon, tendons); filler words are ignored. A match by meaning needs none of them. " +
         "No results means nothing close: try other words, or a single unusual one, before concluding nothing exists.",
       inputSchema: {
         query: z.string().min(1).describe("Words to search for."),
-        limit: z.number().int().min(1).max(50).optional(),
+        limit: z.number().int().min(1).max(50).optional().describe("Pages to return, not passages."),
         cursor: z.string().optional().describe("From a previous truncated result."),
       },
     },
     async ({ query, limit, cursor }): Promise<ToolResult> => {
       try {
-        const result = await context.search.search(ws, {
+        const result = await searchPages(context, {
           query,
           limit: limit ?? 10,
           cursor: cursor ?? null,
         });
-        const budgeted = budgetList(result.hits, (hit) =>
-          `${hit.headingPath.join(" > ")}${hit.snippet}`,
+        // The budget is spent on distinct pages first, then on a page's
+        // further passages, so truncation drops a page's depth before it
+        // drops a page (ADR-057, hard rule 6).
+        const budgeted = budgetPages(result.pages, (page) =>
+          page.passages.map((p) => `${p.headingPath.join(" > ")}${p.snippet}`).join(""),
         );
-        const verified = await verifiedTimes(context, budgeted.items.map((hit) => hit.pageId));
+        const verified = await verifiedTimes(context, budgeted.pages.map((page) => page.pageId));
         return json({
           mode: result.mode,
-          hits: budgeted.items.map((hit) => ({
-            page_id: hit.pageId,
-            heading_path: hit.headingPath,
-            snippet: hit.snippet,
-            score: Number(hit.score.toFixed(4)),
+          pages: budgeted.pages.map((page) => ({
+            page_id: page.pageId,
+            score: Number(page.score.toFixed(4)),
+            passages: page.passages.map((passage) => ({
+              heading_path: passage.headingPath,
+              snippet: passage.snippet,
+              score: Number(passage.score.toFixed(4)),
+            })),
+            more_passages: page.morePassages,
             // Only when set, so a wiki nobody has verified costs nothing more.
-            verified_at: verified.get(hit.pageId) ?? undefined,
+            verified_at: verified.get(page.pageId) ?? undefined,
           })),
           truncated: result.truncated || budgeted.truncated,
           cursor: result.cursor,
           hint:
-            budgeted.items.length === 0
+            budgeted.pages.length === 0
               ? `Nothing matched "${query}". Try synonyms, a shorter query, or one distinctive word.`
               : undefined,
         });

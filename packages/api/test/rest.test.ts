@@ -214,21 +214,84 @@ describe("pages", () => {
 
   it("finds a page by search, eventually", async () => {
     await createBuildLog();
-    const hits = await eventually(async () => {
+    const pages = await eventually(async () => {
       const { json } = await call("/search?q=firmware");
-      const found = json["hits"] as Array<{ page_id: string }>;
+      const found = json["pages"] as Array<{ page_id: string }>;
       expect(found.length).toBeGreaterThan(0);
       return found;
     });
-    expect(hits[0]!.page_id).toMatch(/^pg_/);
+    expect(pages[0]!.page_id).toMatch(/^pg_/);
     expect((await call("/search")).status).toBe(400);
   });
 
   it("names the query and suggests a next move when nothing matches (fault 6, console-and-search-polish)", async () => {
     const { json } = await call("/search?q=zzznosuchword");
-    expect(json["hits"]).toEqual([]);
+    expect(json["pages"]).toEqual([]);
     expect(json["hint"]).toContain("zzznosuchword");
     expect(json["hint"]).toContain("synonym");
+  });
+
+  it("groups a page's matches together, capped at three passages, and never repeats a page (ADR-057, criteria 8, 9)", async () => {
+    await call("/pages", {
+      method: "POST",
+      body: {
+        title: "Zoetropic notes",
+        body: [
+          "## First",
+          "",
+          "zoetropic appears here first.",
+          "",
+          "## Second",
+          "",
+          "zoetropic appears here too.",
+          "",
+          "## Third",
+          "",
+          "zoetropic and more zoetropic.",
+          "",
+          "## Fourth",
+          "",
+          "a fourth zoetropic mention.",
+        ].join("\n"),
+      },
+    });
+
+    const pages = await eventually(async () => {
+      const { json } = await call("/search?q=zoetropic");
+      const found = json["pages"] as Array<Record<string, unknown>>;
+      expect(found.length).toBeGreaterThan(0);
+      return found;
+    });
+
+    expect(pages).toHaveLength(1);
+    const page = pages[0]!;
+    const passages = page["passages"] as unknown[];
+    expect(passages.length).toBeLessThanOrEqual(3);
+    expect(page["more_passages"]).toBe(4 - passages.length);
+
+    const ids = pages.map((p) => p["page_id"]);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it("returns exactly as many pages as hold a topic, and says that is all there was (ADR-057, criterion 7)", async () => {
+    for (const title of ["Alpha", "Beta", "Gamma"]) {
+      await call("/pages", {
+        method: "POST",
+        body: { title, body: `# ${title}\n\nexactly3demoterm appears on this page.` },
+      });
+    }
+
+    const pages = await eventually(async () => {
+      const { json } = await call("/search?q=exactly3demoterm");
+      const found = json["pages"] as unknown[];
+      expect(found.length).toBeGreaterThan(0);
+      return found;
+    });
+
+    expect(pages).toHaveLength(3);
+    const { json } = await call("/search?q=exactly3demoterm");
+    expect(json["truncated"]).toBe(false);
+    expect(json["cursor"]).toBeNull();
   });
 
   it("keeps history, with a diff per version", async () => {
@@ -526,13 +589,13 @@ describe("freshness (ADR-028)", () => {
     expect(revision.json["verified"]).toBe(true);
     expect((await call(`/pages/${id}?format=markdown`)).text).toContain(`verified: ${String(checked.json["verified_at"])}`);
 
-    const hits = await eventually(async () => {
+    const pages = await eventually(async () => {
       const { json } = await call("/search?q=secretagogue");
-      const found = json["hits"] as Array<Record<string, unknown>>;
+      const found = json["pages"] as Array<Record<string, unknown>>;
       expect(found.length).toBeGreaterThan(0);
       return found;
     });
-    expect(hits[0]!["verified_at"]).toBe(checked.json["verified_at"]);
+    expect(pages[0]!["verified_at"]).toBe(checked.json["verified_at"]);
 
     const kept = await call(`/pages/${id}`, {
       method: "PUT",

@@ -140,21 +140,6 @@ export function runSearchIndexConformance(
       });
     });
 
-    it("shows each matching page before a second chunk of any page", async () => {
-      await index.replaceChunksForPage(WS, "pg_many", [
-        chunk("pg_many", 0, "cooling duct cooling duct fan shroud"),
-        chunk("pg_many", 1, "cooling duct again, cooling duct print"),
-        chunk("pg_many", 2, "more cooling duct notes, cooling duct"),
-      ]);
-      await index.replaceChunksForPage(WS, "pg_one", [
-        chunk("pg_one", 0, "a single cooling duct remark"),
-      ]);
-      await eventually(async () => {
-        const result = await index.search(WS, { query: "cooling duct", limit: 2 });
-        expect(new Set(result.hits.map((h) => h.pageId))).toEqual(new Set(["pg_many", "pg_one"]));
-      });
-    });
-
     it("scopes results to one workspace", async () => {
       const result = await index.search("ws_elsewhere", { query: "adhesion" });
       expect(result.hits).toEqual([]);

@@ -351,7 +351,7 @@ export class SqliteSearchIndex implements SearchIndex {
       }
     }
 
-    const records = diversify(titleFirst(ranked, options.query)).slice(offset, offset + limit + 1);
+    const records = titleFirst(ranked, options.query).slice(offset, offset + limit + 1);
     const truncated = records.length > limit;
     const window = truncated ? records.slice(0, limit) : records;
 
@@ -683,10 +683,6 @@ function chunkRecord(row: ChunkRow | undefined): HitRecord | null {
   };
 }
 
-/**
- * Each page's best chunk first, then the rest, so one page that holds every
- * term cannot fill the whole result and hide the next best page.
- */
 /** The page whose title is exactly the query, first, its chunks in their order (core `sameWords`). */
 function titleFirst(ranked: HitRecord[], query: string): HitRecord[] {
   const named = ranked.find((record) => {
@@ -695,17 +691,6 @@ function titleFirst(ranked: HitRecord[], query: string): HitRecord[] {
   });
   if (!named) return ranked;
   return [...ranked.filter((r) => r.page_id === named.page_id), ...ranked.filter((r) => r.page_id !== named.page_id)];
-}
-
-function diversify(ranked: HitRecord[]): HitRecord[] {
-  const seen = new Set<string>();
-  const firsts: HitRecord[] = [];
-  const rest: HitRecord[] = [];
-  for (const record of ranked) {
-    (seen.has(record.page_id) ? rest : firsts).push(record);
-    seen.add(record.page_id);
-  }
-  return [...firsts, ...rest];
 }
 
 function encodeOffset(offset: number): string {

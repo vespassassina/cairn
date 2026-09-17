@@ -45,6 +45,16 @@ export interface EvalReport {
   scored: number;
   unscored: number;
   recall: number;
+  /**
+   * Mean count of distinct pages among the top k chunk hits, across every
+   * query including the absent ones (ADR-057 decision 6). Search groups
+   * results by page above this index (`searchPages` in operations.ts, which
+   * this raw per-backend measurement deliberately does not use, per ADR-057
+   * consequence 3), so this is what an agent would actually have to sift
+   * through before that grouping: how many different pages its top k chunk
+   * matches actually came from.
+   */
+  meanDistinctPages: number;
   /** Queries with no answer, and how many of them returned nothing. */
   absent: number;
   absentEmpty: number;
@@ -129,6 +139,7 @@ export async function runEval(
   let absent = 0;
   let absentEmpty = 0;
   let mode = "keyword";
+  let totalDistinctPages = 0;
 
   for (const query of queries) {
     const result = await context.search.search(context.workspaceId, {
@@ -143,6 +154,7 @@ export async function runEval(
     for (const hit of result.hits) {
       if (!pages.includes(hit.pageId)) pages.push(hit.pageId);
     }
+    totalDistinctPages += pages.length;
 
     if (query.absent) {
       absent += 1;
@@ -180,6 +192,7 @@ export async function runEval(
     scored,
     unscored: queries.length - scored - absent,
     recall: scored === 0 ? 0 : hits / scored,
+    meanDistinctPages: queries.length === 0 ? 0 : totalDistinctPages / queries.length,
     absent,
     absentEmpty,
     results,
@@ -194,6 +207,7 @@ export function formatReport(report: EvalReport): string {
   lines.push(
     `recall@${report.k}   ${report.scored === 0 ? "n/a" : report.recall.toFixed(2)}`,
   );
+  lines.push(`pages@${report.k}     ${report.meanDistinctPages.toFixed(2)} distinct pages, mean across all queries`);
   if (report.absent > 0) {
     lines.push(`no answer  ${report.absentEmpty} of ${report.absent} returned nothing, as they should`);
   }

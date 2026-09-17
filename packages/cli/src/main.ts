@@ -939,12 +939,17 @@ export async function run(argv: string[], io: Io): Promise<number> {
           `/search${query({ q: words, limit: flags.limit, cursor: flags.cursor })}`,
         );
         out(json, () => {
-          const hits = list(json?.["hits"]);
-          if (hits.length === 0) return `no matches for "${words}". Try a synonym, or one distinctive word.\n`;
-          const lines = hits.map(
-            (hit) =>
-              `${String(hit["page_id"])}  ${(hit["heading_path"] as string[]).join(" > ")}\n    ${String(hit["snippet"])}`,
-          );
+          const pages = list(json?.["pages"]);
+          if (pages.length === 0) return `no matches for "${words}". Try a synonym, or one distinctive word.\n`;
+          const lines = pages.map((page) => {
+            const passages = list(page["passages"]);
+            const shown = passages
+              .map((passage) => `    ${(passage["heading_path"] as string[]).join(" > ")}\n      ${String(passage["snippet"])}`)
+              .join("\n");
+            const more = Number(page["more_passages"] ?? 0);
+            const moreLine = more > 0 ? `\n    (${more} more passage${more === 1 ? "" : "s"} on this page)` : "";
+            return `${String(page["page_id"])}\n${shown}${moreLine}`;
+          });
           const more = json?.["cursor"] ? `\nmore: --cursor ${String(json["cursor"])}` : "";
           return `${lines.join("\n")}${more}\n`;
         });

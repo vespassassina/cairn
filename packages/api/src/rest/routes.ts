@@ -23,6 +23,7 @@ import {
   rowJson,
   sourceChangesJson,
   verifiedTimes,
+  searchPages,
   writeRow,
 } from "../operations.js";
 import { workspaceSummary } from "../mcp/summary.js";
@@ -337,25 +338,32 @@ export function restRoutes(context: AppContext, callerFor: CallerFor): Hono {
   api.get("/search", async (c) => {
     const query = c.req.query("q")?.trim();
     if (!query) throw new BadRequest("Pass the words to search for as q.", [{ field: "q", message: "required" }]);
-    const result = await context.search.search(ws, {
+    const result = await searchPages(context, {
       query,
       limit: limitParam(c, 10),
       cursor: c.req.query("cursor") ?? null,
     });
-    const verified = await verifiedTimes(context, result.hits.map((hit) => hit.pageId));
+    const verified = await verifiedTimes(context, result.pages.map((page) => page.pageId));
     return c.json({
       mode: result.mode,
-      hits: result.hits.map((hit) => ({
-        page_id: hit.pageId,
-        heading_path: hit.headingPath,
-        snippet: hit.snippet,
-        score: Number(hit.score.toFixed(4)),
-        verified_at: verified.get(hit.pageId) ?? null,
+      // A page appears once, its best passage leading and up to two more
+      // attached to it, rather than each passage filling its own slot
+      // (ADR-057).
+      pages: result.pages.map((page) => ({
+        page_id: page.pageId,
+        score: Number(page.score.toFixed(4)),
+        passages: page.passages.map((passage) => ({
+          heading_path: passage.headingPath,
+          snippet: passage.snippet,
+          score: Number(passage.score.toFixed(4)),
+        })),
+        more_passages: page.morePassages,
+        verified_at: verified.get(page.pageId) ?? null,
       })),
       truncated: result.truncated,
       cursor: result.cursor,
       hint:
-        result.hits.length === 0
+        result.pages.length === 0
           ? `Nothing matched "${query}". Try synonyms, a shorter query, or one distinctive word.`
           : undefined,
     });

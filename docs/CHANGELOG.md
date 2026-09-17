@@ -6,6 +6,24 @@ Entries link to the ADR when there is one. A change of direction that has no ADR
 
 ## 2026-09-17
 
+### Search results are grouped by page, not by chunk (ADR-057)
+
+Search used to return one result slot per matching chunk. A page with every term repeated across several sections could fill most of a small result list with itself, `diversify()` in `packages/adapter-sqlite/src/search-index.ts` only approximated grouping (each page's first chunk before any page's second), and a limit counted chunks rather than the pages an agent actually cares about finding. ADR-057 replaces that heuristic with real grouping one layer above the index.
+
+`SearchIndex.search()` (the port in `packages/core/src/ports/search-index.ts`) is unchanged: it still returns raw chunk hits, ranked the same way as before, just without the `diversify()` reordering, which is deleted. `titleFirst()` (ADR-025, the query-equals-the-title boost) stays. Above it, `packages/api/src/operations.ts` gained `groupIntoPages()`, a pure function that turns chunk hits into one entry per page, its best passage leading with up to two more attached (a count of the rest travels alongside), and `searchPages()`, which re-runs the chunk-level query in growing batches (deterministic, so this is safe) until it has enough distinct pages to answer the requested limit, or gives up after 500 chunks. A page-level cursor just remembers how many pages were already delivered; the next call re-queries and skips that many.
+
+REST's `/search` and the MCP `search` tool both call `searchPages()` and return the same new shape: `pages`, each with `page_id`, `score`, `passages` (at most three, each with `heading_path`, `snippet`, `score`), `more_passages`, and `verified_at`; `mode`, `truncated`, `cursor` and the empty-result `hint` are unchanged. The CLI's `search` command, a thin HTTP client with no logic of its own (hard rule 15), now prints each page once with its passages under it and a "(N more passages on this page)" line when there are more than three. MCP additionally spends its token budget on distinct pages before depth: `budgetPages()` (`packages/api/src/budget.ts`) fits as many pages as possible priced at just their lead passage, then spends whatever budget is left restoring full passages to already-included pages in rank order, so a third passage on an early page is dropped before a whole later page is.
+
+The eval harness (`packages/api/src/cli/eval.ts`) was already deduplicating the raw top-k chunk hits into a page list for its own recall computation, unaffected by any of the above (ADR-057 consequence 3: the eval and rebuild paths want raw chunks and keep getting them). Added a second metric next to `recall@5`: `pages@5`, the mean number of distinct pages found among the top k chunk hits across every query, printed as `pages@${k}` in `formatReport`.
+
+Contract tests added: no page repeats in a result list, and at most three passages are attached with a correct `more_passages` count, one test per surface (`packages/api/test/rest.test.ts`, `packages/api/test/mcp.test.ts`, `packages/cli/test/cli.test.ts`); a query held by exactly three pages returns exactly three, not truncated. The conformance suite's `diversify()`-era test ("shows each matching page before a second chunk of any page") was removed from `packages/core/src/testing/search-index-conformance.ts`: the guarantee it checked now lives one layer up, not in the port every adapter implements.
+
+`pnpm eval`, before (this commit's parent) and after, SQLite backend: keyword recall@5 0.88 to 0.88, hybrid recall@5 0.97 to 0.97, both unchanged as expected, since removing `diversify()` only reorders chunks within a query, and search still returns the same pages, just found by an actual grouping pass instead of an approximation. The new `pages@5` metric has no prior value to compare against: 1.27 (keyword), 2.02 (hybrid).
+
+`packages/adapter-sqlite/src/search-index.ts`, `packages/api/src/operations.ts`, `packages/api/src/budget.ts`, `packages/api/src/rest/routes.ts`, `packages/api/src/mcp/tools.ts`, `packages/cli/src/main.ts`, `packages/api/src/cli/eval.ts`, `packages/core/src/testing/search-index-conformance.ts`. No LESSONS entry: nothing here misled anyone or broke; it replaces an intentional but incomplete heuristic with the design ADR-057 already decided on.
+
+Verification: `pnpm build`, `pnpm typecheck`, full test suite (719 passed, 1 skipped), `pnpm smoke:cli`, `pnpm eval` before and after, all green.
+
 ### The console works on a phone: one column, a collapsed tree, no sideways scrolling (ADR-056)
 
 The review of 2026-09-16 found the console unusable on a phone: a fixed two-column grid, a page tree always expanded and taking the first screenful, 13px tap targets, and long titles or wide tables forcing horizontal scroll. ADR-056 called for a single-column layout below 700px with no client-side script, since the console (ADR-009) is server-rendered only.

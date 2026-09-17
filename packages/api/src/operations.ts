@@ -16,6 +16,8 @@ import {
   type Revision,
   type WriteContext,
   type Row,
+  type SearchHit,
+  type SearchMode,
 } from "@cairn/core";
 import type { AppContext } from "./context.js";
 
@@ -142,6 +144,138 @@ export async function verifiedTimes(
     if (page) times.set(id, page.verifiedAt);
   }
   return times;
+}
+
+/** One page's matching passages, best first, as a page-grouped search result names it (ADR-057). */
+export interface PagePassage {
+  headingPath: string[];
+  snippet: string;
+  score: number;
+}
+
+export interface PageHit {
+  pageId: string;
+  /** The best passage's score, since that is what ranked the page. */
+  score: number;
+  passages: PagePassage[];
+  /** Passages that matched but were not attached, beyond the cap of 3. */
+  morePassages: number;
+}
+
+export interface PagedSearchResult {
+  mode: SearchMode;
+  pages: PageHit[];
+  truncated: boolean;
+  cursor: string | null;
+}
+
+const MAX_PASSAGES_PER_PAGE = 3;
+
+/**
+ * A page appears once, its best passage leading and up to two more attached
+ * to it, in the order chunk hits already arrived in (ADR-057). The internal
+ * index keeps returning chunk hits; this is the layer above it that groups
+ * them, so callers that want raw chunks (rebuild, eval) are unaffected.
+ */
+export function groupIntoPages(hits: readonly SearchHit[]): PageHit[] {
+  const order: string[] = [];
+  const byPage = new Map<string, SearchHit[]>();
+  for (const hit of hits) {
+    if (!byPage.has(hit.pageId)) {
+      byPage.set(hit.pageId, []);
+      order.push(hit.pageId);
+    }
+    byPage.get(hit.pageId)!.push(hit);
+  }
+  return order.map((pageId) => {
+    const chunks = byPage.get(pageId)!;
+    return {
+      pageId,
+      score: chunks[0]!.score,
+      passages: chunks.slice(0, MAX_PASSAGES_PER_PAGE).map((chunk) => ({
+        headingPath: chunk.headingPath,
+        snippet: chunk.snippet,
+        score: chunk.score,
+      })),
+      morePassages: Math.max(0, chunks.length - MAX_PASSAGES_PER_PAGE),
+    };
+  });
+}
+
+/**
+ * Each round asks the index for this many more chunks; the adapter's own cap
+ * (100 in adapter-sqlite) already bounds a single call, so this just matches
+ * that ceiling instead of guessing a smaller number and needing more rounds.
+ */
+const CHUNKS_PER_ROUND = 100;
+/**
+ * Safety cap on how many chunk-level rounds one page-level search issues.
+ * Five rounds of 100 chunks (500 chunks) comfortably covers any query that
+ * has enough distinct pages to answer a reasonable page limit; beyond that,
+ * a query is either too broad to be useful or the corpus itself is unusual,
+ * and either way it is better to say "no more" than to keep querying.
+ */
+const MAX_SEARCH_ROUNDS = 5;
+
+function encodePageCursor(skip: number): string {
+  return Buffer.from(`p:${skip}`, "utf8").toString("base64url");
+}
+
+function decodePageCursor(cursor: string): number {
+  const decoded = Buffer.from(cursor, "base64url").toString("utf8");
+  const match = /^p:(\d+)$/.exec(decoded);
+  if (!match) {
+    throw new ValidationError([
+      { field: "cursor", message: "not a valid search cursor. Search again without a cursor to start over." },
+    ]);
+  }
+  return Number(match[1]);
+}
+
+/**
+ * Search grouped into pages (ADR-057): a limit counts pages, not chunks, and
+ * a page's further passages are attached to it rather than filling their own
+ * slots. Re-runs the chunk-level query from scratch, in growing batches,
+ * since `SearchIndex.search` is deterministic and gives no other way to know
+ * how many chunks make up N distinct pages.
+ */
+export async function searchPages(
+  context: AppContext,
+  options: { query: string; limit?: number; cursor?: string | null; mode?: SearchMode },
+): Promise<PagedSearchResult> {
+  const limit = options.limit ?? 10;
+  const skip = options.cursor ? decodePageCursor(options.cursor) : 0;
+  const needed = skip + limit;
+
+  let hits: SearchHit[] = [];
+  let pages = groupIntoPages(hits);
+  let mode: SearchMode = "keyword";
+  let chunkCursor: string | null = null;
+  let round = 0;
+
+  while (pages.length <= needed && round < MAX_SEARCH_ROUNDS) {
+    const result = await context.search.search(context.workspaceId, {
+      query: options.query,
+      limit: CHUNKS_PER_ROUND,
+      cursor: chunkCursor,
+      ...(options.mode === undefined ? {} : { mode: options.mode }),
+    });
+    mode = result.mode;
+    hits = [...hits, ...result.hits];
+    pages = groupIntoPages(hits);
+    round += 1;
+    if (!result.truncated) break;
+    chunkCursor = result.cursor;
+  }
+
+  const window = pages.slice(skip, needed);
+  const truncated = pages.length > needed;
+  return {
+    mode,
+    pages: window,
+    truncated,
+    cursor: truncated ? encodePageCursor(needed) : null,
+  };
 }
 
 /** A compact unified-style diff: only changed lines and a little context. */
