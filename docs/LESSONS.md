@@ -13,6 +13,13 @@ Each entry answers four questions:
 
 ## 2026-09-17
 
+### A version conflict at the terminal quoted REST's own words back at itself
+
+1. **What happened.** `cairn edit` on a stale page printed `error: version_conflict: Page changed since you read it. Read it again, merge your change, and retry with the new ETag in If-Match.` A person at a terminal has no ETag and no If-Match; those are REST concepts, not CLI ones, and the CLI had never sent a header by that name.
+2. **Cause.** `describeError()` in `packages/api/src/operations.ts` builds one message for every surface, with the surface's own wording spliced in through an `ErrorWording.conflict` string (hard rule 14: shared logic in `operations.ts`, translated per surface). REST's `WORDING.conflict` in `packages/api/src/rest/routes.ts` names ETag and If-Match because that is accurate there, but the CLI's error handler was printing `error.message` verbatim, so REST's own wording reached a terminal unchanged.
+3. **Fix.** `packages/cli/src/main.ts`'s catch block now treats `version_conflict` specially: it keeps only the first sentence of the server's message (what happened, via `error.message.split(". ")[0]`) and appends its own next step in the CLI's own words, naming the current version from `error.body.current_version` and telling the person to read the page again, merge, and retry, no ETag or If-Match anywhere. Tested in `packages/cli/test/cli.test.ts`.
+4. **Lesson.** A shared error-description function that takes per-surface wording (hard rule 14) still lets one surface's words leak into another's output if a caller prints the assembled message wholesale instead of picking apart what it actually needs. When a surface has its own vocabulary (a terminal has no headers; REST does), that surface's error handler must reconstruct its own sentence from the structured fields (`code`, `body.current_version`), not just relay `message`.
+
 ### Overriding `display` on a closed `<details>`'s content did nothing in Chromium
 
 1. **What happened.** Building the phone layout's collapsible page tree (ADR-056), a CSS rule set `display:block` on `.cairn-tree` inside a closed `<details class="cairn-tree-toggle">`, meant to keep the tree visible above the 700px breakpoint regardless of the `<details>`'s own open state. `getComputedStyle` on the element confirmed `display:block` and `visibility:visible`, yet the tree rendered as an empty column in a live browser check: the "Theme check" page's own eyebrow link never appeared.
