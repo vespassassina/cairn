@@ -79,6 +79,9 @@ const CAIRN_CSS = `
   .cairn-rail{ grid-column:1 }
   .cairn-top .ak-input{ min-width:0; width:100% }
   .cairn-tree,.cairn-rail{ position:static; max-height:none; overflow:visible }
+  /* artifactkit's .ak-pagehead is flex-nowrap; at this width the title and
+     the Edit/History buttons together no longer fit one row (ADR-056). */
+  .ak-pagehead{ flex-wrap:wrap }
   .cairn-tree-toggle > summary{
     display:flex; align-items:center; cursor:pointer; min-height:44px;
     font-size:13px; font-weight:600;

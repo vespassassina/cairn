@@ -14,9 +14,11 @@ The review of 2026-09-16 found the console unusable on a phone: a fixed two-colu
 
 Making the tree's visibility survive a closed `<details>` surfaced a genuine CSS bug, written up in `docs/LESSONS.md` today: Chromium hides closed `<details>` content through an internal `::details-content` box, not by setting `display:none` on the children, so the first version of this fix looked right in `getComputedStyle` but rendered as an empty column. Fixed by also overriding `content-visibility` on that pseudo-element, scoped above the breakpoint so the tree still defaults to closed on the phone layout itself.
 
-`packages/api/src/web/assets.ts`, `packages/api/src/web/console.tsx`, tested in `packages/api/test/console.test.ts` (acceptance criteria 3 and 4). No LESSONS entry required by criterion 19 (not one of the eight numbered faults), but one was added anyway per coding style rule 5, since it was a real bug that misled a `getComputedStyle` check.
+A second overflow turned up the same way, live in a browser rather than in a test: `.ak-pagehead` (artifactkit) is `display:flex; flex-wrap:nowrap`, so once the title could shrink (`min-width:0`, added for wrapping long titles) the Edit and History buttons no longer fit beside it below 700px and pushed 24px past the viewport edge. Fixed with `.ak-pagehead{ flex-wrap:wrap }` inside the phone media query, so the buttons drop to their own row instead.
 
-Verification: `pnpm build`, `pnpm typecheck`, full test suite (715 passed), `pnpm smoke:cli`, live check in a browser at 375px and desktop widths, all green.
+`packages/api/src/web/assets.ts`, `packages/api/src/web/console.tsx`, tested in `packages/api/test/console.test.ts` (acceptance criteria 3 and 4). Criteria 1 to 3 (no horizontal scroll at 375, 320 and 1280px across all five views) were checked live against a running console rather than by an automated test, since jsdom does not compute real layout: `document.documentElement.scrollWidth` measured against `clientWidth` for the collections, page, search, tables and freshness views at each width, all equal (no overflow) after the pagehead fix. No LESSONS entry required by criterion 19 (not one of the eight numbered faults), but one was added anyway per coding style rule 5, since the `<details>` bug was a real bug that misled a `getComputedStyle` check.
+
+Verification: `pnpm build`, `pnpm typecheck`, full test suite (715 passed), `pnpm smoke:cli`, live check in a browser at 320px, 375px and 1280px across all five views, all green.
 
 ### The console footer now shows the instance, page count and last backup (ADR-056/057, fault 8)
 
