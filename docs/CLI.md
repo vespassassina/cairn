@@ -262,6 +262,16 @@ cairn sync http://localhost:8787 https://your-address --every 5m  keep syncing, 
 6. **Tables are never deleted by sync;** it warns instead.
 7. **`--every`** keeps it running, at least 30 seconds apart, on a machine that stays on. A failed run is reported and tried again next time. Each run reads everything from both sides, which for a personal wiki takes about a second, plus the cold start when a Cairn on Azure was asleep. Syncing more often than a Cairn on Azure's idle time keeps it awake, which costs more (`docs/DEPLOY-AZURE.md`, "Cold starts").
 
+## Which server a command would use: `cairn server`
+
+`cairn server` prints the one address the next command would go to: the same resolution every command uses (`--instance`, then `CAIRN_URL`, then the first registered instance that answers, then `http://localhost:8787`), and nothing else. Useful to open the console for review, or to hand the address to a script:
+
+```
+open "$(cairn server)"
+```
+
+`cairn instances`, below, lists every Cairn registered, not only the one that would be used next.
+
 ## Several Cairns as one: instances
 
 Register each Cairn you use by name, and the CLI treats them as one: your laptop first, then Azure, then your own server, say (ADR-029). Each is then a backup of the others, and when one is down, another serves.

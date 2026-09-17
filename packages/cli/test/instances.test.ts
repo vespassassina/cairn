@@ -229,6 +229,23 @@ describe("choosing an instance", () => {
     expect(stderr).toContain("cairn login --instance <name>");
   });
 
+  it("cairn server prints the address the next command would use", async () => {
+    // Same resolution as every other command, laptop first while it answers,
+    // so this never claims an address other than the one about to be used.
+    await register();
+    expect(await cairn("server")).toBe(0);
+    expect(stdout).toBe(`${LAPTOP}\n`);
+    expect(seen.some((url) => url.startsWith(CLOUD))).toBe(false);
+
+    down.add(LAPTOP);
+    expect(await cairn("server")).toBe(0);
+    expect(stdout).toBe(`${CLOUD}\n`);
+    expect(stderr).toContain(`using cloud (${CLOUD}): laptop did not answer`);
+
+    expect(await cairn("server", "--instance", "cloud")).toBe(0);
+    expect(stdout).toBe(`${CLOUD}\n`);
+  });
+
   it("takes -i as the short form of --instance", async () => {
     await register();
     await contexts[CLOUD]!.pages.create(contexts[CLOUD]!.workspaceId, { title: "In the cloud", body: "x" }, BY);

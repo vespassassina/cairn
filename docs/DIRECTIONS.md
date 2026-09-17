@@ -13,6 +13,19 @@ Rules:
 
 ## 2026-09-17
 
+### Configure Claude to use Cairn, a quick way to see which server a command uses, and a review of what editing and sharing a page already supports
+
+> "commit, push, deploy and test live environment. also make sure my claude is configured to use cairn (local that syncs to remote). also via cli i can ask cairn --server and it spits the local server running. if i run cairn --servers then it spits all http servers he knows about (the api can return the address of own server). for the user to click and open the wiki for review. also did we implement more types of pages/data ? is it easy to modify the pages, removing, adding, annotating ? is it easy to add a button on any page to link back to my agent for edits ... or a share button to send the link to somebody and set the page as public (only the page or the subtree can be shared and published). adding a pdf button to export to pdf, again selecting just the page or the whole subtree"
+
+Several asks in one message, landed differently:
+
+1. **Commit and push:** done, this commit.
+2. **Deploy:** not done. Deploys are the owner's to run, never the agent's (standing constraint); `deploy/azure/.cairn-deploy.env` is also never read by the agent. Given the exact command instead: `CAIRN_IMAGE=ghcr.io/vespassassina/cairn:edge deploy/azure/deploy.sh`.
+3. **Test the live environment:** the deployed app's public `/health` was checked (read-only, no credentials) and answered healthy, still on the digest last deployed; today's commits are not live until a redeploy runs.
+4. **Claude configured to use Cairn:** it was not configured at all. Added with `claude mcp add --transport http --scope user cairn http://localhost:8787/mcp`, matching `README.md`. The local server was started for this session to confirm it answers; syncing to Azure needs `cairn login --instance azure` first, which the agent will not run (a credential action). Registered instances (`laptop`, `azure`) already existed from an earlier session; no recurring `cairn sync install` job exists yet.
+5. **`cairn --server` / `--servers`:** `cairn instances` already lists every registered address (the `--servers` half). The other half, which one a command would use right now, did not exist: added as `cairn server`.
+6. **More page/data types, easy editing, an agent-edit button, a share button, a PDF button:** answered in chat rather than built blind, since some already exist and the rest are real design decisions. Findings: still two data types, pages and tables; editing (create, append, replace-section, write, delete, move, with `--source` and `--verified`) is already there on all three doors (CLI, REST, console); a share/publish button already exists (`cairn publish`, ADR-032, page or subtree, no sign-in, owner-only by design). Not yet implemented: a button to open a page in a coding agent with the chat prepopulated, and a PDF export button (page or subtree). Both need a design decision before building.
+
 ### Run the write-loss test, then fix or minimise it, and do two of the three proposals
 
 > "run the write loss test, then propose fixes or ways to minimize impact and recover"

@@ -6,6 +6,10 @@ Entries link to the ADR when there is one. A change of direction that has no ADR
 
 ## 2026-09-17
 
+### `cairn server`: which address a command would use, for a person to open
+
+The owner asked, while reviewing what Cairn already does, for a quick way to get the address of the Cairn a command would actually reach, to open its console in a browser. `cairn instances` already lists everything registered, but not which one would be picked right now among several. `cairn server` runs the exact same resolution every command already uses (`--instance`, `CAIRN_URL`, then the first registered instance that answers) and prints only the address, on its own line, so a terminal that linkifies URLs makes it one click.
+
 ### ADR-020's write-loss window, measured, plus a regression test and a staleness signal
 
 The first real numbers for the question ADR-020 deferred: run locally against a `file://` Litestream replica, using the real `docker/start.sh` entrypoint, the real pinned Litestream 0.5.17 binary and the real `recover.mjs`, so nothing touched the live Azure deployment or its credentials. A graceful stop (SIGTERM, the shape a real container orchestrator uses) lost nothing across every run: SQLite's checkpoint on close, added for the 2026-09-15 outage (`docs/LESSONS.md`, ADR-046), leaves Litestream a finished file to ship. A hard kill (SIGKILL, an OOM or crash) lost only the writes made in roughly the last 840-930ms, bounded by Litestream's default one-second sync interval, and lost nothing at all once 2 seconds had passed since the last write.

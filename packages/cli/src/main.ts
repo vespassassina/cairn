@@ -162,6 +162,10 @@ Trusted Cairns: a local list of others this Cairn's owner trusts
       to review, never auto-trusted: run cairn trust on the ones worth it
 
 Several Cairns: a laptop and a cloud copy, say, kept as one
+  cairn server                                    the address this command would use right now, to open
+                                                  its console: same resolution as every other command
+                                                  (--instance, CAIRN_URL, then the first registered
+                                                  instance that answers)
   cairn instances                                 the ones registered, in the order commands try them
   cairn instances add <name> <url> [--first] [--start "command"]
   cairn instances remove <name>
@@ -645,6 +649,16 @@ export async function run(argv: string[], io: Io): Promise<number> {
   });
   const out = (json: Json | null, text: () => string) =>
     io.stdout(flags.json ? `${JSON.stringify(json, null, 2)}\n` : text());
+
+  if (command === "server") {
+    // The address alone, on its own line, so a terminal that linkifies URLs
+    // makes it one click to open the console for review; no console call is
+    // made, so this never says anything the ordinary resolution above did not
+    // already decide.
+    out({ server: baseUrl }, () => `${baseUrl}\n`);
+    return 0;
+  }
+
   const note = flags.note;
   // A write with no note still succeeds (MCP already requires one, and a CLI
   // hard failure here would break scripts), but the history is worse for it,
