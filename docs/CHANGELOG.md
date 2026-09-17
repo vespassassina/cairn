@@ -6,6 +6,19 @@ Entries link to the ADR when there is one. A change of direction that has no ADR
 
 ## 2026-09-17
 
+### A PDF button and an agent-connect button, both console-only
+
+The owner liked a page-actions menu on another site (docs.fabricplan.com, GitBook) and asked to build the equivalent for Cairn's own pages. Reading that menu's actual link targets (not just its labels) showed it does two different things, not one: "Open in ChatGPT/Claude" seeds a public chat session with a public page's URL, and "Connect to VS Code/Claude Code" installs *that site's own MCP server* into a coding agent already running locally. Cairn already has both halves it needs for the second, better-fitting pattern: an MCP server (`/mcp`) and, since ADR-032, an owner-only publish flow for the first.
+
+Built the pieces that were missing:
+
+- **PDF export** (`Peptides` page detail, and the new `/p/:id/print` route). `window.print()` is already artifactkit's documented PDF path (`print.css`'s own comment: "0 kB, vector text... against ~180kB for jsPDF + html2canvas and objectively worse output"), so this adds no PDF library. A "PDF" button on the page view triggers it directly; a page with children also gets a "PDF (page + subtree)" link to `/print?subtree=1`, a dedicated view listing the page and every descendant, parents first (same order `GET /export/pages?root=` already uses), each on its own printed page. New Cairn-specific print rules hide the console's own chrome (top bar, tree, rail, breadcrumb) under `@media print`, since artifactkit's print.css only knows its own classes.
+- **Open in an agent** (page detail rail, next to Publish). Prints the exact `claude mcp add --transport http cairn <origin>/mcp` command, with a copy button, and a "Connect to VS Code" link using VS Code's `vscode:mcp/install` URI scheme. The origin comes from the request, so the command is right whether this Cairn is reached at localhost or a deployed address, matching ADR-013 (MCP, REST and the CLI all reach the same server).
+
+Console-only, deliberately, like Publish: printing and installing an MCP client are things a person does for their own tool, not something an agent does on their behalf, so there is no REST or CLI form and none is planned.
+
+Not built: "open in an agent with the chat prepopulated to edit this page" (GitBook's ChatGPT/Claude buttons). That pattern only works on a *published* page (a public URL a hosted chat tool can fetch), and even then it seeds a read-only conversation, not an edit. The Claude Code / VS Code connect buttons already give a real, editable connection to a private page, which is the more useful case for Cairn's off-console pages; a public-page variant can follow later against `cairn publish` if it turns out to be wanted.
+
 ### `cairn server`: which address a command would use, for a person to open
 
 The owner asked, while reviewing what Cairn already does, for a quick way to get the address of the Cairn a command would actually reach, to open its console in a browser. `cairn instances` already lists everything registered, but not which one would be picked right now among several. `cairn server` runs the exact same resolution every command already uses (`--instance`, `CAIRN_URL`, then the first registered instance that answers) and prints only the address, on its own line, so a terminal that linkifies URLs makes it one click.

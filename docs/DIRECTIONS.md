@@ -13,6 +13,16 @@ Rules:
 
 ## 2026-09-17
 
+### A page-actions menu like docs.fabricplan.com's, then "yes build that"
+
+> "i like the top right menu here, the one that allows me to open the page in another tool, share, send etc: https://docs.fabricplan.com/"
+
+Read that menu's actual link targets rather than guessing from its labels. Proposed a Cairn-shaped equivalent (a PDF export using `window.print()`, plus a Claude Code/VS Code MCP-connect button, console-only, leaving the existing `cairn publish` as the share button) and asked which pieces to build. Owner said "yes build that" (below). Landed as the PDF export and "Open in an agent" controls described in `docs/CHANGELOG.md`, `packages/api/src/web/console.tsx` and `assets.ts`, this commit.
+
+### "yes build that"
+
+Confirmed the proposal above. Built: a "PDF" button and a "PDF (page + subtree)" link on every page (`/p/:id/print`), and an "Open in an agent" control in the page rail giving the `claude mcp add` command (with a copy button) and a `vscode:mcp/install` link. Both console-only, with the reasoning logged in `docs/CHANGELOG.md`. Not built: a prepopulated-chat deep link (GitBook's ChatGPT/Claude buttons), since that pattern needs a published, public page and only opens a read-only chat, not an edit — noted as a possible later addition against `cairn publish` rather than built without a reason to think it is wanted.
+
 ### Configure Claude to use Cairn, a quick way to see which server a command uses, and a review of what editing and sharing a page already supports
 
 > "commit, push, deploy and test live environment. also make sure my claude is configured to use cairn (local that syncs to remote). also via cli i can ask cairn --server and it spits the local server running. if i run cairn --servers then it spits all http servers he knows about (the api can return the address of own server). for the user to click and open the wiki for review. also did we implement more types of pages/data ? is it easy to modify the pages, removing, adding, annotating ? is it easy to add a button on any page to link back to my agent for edits ... or a share button to send the link to somebody and set the page as public (only the page or the subtree can be shared and published). adding a pdf button to export to pdf, again selecting just the page or the whole subtree"

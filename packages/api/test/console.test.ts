@@ -867,3 +867,43 @@ describe("publishing from the console (ADR-032)", () => {
     expect(html).not.toContain("Make private");
   });
 });
+
+describe("PDF export from the console", () => {
+  it("offers a page-only PDF button, and a subtree one only when there are children", async () => {
+    const parent = await context.pages.create(context.workspaceId, { title: "Peptides", body: "Notes." }, { actor: OWNER });
+    const { html: leaf } = await get(`/p/${parent.id}`);
+    expect(leaf).toContain('data-ak-action="print"');
+    expect(leaf).not.toContain("PDF (page + subtree)");
+
+    await context.pages.create(context.workspaceId, { title: "BPC-157", body: "Healing.", parentId: parent.id }, { actor: OWNER });
+    const { html: withChild } = await get(`/p/${parent.id}`);
+    expect(withChild).toContain(`href="/p/${parent.id}/print?subtree=1"`);
+  });
+
+  it("renders the page alone at /print, without the console chrome", async () => {
+    const page = await context.pages.create(context.workspaceId, { title: "Peptides", body: "Loading dose: 250mcg." }, { actor: OWNER });
+    const { html } = await get(`/p/${page.id}/print`);
+    expect(html).toContain("Loading dose");
+    expect(html).toContain("Print or save as PDF");
+    // The console's own chrome is still on the page (so it works as a normal
+    // page too), but print.css (assets.ts) hides .cairn-top and .ak-footer
+    // under @media print, so only the article reaches paper.
+    expect(html).toContain('class="cairn-top"');
+  });
+
+  it("at /print?subtree=1, includes every descendant, parents before children", async () => {
+    const parent = await context.pages.create(context.workspaceId, { title: "Peptides", body: "Overview." }, { actor: OWNER });
+    await context.pages.create(context.workspaceId, { title: "BPC-157", body: "Healing peptide.", parentId: parent.id }, { actor: OWNER });
+    const { html } = await get(`/p/${parent.id}/print?subtree=1`);
+    expect(html.indexOf("Overview.")).toBeLessThan(html.indexOf("Healing peptide."));
+  });
+});
+
+describe("connecting a coding agent from the console", () => {
+  it("gives the Claude Code command for this Cairn's own MCP address", async () => {
+    const page = await context.pages.create(context.workspaceId, { title: "Peptides", body: "Notes." }, { actor: OWNER });
+    const { html } = await get(`/p/${page.id}`);
+    expect(html).toContain(`claude mcp add --transport http cairn ${ORIGIN}/mcp`);
+    expect(html).toContain("vscode:mcp/install?");
+  });
+});

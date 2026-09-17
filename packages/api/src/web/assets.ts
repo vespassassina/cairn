@@ -159,6 +159,15 @@ const CAIRN_CSS = `
 .ak-pagehead > div{ min-width:0 }
 .ak-pagehead h1{ overflow-wrap:anywhere }
 .ak-prose table{ display:block; overflow-x:auto; max-width:100% }
+
+/* On paper: no chrome, just the article. artifactkit's print.css already
+   hides .ak-btn and anything [data-ak-noprint]; this drops the console's
+   own chrome, which artifactkit has no class for. */
+@media print{
+  .cairn-top, .cairn-tree-toggle, .cairn-rail, .ak-breadcrumb, .ak-footer{ display:none !important }
+  .cairn-page{ display:block }
+  .ak-prose + .ak-prose{ break-before:page }
+}
 `;
 
 /**
@@ -234,6 +243,20 @@ export const CONSOLE_JS = `${CORE_JS}
   document.addEventListener("keydown", function (event) {
     var typing = /INPUT|TEXTAREA|SELECT/.test((document.activeElement || {}).tagName || "");
     if (event.key === "/" && search && !typing) { event.preventDefault(); search.focus(); }
+  });
+  document.addEventListener("click", function (event) {
+    var print = event.target.closest("[data-ak-action='print']");
+    if (print) { window.print(); return; }
+    var copy = event.target.closest("[data-ak-copy]");
+    if (copy && navigator.clipboard) {
+      navigator.clipboard.writeText(copy.getAttribute("data-ak-copy")).then(
+        function () { ak.toast("Copied"); },
+        // The browser can refuse the clipboard (no permission, no focus);
+        // the command is printed right below the button either way, so
+        // this is a fallback, not the only way to get it.
+        function () { ak.toast("Couldn't copy — the command is printed below"); },
+      );
+    }
   });
   var editor = document.querySelector("form[data-dirty-guard]");
   if (editor) {

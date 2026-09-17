@@ -215,6 +215,32 @@ function ancestorsOf(pageId: string | null, byId: Map<string, Page>): Page[] {
 }
 
 /**
+ * A page and everything under it, parents before children, matching the
+ * order `GET /export/pages?root=` already uses (routes.ts). Depth-capped
+ * against a cycle in bad data, same bound as the export route.
+ */
+function subtreeOf(pageId: string, pages: readonly Page[]): Page[] {
+  const byParent = new Map<string | null, Page[]>();
+  for (const page of pages) {
+    const list = byParent.get(page.parentId) ?? [];
+    list.push(page);
+    byParent.set(page.parentId, list);
+  }
+  for (const list of byParent.values()) list.sort((a, b) => a.title.localeCompare(b.title) || a.id.localeCompare(b.id));
+
+  const root = pages.find((page) => page.id === pageId);
+  if (!root) return [];
+  const ordered: Page[] = [];
+  const visit = (page: Page, depth: number) => {
+    if (depth > 64) return;
+    ordered.push(page);
+    for (const child of byParent.get(page.id) ?? []) visit(child, depth + 1);
+  };
+  visit(root, 0);
+  return ordered;
+}
+
+/**
  * The first paragraph of a page as plain text, for a collection's card:
  * links shown as their labels, Markdown marks dropped, cut at a word.
  */
@@ -427,6 +453,38 @@ const PublishControl: FC<{ page: Page; publishedVia: Page | null }> = ({ page, p
     </p>
   </>
 );
+
+/**
+ * Connecting a coding agent to this Cairn's own MCP server, so it can read
+ * and write here directly instead of being told the address by hand. Origin
+ * comes from the request, not a config value, so the command is right
+ * whether this is reached at localhost or a deployed address (ADR-013:
+ * MCP, REST and the CLI all reach the same server; this just hands a person
+ * the address). Console-only, like Publish: no REST or CLI form, because
+ * this sets up the person's own tool, not something an agent does for them.
+ */
+const AgentConnect: FC<{ origin: string }> = ({ origin }) => {
+  const mcpUrl = `${origin}/mcp`;
+  const claudeCommand = `claude mcp add --transport http cairn ${mcpUrl}`;
+  const vscodeUri = `vscode:mcp/install?${encodeURIComponent(JSON.stringify({ name: "cairn", type: "http", url: mcpUrl }))}`;
+  return (
+    <>
+      <h3>Open in an agent</h3>
+      <p class="ak-small">Connect a coding agent to this Cairn's MCP server, so it can read and write directly.</p>
+      <p class="ak-small">
+        <button type="button" class="ak-btn" data-ak-copy={claudeCommand}>
+          Copy the Claude Code command
+        </button>
+      </p>
+      <p class="ak-small ak-mono">{claudeCommand}</p>
+      <p class="ak-small">
+        <a class="ak-btn" href={vscodeUri}>
+          Connect to VS Code
+        </a>
+      </p>
+    </>
+  );
+};
 
 /** The sources one revision added and dropped (ADR-027). */
 const SourceChanges: FC<{ added: readonly string[]; removed: readonly string[] }> = ({ added, removed }) => (
@@ -1211,6 +1269,14 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
                 <a class="ak-btn" href={`${pageHref(page.id)}/history`}>
                   History
                 </a>
+                <button type="button" class="ak-btn" data-ak-action="print">
+                  PDF
+                </button>
+                {children.length > 0 ? (
+                  <a class="ak-btn" href={`${pageHref(page.id)}/print?subtree=1`}>
+                    PDF (page + subtree)
+                  </a>
+                ) : null}
               </div>
             </header>
             <article class="ak-prose">
@@ -1253,6 +1319,7 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
               </p>
             )}
             <PublishControl page={page} publishedVia={publishedVia} />
+            <AgentConnect origin={new URL(c.req.url).origin} />
             <h3>Page</h3>
             <p class="ak-small ak-mono">{page.id}</p>
             <p>
@@ -1262,6 +1329,51 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
             </p>
           </aside>
         </div>
+      </Layout>,
+    );
+  });
+
+  // A print view (ADR-009's review console, kept inside its scope: no new
+  // rendering path, the same markdown renderer, only laid out for paper).
+  // window.print() is the PDF step, same as artifactkit's own print.css
+  // says: no PDF library, no server render. `?subtree=1` adds every page
+  // under this one, parents first, so a whole section can go to one PDF.
+  app.get("/p/:id/print", async (c) => {
+    const page = await loadPage(c);
+    if (!page) return notFound(c, `Page ${c.req.param("id")}`);
+    const pages = await allPages(context);
+    const tables = await context.tables.list(ws);
+    const wanted = c.req.query("subtree") === "1" ? subtreeOf(page.id, pages) : [page];
+    const byId = new Map(pages.map((p) => [p.id, p]));
+    const linkedRows = await rowsFor(
+      context,
+      (await Promise.all(wanted.map((p) => context.pages.neighbours(ws, p.id)))).flatMap(
+        ({ outbound, inbound }) => [...outbound.map((e) => e.targetId), ...inbound.map((e) => e.sourceId)],
+      ),
+      tables,
+    );
+    const titles = resolverFor(pages, tables, linkedRows);
+
+    return render(
+      c,
+      <Layout title={`Print: ${page.title}`} section="collections" here={page.id}>
+        <p class="ak-small ak-mono" data-ak-noprint>
+          {ancestorsOf(page.id, byId).map((a) => `${a.title} / `).join("")}
+          {page.title}
+        </p>
+        <button type="button" class="ak-btn ak-btn-primary" data-ak-action="print" data-ak-noprint>
+          Print or save as PDF
+        </button>
+        {wanted.map((p) => (
+          <article class="ak-prose">
+            <h1>{p.title}</h1>
+            {p.body.trim() === "" ? (
+              <p class="ak-soft">This page is empty.</p>
+            ) : (
+              raw(renderMarkdown(p.body, titles))
+            )}
+          </article>
+        ))}
       </Layout>,
     );
   });
