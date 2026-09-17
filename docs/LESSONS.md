@@ -13,6 +13,13 @@ Each entry answers four questions:
 
 ## 2026-09-17
 
+### The CSS fix redeployed to nothing, twice, because an unrelated test kept timing out in CI
+
+1. **What happened.** After fixing the header-button wrap bug (below) and pushing it, the owner ran `deploy/azure/deploy.sh` and it reported "already running this exact image, so this run changes nothing about it" — twice. No new `:edge` image existed to deploy, because CI's `test (ubuntu-latest)` job had failed on that commit, so the downstream image-publish job never ran.
+2. **Cause.** `packages/api/test/container-start.test.ts`'s `beforeEach` builds a throwaway 4000-row SQLite database (to exercise the integrity check on a realistic file) inside a 10 second Vitest hook timeout. On a loaded Linux CI runner that write can take longer than that: one otherwise-passing run logged 7.3s for a single test in this file, close to the ceiling, and `gh run list` showed the same `Hook timed out in 10000ms` at this hook on two earlier, unrelated commits, on both `ubuntu-latest` and `ubuntu-24.04-arm` — never reproduced locally (4.1s for the whole file), and not caused by anything in the commit it was blocking. It was a pre-existing flake that happened to land on the commit the owner most wanted shipped.
+3. **Fix.** Gave the hook a 30 second timeout (`packages/api/test/container-start.test.ts`), leaving the database build itself untouched — the goal was headroom for a slow disk, not to hide a genuine hang.
+4. **Lesson.** A red CI run always deserves a look at *why*, even (especially) when the change that triggered it looks obviously unrelated to the failure, and even when the owner is waiting on exactly that build. `gh run list` across recent commits, not just the one run, is what turned "here's the error" into "this has failed on unrelated commits before, on two different Linux runners, and never locally" — the evidence that made a longer timeout the right fix rather than a guess. Whoever is waiting on a deploy is trusting that a no-op deploy message means the code did not change, not that CI quietly never ran.
+
 ### A fourth header button wrapped its own text instead of moving to a new line, and overflowed into the rail
 
 1. **What happened.** The owner sent a screenshot of the deployed console: the new "PDF (page + subtree)" button wrapped "PDF (page + subtree)" across three narrow lines and spilled visually out of its column, overlapping the "Linked from" list in the rail next to it.

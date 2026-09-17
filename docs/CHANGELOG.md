@@ -6,6 +6,10 @@ Entries link to the ADR when there is one. A change of direction that has no ADR
 
 ## 2026-09-17
 
+### Gave the container-start test's setup hook more time on CI
+
+`packages/api/test/container-start.test.ts` builds a 4000-row SQLite database in `beforeEach`, and its default 10s Vitest hook timeout had failed the whole file outright on `ubuntu-latest` and `ubuntu-24.04-arm`, on three separate unrelated commits (confirmed via `gh run list`, not a one-off: never reproduced locally, at 4.1s total). The most recent instance blocked the header-button CSS fix below from ever getting a new `:edge` image, so `deploy/azure/deploy.sh` twice reported deploying nothing. Raised the hook's timeout to 30s; the database build itself is unchanged. See `docs/LESSONS.md` for the investigation.
+
 ### A PDF button and an agent-connect button, both console-only
 
 The owner liked a page-actions menu on another site (docs.fabricplan.com, GitBook) and asked to build the equivalent for Cairn's own pages. Reading that menu's actual link targets (not just its labels) showed it does two different things, not one: "Open in ChatGPT/Claude" seeds a public chat session with a public page's URL, and "Connect to VS Code/Claude Code" installs *that site's own MCP server* into a coding agent already running locally. Cairn already has both halves it needs for the second, better-fitting pattern: an MCP server (`/mcp`) and, since ADR-032, an owner-only publish flow for the first.

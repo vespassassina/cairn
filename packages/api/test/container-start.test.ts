@@ -37,6 +37,10 @@ describe.skipIf(process.platform === "win32")("the container start script", () =
 
   beforeEach(async () => {
     dir = await mkdtemp(join(tmpdir(), "cairn-start-"));
+    // The 4000-row database below has taken over 7s on a loaded CI runner
+    // (seen on ubuntu-latest and ubuntu-24.04-arm); the default 10s hook
+    // timeout has failed this suite outright, on unrelated commits, more
+    // than once. 30s gives it headroom without hiding a genuine hang.
     const bin = join(dir, "bin");
     await mkdir(bin);
     await writeFile(join(bin, "litestream"), stubLitestream);
@@ -64,7 +68,7 @@ describe.skipIf(process.platform === "win32")("the container start script", () =
       CAIRN_REPLICA_URL: "abs://account@container/cairn.sqlite",
     };
     await mkdir(join(dir, "data"));
-  });
+  }, 30000);
 
   afterEach(async () => {
     await rm(dir, { recursive: true, force: true });
