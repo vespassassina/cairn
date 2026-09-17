@@ -170,6 +170,8 @@ function redirectMatches(registered: string[], requested: string): boolean {
 export class OAuthServer {
   readonly issuer: string;
   private readonly resources: Set<string>;
+  /** Set once by register(); the cookie attributes a renewed session needs. */
+  private cookieOptions: { secureCookies: boolean; sessionCookie: string } | null = null;
 
   constructor(private readonly settings: OAuthSettings) {
     this.issuer = settings.publicUrl.replace(/\/+$/, "");
@@ -202,14 +204,22 @@ export class OAuthServer {
     };
   }
 
-  /** The person behind a console session cookie, or null. */
-  async verifySession(cookie: string): Promise<{ id: string; label: string } | null> {
+  /**
+   * The person behind a console session cookie, or null. Sliding renewal: a
+   * session more than half spent comes back with `renewed`, a fresh
+   * Set-Cookie header for the same identity, so a session in regular use
+   * never hits its 7-day wall and only a truly idle one expires.
+   */
+  async verifySession(cookie: string): Promise<{ id: string; label: string; renewed: string | null } | null> {
     const claims = await verifyJwt(cookie, this.settings.secrets, SESSION_TYP);
     if (!claims || claims["iss"] !== this.issuer || claims["aud"] !== `${this.issuer}/console`) return null;
-    return { id: String(claims["sub"]), label: String(claims["name"] ?? claims["sub"]) };
+    const identity = { id: String(claims["sub"]), label: String(claims["name"] ?? claims["sub"]) };
+    const issuedAt = Number(claims["iat"] ?? 0);
+    const renewed = nowSeconds() - issuedAt > SESSION_SECONDS / 2 ? await this.sessionCookie(identity) : null;
+    return { ...identity, renewed };
   }
 
-  private async sessionFor(identity: Identity): Promise<string> {
+  private async sessionFor(identity: Pick<Identity, "id" | "label">): Promise<string> {
     return signJwt(
       {
         iss: this.issuer,
@@ -222,6 +232,13 @@ export class OAuthServer {
       this.settings.secrets[0]!,
       SESSION_TYP,
     );
+  }
+
+  /** A full Set-Cookie header for a fresh session token, for the initial sign-in and for sliding renewal alike. */
+  private async sessionCookie(identity: Pick<Identity, "id" | "label">): Promise<string> {
+    if (!this.cookieOptions) throw new Error("register() must run before a session cookie can be issued");
+    const token = await this.sessionFor(identity);
+    return `${this.cookieOptions.sessionCookie}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${SESSION_SECONDS}${this.cookieOptions.secureCookies ? "; Secure" : ""}`;
   }
 
   private async issueTokens(grant: Omit<RefreshGrant, "family">, family: string): Promise<Record<string, unknown>> {
@@ -258,6 +275,7 @@ export class OAuthServer {
   }
 
   register(app: Hono, options: { secureCookies: boolean; sessionCookie: string }): void {
+    this.cookieOptions = options;
     const { store, provider } = this.settings;
     const callback = `${this.issuer}/oauth/callback`;
 
@@ -442,10 +460,7 @@ export class OAuthServer {
       }
 
       if (pending.flow === "console") {
-        c.header(
-          "set-cookie",
-          `${options.sessionCookie}=${await this.sessionFor(identity)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${SESSION_SECONDS}${options.secureCookies ? "; Secure" : ""}`,
-        );
+        c.header("set-cookie", await this.sessionCookie(identity));
         return c.redirect(pending.next ?? "/", 303);
       }
 

@@ -6,6 +6,10 @@ Entries link to the ADR when there is one. A change of direction that has no ADR
 
 ## 2026-09-17
 
+### Console sessions now renew on activity instead of always expiring after 7 days
+
+The owner asked why the Azure console kept signing them out, and whether the session could "survive longer". The console's sign-in cookie (`packages/api/src/oauth/server.ts`) was a fixed 7-day JWT, signed once at login with a fixed `exp` and never reissued: it expired at the same wall-clock time whether the console was used daily or not at all. Rather than just lengthening the fixed duration, `verifySession` now returns a `renewed` cookie whenever the current session is more than half spent, and the console's sign-in middleware (`packages/api/src/web/console.tsx`) sets it on the response. A session in regular use is renewed for another 7 days on each visit past the half-life mark and never hits the wall; a genuinely idle session still expires 7 days after its last use. The original sign-in cookie and the renewed one now share one `sessionCookie()` helper so they stay identical in shape.
+
 ### Moved Add child and Publish into the page header, next to Edit
 
 The owner asked for "Add child" (previously a small text link at the bottom of the rail) and the publish/unpublish toggle (previously its own button under "Published" in the rail) to sit next to Edit in the page header, styled like the other header buttons. `PublishControl` (`packages/api/src/web/console.tsx`) is split: a new `PublishButton` renders just the form and button, placed in the header's `.ak-row` alongside Edit, History and the PDF buttons; `PublishControl` keeps the explanatory text and status in the rail. The header button is omitted when a page above this one is what actually publishes it (nothing to toggle here in that case). The earlier header-row `flex-wrap` fix (below) is what lets this row take two more buttons without breaking.

@@ -13,6 +13,10 @@ Rules:
 
 ## 2026-09-17
 
+### "why it logs me out of the azure one so often ? can the token survive longer ?"
+
+Asked alongside a sync-progress-bar request (see the CHANGELOG for the sync work, once built). Investigated `packages/api/src/oauth/server.ts`: the console's sign-in cookie was a fixed 7-day JWT that never renewed on activity, so a session expired at the same wall-clock time regardless of how often the console was used. Offered two fixes via `AskUserQuestion`: sliding renewal, or just extending the fixed duration. The owner chose sliding renewal. Landed in `packages/api/src/oauth/server.ts`, `packages/api/src/web/console.tsx`, `packages/api/test/oauth.test.ts` and `docs/CHANGELOG.md`, this commit.
+
 ### "the add child should be next to the edit button, similar style. also the publish button. fix then we release"
 
 Moved "Add child" (previously a small text link in the rail) and the publish/unpublish toggle (previously its own button under "Published" in the rail) into the page header, styled as `.ak-btn` alongside Edit. Landed in `packages/api/src/web/console.tsx` and `docs/CHANGELOG.md`, this commit. "Then we release": next step is cutting a release tag once this is committed and pushed, per the same day's finding that `deploy/azure/deploy.sh`'s default `:latest` image only moves on a tag, not on every `main` push.

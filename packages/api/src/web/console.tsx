@@ -911,11 +911,15 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
     const path = new URL(c.req.url).pathname;
     if (/^\/(mcp|health)/.test(path) || /^\/(api|oauth|\.well-known)(\/|$)/.test(path)) return next();
 
+    let renewedCookie: string | null = null;
     if (!PUBLIC_PATHS.some((pattern) => pattern.test(path))) {
       const cookie = getCookie(c, SESSION_COOKIE) ?? "";
       const session = await expectedSession;
       const person = oauth && cookie.includes(".") ? await oauth.verifySession(cookie) : null;
-      if (person) signedInAs.set(c.req.raw, { kind: "user", id: person.id, label: person.label });
+      if (person) {
+        signedInAs.set(c.req.raw, { kind: "user", id: person.id, label: person.label });
+        renewedCookie = person.renewed;
+      }
       const signedIn = person !== null || (session !== null && timingSafeEqual(cookie, session));
       // Trusted local requests skip sign-in (ADR-010). The Origin check on
       // form posts below still applies to them.
@@ -928,6 +932,9 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
       }
     }
     await next();
+    // Sliding renewal (see verifySession in oauth/server.ts): a session past
+    // its half-life gets a fresh cookie here, so regular use never expires it.
+    if (renewedCookie) c.header("set-cookie", renewedCookie);
     for (const [name, value] of Object.entries(SECURITY_HEADERS)) c.header(name, value);
   });
 

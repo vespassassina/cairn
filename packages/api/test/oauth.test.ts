@@ -515,3 +515,40 @@ describe("console sign-in through the provider", () => {
     expect(response.status).toBe(401);
   });
 });
+
+describe("console session renewal (sliding, so regular use never expires it)", () => {
+  const SESSION_SECONDS = 7 * 24 * 60 * 60;
+
+  async function signIn(): Promise<string> {
+    const start = await call("/oauth/login?next=%2Ft");
+    const callback = await call(start.headers.get("location")!);
+    return callback.headers.get("set-cookie")!.split(";")[0]!;
+  }
+
+  it("does not renew a fresh session", async () => {
+    const session = await signIn();
+    const response = await call("/t", { headers: { cookie: session } });
+    expect(response.status).toBe(200);
+    expect(response.headers.get("set-cookie")).toBeNull();
+  });
+
+  it("renews a session past its half-life, with a later expiry than the one it replaces", async () => {
+    const session = await signIn();
+
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(Date.now() + (SESSION_SECONDS / 2 + 60) * 1000));
+    const response = await call("/t", { headers: { cookie: session } });
+    expect(response.status).toBe(200);
+    const renewed = response.headers.get("set-cookie");
+    expect(renewed).not.toBeNull();
+    expect(renewed).toContain("HttpOnly");
+
+    const renewedCookie = renewed!.split(";")[0]!;
+    expect(renewedCookie).not.toBe(session.split(";")[0]);
+
+    // The renewed cookie is good for a full SESSION_SECONDS from now, well
+    // past when the original (unrenewed) cookie would have expired.
+    vi.setSystemTime(new Date(Date.now() + (SESSION_SECONDS / 2 + 60) * 1000));
+    expect((await call("/t", { headers: { cookie: renewedCookie } })).status).toBe(200);
+  });
+});
