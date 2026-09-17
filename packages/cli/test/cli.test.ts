@@ -207,6 +207,62 @@ describe("cairn", () => {
     expect(restored.version).not.toBe(current);
   });
 
+  it("lists a deleted page, undeletes it with its history intact, and drops it from the list again (ADR-059)", async () => {
+    const { id, version } = await createLog();
+    expect(await cairn("delete", id, "--version", version, "--note", "No longer needed")).toBe(0);
+
+    await eventually(async () => {
+      expect(await cairn("deleted")).toBe(0);
+      expect(stdout).toContain(id);
+      expect(stdout).toContain('"5 inch build log"');
+    });
+
+    expect(await cairn("undelete", id, "--note", "Turns out we need it")).toBe(0);
+    expect(stdout).toContain("undeleted");
+
+    expect(await cairn("read", id)).toBe(0);
+    expect(stdout).toContain("## Motors");
+
+    expect(await cairn("history", id)).toBe(0);
+    expect(stdout).toContain('"No longer needed"');
+    expect(stdout).toContain('"From bench notes"');
+
+    expect(await cairn("deleted")).toBe(0);
+    expect(stdout).not.toContain(id);
+  });
+
+  it("refuses undelete for a page that still exists, naming restore instead", async () => {
+    const { id } = await createLog();
+    expect(await cairn("undelete", id)).toBe(1);
+    expect(stderr).toContain("restore");
+  });
+
+  it("refuses undelete for an id with no deletion in its history, naming the fix", async () => {
+    expect(await cairn("undelete", "pg_never_existed")).toBe(1);
+    expect(stderr).toContain("cairn deleted");
+  });
+
+  it("vacuums a page's older revisions, refusing a stale version", async () => {
+    const { id, version } = await createLog();
+    const updated = await cairn(
+      "replace-section", id, "--section", "Firmware", "--version", version, "--text", "BLHeli_32", "--note", "Real firmware",
+    );
+    expect(updated).toBe(0);
+    const current = /version (\S+)/.exec(stdout)![1]!;
+
+    expect(await cairn("vacuum", id)).toBe(2);
+    expect(stderr).toContain("--version");
+
+    expect(await cairn("vacuum", id, "--version", version)).toBe(1);
+    expect(stderr).toContain("version_conflict");
+
+    expect(await cairn("vacuum", id, "--version", current)).toBe(0);
+    expect(stdout).toContain("removed 1");
+
+    expect(await cairn("history", id)).toBe(0);
+    expect(stdout.trim().split("\n")).toHaveLength(1);
+  });
+
   it("works with tables: create rows, query, and name bad fields", async () => {
     const table = await context.tables.create(
       context.workspaceId,

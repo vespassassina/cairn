@@ -125,13 +125,16 @@ describe("transport and auth", () => {
         "get_page",
         "get_revision",
         "list_children",
+        "list_deleted_pages",
         "list_tables",
         "move",
         "query_table",
         "search",
+        "undelete_page",
         "update_page",
         "update_table",
         "upsert_row",
+        "vacuum_page",
       ].sort(),
     );
     // No tool publishes a page, on purpose: publishing is the owner's action,
@@ -859,6 +862,69 @@ describe("agent navigation (ADR-058)", () => {
     });
     expect(result.isError).toBe(true);
     expect(result.data["error"]).toBe("version_conflict");
+  });
+
+  it("lists a deleted page, undeletes it with its history intact, and drops it from the list again (ADR-059)", async () => {
+    const page = await callTool("create_page", { title: "Undelete me", body: "x" });
+    const id = page.data["id"] as string;
+    await callTool("delete_page", { page_id: id, version: page.data["version"], change_note: "Gone for now" });
+
+    const listed = await callTool("list_deleted_pages");
+    expect(listed.isError).toBe(false);
+    const found = (listed.data["pages"] as Array<Record<string, unknown>>).find((p) => p["id"] === id);
+    expect(found).toBeDefined();
+    expect(found!["title"]).toBe("Undelete me");
+
+    const undeleted = await callTool("undelete_page", { page_id: id, change_note: "Turns out we need it" });
+    expect(undeleted.isError).toBe(false);
+
+    const read = await callTool("get_page", { page_id: id });
+    expect(read.isError).toBe(false);
+    expect(read.data["title"]).toBe("Undelete me");
+
+    const history = await callTool("get_history", { page_id: id });
+    const notes = (history.data["revisions"] as Array<{ note: string }>).map((r) => r.note);
+    expect(notes).toContain("Gone for now");
+
+    const stillDeleted = await callTool("list_deleted_pages");
+    expect((stillDeleted.data["pages"] as Array<Record<string, unknown>>).some((p) => p["id"] === id)).toBe(false);
+  });
+
+  it("refuses undelete_page for a page that still exists, naming restore instead", async () => {
+    const page = await callTool("create_page", { title: "Still here", body: "x" });
+    const result = await callTool("undelete_page", { page_id: page.data["id"] as string });
+    expect(result.isError).toBe(true);
+    expect(result.data["error"]).toBe("not_deleted");
+    expect(result.data["message"]).toContain("restore");
+  });
+
+  it("refuses undelete_page for an id with no deletion in its history, naming the fix", async () => {
+    const result = await callTool("undelete_page", { page_id: "pg_never_existed" });
+    expect(result.isError).toBe(true);
+    expect(result.data["error"]).toBe("not_deleted");
+    expect(result.data["message"]).toContain("cairn deleted");
+  });
+
+  it("vacuums a page's older revisions and compacts, refusing a stale version", async () => {
+    const page = await callTool("create_page", { title: "Vacuum me", body: "x" });
+    const updated = await callTool("update_page", {
+      page_id: page.data["id"],
+      version: page.data["version"],
+      mode: "replace_body",
+      content: "new body",
+      change_note: "Rewrote it",
+    });
+
+    const stale = await callTool("vacuum_page", { page_id: page.data["id"] as string, version: page.data["version"] as string });
+    expect(stale.isError).toBe(true);
+    expect(stale.data["error"]).toBe("version_conflict");
+
+    const vacuumed = await callTool("vacuum_page", { page_id: page.data["id"] as string, version: updated.data["version"] as string });
+    expect(vacuumed.isError).toBe(false);
+    expect(vacuumed.data["revisions_removed"]).toBe(1);
+
+    const history = await callTool("get_history", { page_id: page.data["id"] as string });
+    expect((history.data["revisions"] as unknown[]).length).toBe(1);
   });
 
   it("refuses create_table with no change note, naming the argument (acceptance criterion 12)", async () => {

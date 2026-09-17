@@ -11,6 +11,16 @@ Rules:
 3. Every entry says where it landed: an ADR, a doc, a commit, or "not yet".
 4. A later direction that reverses an earlier one does not edit it. Add the new one and point back.
 
+## 2026-09-18
+
+### "recreate them" (the eleven pages missing from the live Azure Cairn) / "make sure a delete appears in the history" / "make it possible to undo. a delete from the history"
+
+Recovered the eleven pages from the local laptop's revision history and re-created them on Azure at their original ids via `cairn import`, verified working. Investigated whether a delete failing to show up in history was a code bug: it is not, an end-to-end test showed the existing path already records and surfaces a deletion; the Azure gap is real data loss for pages that never went through `delete()`. Built undelete (`undelete_page` / `POST /pages/:id/undelete` / `cairn undelete`) so a genuine in-app delete can be undone from its history, keeping the page's id and its pre-deletion history intact. Landed in ADR-059, `packages/core/src/services/pages.ts`, `packages/core/src/history/revisions.ts`, `packages/api/src/operations.ts`, `packages/api/src/rest/routes.ts`, `packages/api/src/mcp/tools.ts`, `packages/cli/src/main.ts`, `docs/CHANGELOG.md`, this commit.
+
+### "add deleted list on api/mcp/cli and revert also. add a vacuum command to delete all older versions of a document and compact the db"
+
+Added `list_deleted_pages` / `GET /pages/deleted` / `cairn deleted` to all three surfaces per hard rule 14, and `vacuum_page` / `POST /pages/:id/vacuum` / `cairn vacuum <page-id> --version V`. Default used, stated per CLAUDE.md rule 2: vacuum is scoped to one page, not the whole workspace, since the instruction named "a document" and a workspace-wide history wipe is a larger, harder-to-reverse action nobody asked for outright; see ADR-059 decision 3 for the reasoning. Landed in the same files as the entry above, plus the conformance suite (`packages/core/src/testing/document-store-conformance.ts`) and the SQLite adapter (`packages/adapter-sqlite/src/document-store.ts`).
+
 ## 2026-09-17
 
 ### "the online link on the cairn pages to add the mcp is wrong. it's http, should be https. remove from there and add on the index page instructions to install and add this cairn (via mcp and cli)"

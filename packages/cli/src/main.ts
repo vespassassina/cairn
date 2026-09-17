@@ -115,6 +115,11 @@ Write (every write is a revision the owner can review and undo)
   cairn delete <page-id> --version V
   cairn move <page-or-table-id> --parent PAGE|root --version V   change its place in the tree
   cairn restore <page-id> <version> --version V   bring back an old version, as a new one
+  cairn deleted                           pages currently deleted, newest first
+  cairn undelete <page-id>                bring back a deleted page, with what it held; find
+                                          its id with cairn deleted
+  cairn vacuum <page-id> --version V      irreversible: deletes this page's older revisions
+                                          and compacts the database
   cairn publish <page-id> --version V     serve it, and everything under it, to anyone
       with no sign-in, at <server>/w. Publishing a collection publishes its wiki
   cairn unpublish <page-id> --version V   take it back down
@@ -1215,6 +1220,37 @@ export async function run(argv: string[], io: Io): Promise<number> {
           { ifMatch: expected, body: note ? { change_note: note } : {} },
         );
         out(json, () => `ok ${id} restored to version ${version}, as a new version ${String(json?.["version"])}\n`);
+        return 0;
+      }
+
+      case "deleted": {
+        const { json } = await client.request("GET", `/pages/deleted${query({ limit: flags.limit, cursor: flags.cursor })}`);
+        out(json, () => {
+          const lines = list(json?.["pages"]).map(
+            (p) => `${String(p["id"])}  "${String(p["title"])}"  deleted ${String(p["deleted_at"])} by ${by(p["deleted_by"])}`,
+          );
+          const more = json?.["cursor"] ? `\nmore: --cursor ${String(json["cursor"])}` : "";
+          return `${lines.join("\n") || "nothing deleted"}${more}\n`;
+        });
+        return 0;
+      }
+
+      case "undelete": {
+        const id = need(args[0], "page id, from cairn deleted");
+        warnIfNoNote();
+        const { json } = await client.request("POST", `/pages/${encodeURIComponent(id)}/undelete`, {
+          body: note ? { change_note: note } : {},
+        });
+        out(json, () => `ok ${id} undeleted, as a new version ${String(json?.["version"])}\n`);
+        return 0;
+      }
+
+      case "vacuum": {
+        const id = need(args[0], "page id");
+        const { json } = await client.request("POST", `/pages/${encodeURIComponent(id)}/vacuum`, {
+          ifMatch: need(flags.version, "--version V, the page's current version, from cairn read"),
+        });
+        out(json, () => `ok ${id} vacuumed: removed ${String(json?.["revisions_removed"])} older revision${json?.["revisions_removed"] === 1 ? "" : "s"}, and compacted the database\n`);
         return 0;
       }
 

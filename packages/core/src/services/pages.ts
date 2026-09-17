@@ -1,4 +1,4 @@
-import { NotFoundError } from "../errors.js";
+import { NotFoundError, PageNotDeletedError, VersionConflictError } from "../errors.js";
 import { newPageId } from "../ids.js";
 import { diffLines, type Diff } from "../history/diff.js";
 import { readHistory, sweepOrphans, writeWithRevision } from "../history/revisions.js";
@@ -16,6 +16,7 @@ import type {
   Page,
   PageInput,
   PageSnapshot,
+  Paged,
   Revision,
   Version,
   WorkspaceId,
@@ -231,6 +232,74 @@ export class PageService {
     });
   }
 
+  // Deletion (ADR-059).
+
+  /**
+   * Pages currently deleted, newest deletion first. Each entry is the
+   * deletion revision itself: its snapshot holds the page's last content,
+   * which is what {@link undelete} recreates.
+   */
+  async listDeleted(
+    workspaceId: WorkspaceId,
+    options: { limit?: number; cursor?: string | null } = {},
+  ): Promise<Paged<Revision>> {
+    return this.store.listDeletedPages(workspaceId, options);
+  }
+
+  /**
+   * Recreates a deleted page from its deletion revision's snapshot, at the
+   * same id, as a new revision that chains back through the deletion so the
+   * page's full history, from before it was ever deleted, stays reachable
+   * (ADR-059). Refused when the page still exists (nothing to undelete) or
+   * was never deleted (no deletion revision to recreate it from).
+   */
+  async undelete(workspaceId: WorkspaceId, id: Id, context: WriteContext): Promise<Page> {
+    const existing = await this.store.getPage(workspaceId, id);
+    if (existing) throw new PageNotDeletedError(id, "still_exists");
+    const { items } = await this.store.listRevisions(workspaceId, "page", id, { limit: 1 });
+    const latest = items[0];
+    if (!latest || !latest.deleted) throw new PageNotDeletedError(id, "never_deleted");
+    const snapshot = latest.snapshot as PageSnapshot;
+    return this.write(
+      workspaceId,
+      id,
+      {
+        title: snapshot.title,
+        parentId: snapshot.parentId,
+        tags: snapshot.tags,
+        body: snapshot.body,
+        ...(snapshot.sources === undefined ? {} : { sources: snapshot.sources }),
+        ...(snapshot.verifiedAt === undefined ? {} : { verifiedAt: snapshot.verifiedAt }),
+      },
+      null,
+      {
+        actor: context.actor,
+        note: context.note ?? `Undeleted: brought back what it held before it was deleted on ${latest.createdAt.slice(0, 10)}`,
+      },
+      latest.version,
+    );
+  }
+
+  /**
+   * Deletes every revision of a page except its current one, then compacts
+   * the database (ADR-059). Irreversible: only the current content stays
+   * reachable, and `cairn history` for this page will show one entry.
+   * Refused for a page that does not currently exist, deleted or otherwise,
+   * so a deleted page's own deletion revision is never pruned out from under
+   * `undelete`. Needs the version the caller last read, like any other
+   * write against this page, even though the version itself does not
+   * change: irreversible history loss deserves the same confirmation.
+   */
+  async vacuum(workspaceId: WorkspaceId, id: Id, expectedVersion: Version): Promise<{ removed: number }> {
+    const page = await this.get(workspaceId, id);
+    if (page.version !== expectedVersion) {
+      throw new VersionConflictError("page", id, expectedVersion, page);
+    }
+    const removed = await this.store.pruneRevisions(workspaceId, "page", id, page.version);
+    await this.store.compact?.();
+    return { removed };
+  }
+
   // Maintenance.
 
   /** Regenerates derived data for one page from the page itself. Idempotent. */
@@ -272,6 +341,7 @@ export class PageService {
     input: PageInput,
     expectedVersion: ExpectedVersion,
     context: WriteContext,
+    parentVersion?: Version | null,
   ): Promise<Page> {
     const at = new Date().toISOString();
     // A new page has nothing to keep; the check against it comes in putPage.
@@ -307,6 +377,7 @@ export class PageService {
         expectedVersion,
         snapshot: snapshotOf(input),
         at,
+        ...(parentVersion !== undefined ? { parentVersion } : {}),
       },
       context,
       (meta) => this.store.putPage(workspaceId, id, input, expectedVersion, meta),

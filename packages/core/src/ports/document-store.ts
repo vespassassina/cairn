@@ -221,6 +221,17 @@ export interface DocumentStore {
     },
   ): Promise<Paged<Revision>>;
 
+  /**
+   * Eventual. Pages currently deleted: for each page id with no current row,
+   * its newest revision, when that revision is itself the deletion (ADR-059).
+   * Newest deletion first. The deletion revision's snapshot holds the page's
+   * last content, which is what `undelete` recreates it from.
+   */
+  listDeletedPages(
+    workspaceId: WorkspaceId,
+    options?: { limit?: number; cursor?: string | null },
+  ): Promise<Paged<Revision>>;
+
   // Maintenance.
 
   /**
@@ -228,6 +239,25 @@ export interface DocumentStore {
    * Streams so a rebuild never loads the workspace into memory.
    */
   iteratePageIds(workspaceId: WorkspaceId): AsyncIterable<Id>;
+
+  /**
+   * Immediate. Deletes every revision of one record except `keep`, so only
+   * its current content stays reachable (ADR-059). Irreversible: the pruned
+   * revisions' snapshots are gone for good. Returns how many were removed.
+   */
+  pruneRevisions(
+    workspaceId: WorkspaceId,
+    kind: RevisionKind,
+    recordId: Id,
+    keep: Version,
+  ): Promise<number>;
+
+  /**
+   * Optional. Reclaims space an adapter can free after `pruneRevisions`, such
+   * as SQLite's `VACUUM`. Adapters with nothing to reclaim, or nowhere local
+   * to reclaim it, omit this; `vacuum` then just prunes (ADR-059).
+   */
+  compact?(): Promise<void>;
 }
 
 /**

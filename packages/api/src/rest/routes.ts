@@ -8,13 +8,17 @@ import {
   childrenPreview,
   describeError,
   deletePage,
+  deletedPageSummary,
   editPage,
   linkJson,
   listChanges,
   listChildren,
+  listDeletedPages,
   moveRecord,
   publishPage,
   toFieldDefs,
+  undeletePage,
+  vacuumPage,
   EDIT_MODES,
   pageSummary,
   renderDiff,
@@ -391,6 +395,15 @@ export function restRoutes(context: AppContext, callerFor: CallerFor): Hono {
     return c.json({ pages: page.items.map(restPage), cursor: page.cursor });
   });
 
+  // Before /pages/:id, so "deleted" is never read as an id.
+  api.get("/pages/deleted", async (c) => {
+    const result = await listDeletedPages(context, {
+      cursor: c.req.query("cursor") ?? null,
+      limit: limitParam(c, 50),
+    });
+    return c.json({ pages: result.items.map(deletedPageSummary), cursor: result.cursor });
+  });
+
   api.post("/pages", async (c) => {
     const input = await parseBody(c, schemas.createPage);
     const page = await context.pages.create(
@@ -477,6 +490,25 @@ export function restRoutes(context: AppContext, callerFor: CallerFor): Hono {
     const input = await parseBody(c, schemas.deleteBody);
     await deletePage(context, c.req.param("id"), version, by(c, input.change_note));
     return c.body(null, 204);
+  });
+
+  // Bring a deleted page back at the same id, with the content it held
+  // before it was deleted (ADR-059). No If-Match: there is no current
+  // version to check the write against, since the page does not exist.
+  api.post("/pages/:id/undelete", async (c) => {
+    const input = await parseBody(c, schemas.deleteBody);
+    const page = await undeletePage(context, c.req.param("id"), by(c, input.change_note));
+    c.header("ETag", etag(page.version));
+    return c.json(restPage(page), 201);
+  });
+
+  // Prune a page's older revisions and compact the database (ADR-059).
+  // Irreversible, so it needs the version the caller last read, the same
+  // guard every other write against this page uses.
+  api.post("/pages/:id/vacuum", async (c) => {
+    const version = requireIfMatch(c);
+    const result = await vacuumPage(context, c.req.param("id"), version);
+    return c.json({ id: c.req.param("id"), revisions_removed: result.removed });
   });
 
   const tableIds = async () => new Set((await context.tables.list(ws)).map((table) => table.id));

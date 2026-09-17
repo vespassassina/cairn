@@ -39,6 +39,14 @@ export async function writeWithRevision<T>(
     deleted?: boolean;
     /** The time of the write, when the snapshot already names it. */
     at?: string;
+    /**
+     * The revision this one continues from, when it differs from
+     * `expectedVersion`. Undelete needs this: there is no current version to
+     * check the write against (`expectedVersion` is null, so `putPage` treats
+     * it as a create), but history should still chain back through the
+     * deletion revision rather than start over. Defaults to `expectedVersion`.
+     */
+    parentVersion?: Version | null;
   },
   context: WriteContext,
   write: (meta: WriteMeta) => Promise<T>,
@@ -54,7 +62,7 @@ export async function writeWithRevision<T>(
     recordId: target.recordId,
     tableId: target.tableId,
     version: meta.version,
-    parentVersion: target.expectedVersion,
+    parentVersion: target.parentVersion !== undefined ? target.parentVersion : target.expectedVersion,
     actor: meta.actor,
     note: context.note?.trim() || null,
     createdAt: meta.at,

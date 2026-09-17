@@ -8,12 +8,14 @@ import {
   childSummaryJson,
   childrenPreview,
   deletePage,
+  deletedPageSummary,
   describeError,
   editPage,
   EDIT_MODES,
   linkJson,
   listChanges,
   listChildren,
+  listDeletedPages,
   moveRecord,
   pageSummary,
   renderDiff,
@@ -22,6 +24,8 @@ import {
   rowJson,
   searchPages,
   sourceChangesJson,
+  undeletePage,
+  vacuumPage,
   verifiedTimes,
   toFieldDefs,
   writeRow,
@@ -269,6 +273,71 @@ export function registerTools(server: McpServer, context: AppContext, actor: Act
       try {
         await deletePage(context, page_id, version, by(change_note));
         return json({ deleted: page_id });
+      } catch (error) {
+        return toolError(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "undelete_page",
+    {
+      title: "Undelete a page",
+      description:
+        "Bring back a deleted page, at the same id it had, with the content it held right before it was deleted. Its full history, from before the deletion too, stays reachable with get_history. " +
+        "Refused if the page still exists (nothing to undelete) or was never deleted (nothing to bring back). Find a deleted page's id with list_deleted_pages.",
+      inputSchema: {
+        page_id: z.string(),
+        change_note: CHANGE_NOTE,
+      },
+    },
+    async ({ page_id, change_note }): Promise<ToolResult> => {
+      try {
+        const page = await undeletePage(context, page_id, by(change_note));
+        return json(pageSummary(page));
+      } catch (error) {
+        return toolError(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "list_deleted_pages",
+    {
+      title: "Pages currently deleted",
+      description:
+        "Deleted pages, newest deletion first: id, title, who deleted it and when. Use it to find the id for undelete_page when you know something was deleted but not its exact id.",
+      inputSchema: {
+        cursor: z.string().optional().describe("From a previous call, to go further back."),
+        limit: z.number().int().min(1).max(100).optional(),
+      },
+    },
+    async ({ cursor, limit }): Promise<ToolResult> => {
+      try {
+        const result = await listDeletedPages(context, { cursor: cursor ?? null, ...(limit === undefined ? {} : { limit }) });
+        return json({ pages: result.items.map(deletedPageSummary), cursor: result.cursor });
+      } catch (error) {
+        return toolError(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "vacuum_page",
+    {
+      title: "Prune a page's history",
+      description:
+        "Deletes every revision of a page except its current one, then compacts the database. Irreversible: get_history for this page will show one entry afterward, and get_revision can no longer reach an older one. " +
+        "Use it only when a page's history has grown large with content nobody needs to look back at again. Needs its current version, from get_page, as a deliberate second confirmation of what will be pruned.",
+      inputSchema: {
+        page_id: z.string(),
+        version: z.string().describe("From get_page. Not optional."),
+      },
+    },
+    async ({ page_id, version }): Promise<ToolResult> => {
+      try {
+        const result = await vacuumPage(context, page_id, version);
+        return json({ page_id, revisions_removed: result.removed });
       } catch (error) {
         return toolError(error);
       }

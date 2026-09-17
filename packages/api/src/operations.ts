@@ -3,6 +3,7 @@ import {
   CairnError,
   NotFoundError,
   PageHasChildrenError,
+  PageNotDeletedError,
   parseRowNodeId,
   ValidationError,
   VersionConflictError,
@@ -497,6 +498,9 @@ export function describeError(error: unknown, wording: ErrorWording): DescribedE
   if (error instanceof PageHasChildrenError) {
     return { status: 422, body: { error: "has_children", message: error.message, count: error.count } };
   }
+  if (error instanceof PageNotDeletedError) {
+    return { status: 422, body: { error: "not_deleted", message: error.message } };
+  }
   return {
     status: 500,
     body: { error: "internal", message: error instanceof Error ? error.message : String(error) },
@@ -660,6 +664,53 @@ export async function deletePage(
   const children = await collectChildren(context, id);
   if (children.length > 0) throw new PageHasChildrenError(id, children.length);
   await context.pages.delete(context.workspaceId, id, expectedVersion, by);
+}
+
+/** A deleted page as every surface reports it in `list_deleted_pages` / `cairn deleted`. */
+export function deletedPageSummary(revision: Revision): Record<string, unknown> {
+  const snapshot = revision.snapshot as { title: string; parentId: string | null; tags: string[] };
+  return {
+    id: revision.recordId,
+    title: snapshot.title,
+    parent_id: snapshot.parentId,
+    tags: snapshot.tags,
+    deleted_at: revision.createdAt,
+    deleted_by: { kind: revision.actor.kind, name: revision.actor.label },
+    note: revision.note,
+  };
+}
+
+/**
+ * Deleted pages, newest deletion first. Shared by REST's `GET /pages/deleted`,
+ * MCP's `list_deleted_pages` tool and `cairn deleted` (ADR-059).
+ */
+export async function listDeletedPages(
+  context: AppContext,
+  options: { cursor?: string | null; limit?: number },
+): Promise<Paged<Revision>> {
+  return context.pages.listDeleted(context.workspaceId, options);
+}
+
+/**
+ * Bring a deleted page back, with its last content, at the same id, so links
+ * to it keep working (ADR-059). Shared by REST's `POST /pages/:id/undelete`,
+ * MCP's `undelete_page` tool and `cairn undelete`.
+ */
+export async function undeletePage(context: AppContext, id: string, by: WriteContext): Promise<Page> {
+  return context.pages.undelete(context.workspaceId, id, by);
+}
+
+/**
+ * Prune a page's history to its current version and compact the database
+ * (ADR-059). Shared by REST's `POST /pages/:id/vacuum`, MCP's `vacuum_page`
+ * tool and `cairn vacuum`.
+ */
+export async function vacuumPage(
+  context: AppContext,
+  id: string,
+  expectedVersion: string,
+): Promise<{ removed: number }> {
+  return context.pages.vacuum(context.workspaceId, id, expectedVersion);
 }
 
 // The changes feed (ADR-013 rule 4, ADR-058).

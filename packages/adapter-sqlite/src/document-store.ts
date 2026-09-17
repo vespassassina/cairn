@@ -593,6 +593,24 @@ export class SqliteDocumentStore implements DocumentStore {
     }
   }
 
+  async pruneRevisions(
+    workspaceId: WorkspaceId,
+    kind: RevisionKind,
+    recordId: Id,
+    keep: Version,
+  ): Promise<number> {
+    const result = this.db
+      .prepare(
+        "DELETE FROM revisions WHERE workspace_id = ? AND kind = ? AND record_id = ? AND version != ?",
+      )
+      .run(workspaceId, kind, recordId, keep);
+    return Number(result.changes);
+  }
+
+  async compact(): Promise<void> {
+    this.db.exec("VACUUM");
+  }
+
   // Edges. Derived data, replaced wholesale per source (ADR-005 rule 2).
 
   async replaceEdgesForSource(
@@ -955,6 +973,47 @@ export class SqliteDocumentStore implements DocumentStore {
         .prepare(
           `SELECT * FROM revisions WHERE ${conditions.join(" AND ")}
            ORDER BY created_at DESC, version DESC LIMIT ?`,
+        )
+        .all(...params),
+    );
+    return this.paginateRevisions(records.map(toRevision), limit);
+  }
+
+  async listDeletedPages(
+    workspaceId: WorkspaceId,
+    options: { limit?: number; cursor?: string | null } = {},
+  ): Promise<Paged<Revision>> {
+    const limit = clampLimit(options.limit);
+    const after = decodeRevisionCursor(options.cursor);
+
+    // For each page id with no current row, its single newest revision (the
+    // correlated NOT EXISTS finds the newest by ruling out every other one),
+    // kept only when that revision is itself the deletion: a page whose
+    // newest revision predates a later, still-off-chain write is not
+    // reported as deleted (ADR-059).
+    const conditions = [
+      "r.workspace_id = ?",
+      "r.kind = 'page'",
+      "r.deleted = 1",
+      "NOT EXISTS (SELECT 1 FROM pages p WHERE p.workspace_id = r.workspace_id AND p.id = r.record_id)",
+      `NOT EXISTS (
+         SELECT 1 FROM revisions r2
+         WHERE r2.workspace_id = r.workspace_id AND r2.kind = 'page' AND r2.record_id = r.record_id
+           AND (r2.created_at > r.created_at OR (r2.created_at = r.created_at AND r2.version > r.version))
+       )`,
+    ];
+    const params: Array<string | number> = [workspaceId];
+    if (after) {
+      conditions.push("(r.created_at < ? OR (r.created_at = ? AND r.version < ?))");
+      params.push(after[0], after[0], after[1]);
+    }
+    params.push(limit + 1);
+
+    const records = asRecords<RevisionRecord>(
+      this.db
+        .prepare(
+          `SELECT r.* FROM revisions r WHERE ${conditions.join(" AND ")}
+           ORDER BY r.created_at DESC, r.version DESC LIMIT ?`,
         )
         .all(...params),
     );

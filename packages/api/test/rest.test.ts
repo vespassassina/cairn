@@ -358,6 +358,73 @@ describe("pages", () => {
     expect(gone.status).toBe(404);
     expect(gone.json["error"]).toBe("not_found");
   });
+
+  it("lists a deleted page, undeletes it with its history intact, and drops it from the list again (ADR-059)", async () => {
+    const created = await createBuildLog();
+    const id = String(created.json["id"]);
+    await call(`/pages/${id}`, {
+      method: "DELETE",
+      headers: { "if-match": created.headers.get("etag")! },
+      body: { change_note: "Merged into the build index" },
+    });
+
+    const neverDeleted = await call(`/pages/some-page-never-deleted/undelete`, { method: "POST" });
+    expect(neverDeleted.status).toBe(422);
+    expect(neverDeleted.json["error"]).toBe("not_deleted");
+
+    const listed = await eventually(async () => {
+      const { json } = await call("/pages/deleted");
+      const found = (json["pages"] as Array<Record<string, unknown>>).find((p) => p["id"] === id);
+      expect(found).toBeDefined();
+      return found!;
+    });
+    expect(listed["deleted_by"]).toMatchObject({ kind: "agent" });
+
+    const undeleted = await call(`/pages/${id}/undelete`, {
+      method: "POST",
+      body: { change_note: "Brought it back" },
+    });
+    expect(undeleted.status).toBe(201);
+    const reread = await call(`/pages/${id}`);
+    expect(reread.status).toBe(200);
+    expect(reread.json["title"]).toBe("5 inch build log");
+
+    const stillDeleted = await call("/pages/deleted");
+    expect((stillDeleted.json["pages"] as Array<Record<string, unknown>>).some((p) => p["id"] === id)).toBe(false);
+
+    const history = await call(`/pages/${id}/history`);
+    const notes = (history.json["revisions"] as Array<{ note: string }>).map((r) => r.note);
+    expect(notes).toContain("Merged into the build index");
+    expect(notes).toContain("Started the log from the bench notes");
+  });
+
+  it("vacuums a page's older revisions, refusing a stale version (ADR-059)", async () => {
+    const created = await createBuildLog();
+    const id = String(created.json["id"]);
+    const updated = await call(`/pages/${id}`, {
+      method: "PATCH",
+      headers: { "if-match": created.headers.get("etag")! },
+      body: { mode: "replace_section", section: "Firmware", content: "BLHeli_32", change_note: "Firmware" },
+    });
+
+    const stale = await call(`/pages/${id}/vacuum`, {
+      method: "POST",
+      headers: { "if-match": String(created.json["version"]) },
+    });
+    expect(stale.status).toBe(409);
+    expect(stale.json["error"]).toBe("version_conflict");
+
+    const vacuumed = await call(`/pages/${id}/vacuum`, {
+      method: "POST",
+      headers: { "if-match": String(updated.json["version"]) },
+    });
+    expect(vacuumed.status).toBe(200);
+    expect(vacuumed.json["revisions_removed"]).toBe(1);
+
+    const history = await call(`/pages/${id}/history`);
+    const revisions = history.json["revisions"] as unknown[];
+    expect(revisions).toHaveLength(1);
+  });
 });
 
 describe("publishing (ADR-032)", () => {

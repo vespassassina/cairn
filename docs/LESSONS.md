@@ -11,6 +11,15 @@ Each entry answers four questions:
 3. **Fix.** What changed, with the commit or file.
 4. **Lesson.** What to do differently next time. This is the part worth reading.
 
+## 2026-09-18
+
+### Eleven pages vanished from the live Azure Cairn with no deletion recorded anywhere
+
+1. **What happened.** The owner found eleven pages gone from the live Azure Cairn on 2026-09-17. `cairn changes` showed no delete for any of them, and no surviving page's history mentioned them either.
+2. **Cause.** Not fully proven. Two explanations were possible: a bug in how deletions are recorded and surfaced, or real data loss that never went through `delete()` at all. A local end-to-end test (delete a page for real, then read its history and the changes feed) showed the existing code already records and surfaces a deletion correctly, which rules out the first explanation. That leaves the second: the pages were most likely lost at the replica level, with Litestream generation inconsistency the leading suspect, but that is not confirmed. Watch for it recurring; if it does, the replica and its generation history are the place to look next, not the deletion code path.
+3. **Fix.** Recovered the eleven pages' content from the local laptop's `cairn.sqlite` (kept current by `cairn sync`) and re-created them on Azure at their original ids with `cairn import`, so links between them and their place in the tree came back intact. No code changed, since the cause was not a code defect; see the CHANGELOG entry for the recovery mechanics.
+4. **Lesson.** "A delete doesn't show up in history" and "a page's history was never written because the page was lost before any delete happened" look identical from the outside — both show a page that is simply gone. Test the code path directly (an actual delete, actually read back) before assuming a reported symptom implicates the code that would normally explain it; here that test is what turned "fix the history bug" into "recover the data and build undelete," a different piece of work entirely.
+
 ## 2026-09-17
 
 ### The console's own "connect an agent" instructions told people to use http on a Cairn that only answers https

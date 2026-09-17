@@ -4,6 +4,24 @@ What changed, and why. Newest first. One entry per meaningful change: code, desi
 
 Entries link to the ADR when there is one. A change of direction that has no ADR yet still gets an entry here.
 
+## 2026-09-18
+
+### Recovered eleven pages lost on Azure, from the local laptop's history
+
+The owner found eleven pages missing from the live Azure Cairn on 2026-09-17, with no trace in `cairn changes` or in any surviving page's history. Recovered their content from the local laptop's `cairn.sqlite` revision history (kept current via `cairn sync`), built a synthetic export folder with the recovered content at the pages' original ids, and ran `cairn --instance azure import` (dry run first, then for real): 11 created, 0 updated, 0 unchanged. Verified afterward with `cairn --instance azure read`/`history` on several of the pages that content, `[[wiki-links]]` between them, and parent/child structure (including reparenting under two existing Azure pages that were not part of the loss) all came back correctly. No code changed for this; it used the existing `PUT /pages/:id` create-or-replace-by-id endpoint from ADR-016.
+
+Checked separately whether a delete failing to show up in history was a bug: a local end-to-end test (delete a page, read its history and the changes feed) showed the existing code already records and surfaces a deletion correctly. The Azure gap is best explained by the eleven pages never having gone through `delete()` at all, which is real data loss, not a code defect. See `docs/LESSONS.md` for what is and is not known about the cause.
+
+### Undelete, a deleted-pages list, and per-page vacuum (ADR-059)
+
+The owner asked to make a delete undoable from its history, to add a "deleted" list to every surface, and to add a `vacuum` command that removes a document's older revisions and compacts the database. All three reach MCP, REST and the CLI per hard rule 14:
+
+- `list_deleted_pages` / `GET /pages/deleted` / `cairn deleted`: every page whose newest revision is a deletion, newest first.
+- `undelete_page` / `POST /pages/:id/undelete` / `cairn undelete <page-id>`: brings a deleted page back at the same id with what it held before the delete, and keeps its pre-deletion history reachable by chaining the new revision's `parentVersion` onto the deletion revision instead of starting a fresh history. `writeWithRevision` (`packages/core/src/history/revisions.ts`) gained this as an override, since undelete is the first caller where the version used for the optimistic-concurrency check (`null`, since there is no current row) needs to differ from the version the new revision chains onto.
+- `vacuum_page` / `POST /pages/:id/vacuum` / `cairn vacuum <page-id> --version V`: deletes every revision of one page except its current one and runs `VACUUM` on SQLite. Scoped to a single page, not the whole workspace, since that is what the owner's phrasing named and a workspace-wide sweep is a much larger, harder-to-reverse action nobody asked for. Requires the page's current version, checked, the same guard every other destructive write uses, even though vacuum itself does not change the version.
+
+New error `PageNotDeletedError` (`packages/core/src/errors.ts`) distinguishes calling undelete on a page that still exists ("use restore instead") from calling it on an id with no deletion in its history ("check the id with `cairn deleted`"). See ADR-059 for the full design, including how `listDeletedPages`'s SQL correctly excludes a page that was undeleted since its last deletion.
+
 ## 2026-09-17
 
 ### Moved the agent-connect instructions from every page to the home page, and fixed their address

@@ -77,3 +77,21 @@ export class PageHasChildrenError extends CairnError {
     );
   }
 }
+
+/**
+ * `undelete` needs a page that is currently deleted, and `vacuum` needs one
+ * that is not (ADR-059). Each throws this with the reason it failed.
+ */
+export class PageNotDeletedError extends CairnError {
+  constructor(
+    readonly id: Id,
+    reason: "still_exists" | "never_deleted",
+  ) {
+    super(
+      reason === "still_exists"
+        ? `page ${id} was not deleted. undelete only brings back a deleted page; to go back to an earlier version of one that still exists, use restore.`
+        : `page ${id} has no deletion in its history, so there is nothing to undelete. Check the id with cairn deleted.`,
+      "not_deleted",
+    );
+  }
+}

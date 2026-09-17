@@ -588,6 +588,69 @@ export function runDocumentStoreConformance(
         await store.deleteRevision(WS, "page", "pg_rev_gone", "g1");
         expect(await store.getRevision(WS, "page", "pg_rev_gone", "g1")).toBeNull();
       });
+
+      it("prunes every revision but the one to keep", async () => {
+        await store.putRevision(WS, revision("pg_rev_prune", "pr1", null));
+        await store.putRevision(WS, revision("pg_rev_prune", "pr2", "pr1"));
+        await store.putRevision(WS, revision("pg_rev_prune", "pr3", "pr2"));
+        const removed = await store.pruneRevisions(WS, "page", "pg_rev_prune", "pr3");
+        expect(removed).toBe(2);
+        await eventually(async () => {
+          const listed = await store.listRevisions(WS, "page", "pg_rev_prune");
+          expect(listed.items.map((r) => r.version)).toEqual(["pr3"]);
+        });
+      });
+
+      it("compact runs without throwing, when the adapter offers it", async () => {
+        await store.compact?.();
+      });
+    });
+
+    describe("deleted pages", () => {
+      it("lists a deleted page by its deletion revision, newest first", async () => {
+        const page = await makePage("pg_del_a");
+        await store.putRevision(
+          WS,
+          revision(page.id, "da1", page.version, { deleted: true, createdAt: "2099-02-01T00:00:00.000Z" }),
+        );
+        await store.deletePage(WS, page.id, page.version);
+
+        await eventually(async () => {
+          const { items } = await store.listDeletedPages(WS);
+          expect(items.map((r) => r.recordId)).toContain(page.id);
+          expect(items.find((r) => r.recordId === page.id)?.deleted).toBe(true);
+        });
+      });
+
+      it("leaves out a page that still exists", async () => {
+        await makePage("pg_del_still_here");
+        const { items } = await store.listDeletedPages(WS);
+        expect(items.some((r) => r.recordId === "pg_del_still_here")).toBe(false);
+      });
+
+      it("leaves out a page that was undeleted since its last deletion", async () => {
+        const page = await makePage("pg_del_b");
+        await store.putRevision(
+          WS,
+          revision(page.id, "db1", page.version, { deleted: true, createdAt: "2099-02-01T00:00:00.000Z" }),
+        );
+        await store.deletePage(WS, page.id, page.version);
+        // Undeleted: a new revision continues the chain and the page exists again.
+        await store.putRevision(
+          WS,
+          revision(page.id, "db2", "db1", { createdAt: "2099-02-02T00:00:00.000Z" }),
+        );
+        await store.putPage(WS, page.id, { title: page.title, body: page.body, parentId: null, tags: [] }, null, {
+          version: "db2",
+          actor: OWNER,
+          at: "2099-02-02T00:00:00.000Z",
+        });
+
+        await eventually(async () => {
+          const { items } = await store.listDeletedPages(WS);
+          expect(items.some((r) => r.recordId === page.id)).toBe(false);
+        });
+      });
     });
 
     describe("capabilities", () => {

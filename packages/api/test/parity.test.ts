@@ -95,6 +95,9 @@ const CAPABILITIES: Capability[] = [
   // describes or changes the local machine running the CLI, not a Cairn
   // workspace, so there is nothing for MCP or REST, which speak to one
   // workspace, to expose.
+  { name: "list_deleted_pages", mcp: "list_deleted_pages", rest: "GET /pages/deleted", cli: "deleted" },
+  { name: "undelete_page", mcp: "undelete_page", rest: "POST /pages/:id/undelete", cli: "undelete" },
+  { name: "vacuum_page", mcp: "vacuum_page", rest: "POST /pages/:id/vacuum", cli: "vacuum" },
   { name: "status", mcp: null, rest: null, cli: "status", why: "presence.md: describes this machine, not a Cairn" },
   { name: "hook", mcp: null, rest: null, cli: "hook", why: "presence.md: installs a local git hook" },
   { name: "sync", mcp: null, rest: null, cli: "sync", why: "presence.md: a local job between two Cairns" },

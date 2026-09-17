@@ -66,6 +66,7 @@ A decision that changes is not edited away. Add a new ADR that supersedes it, an
 | [056](ADR-056.md) | The console is readable on a phone | accepted, extends 009 | 2026-09-16 |
 | [057](ADR-057.md) | A search result names each page once | accepted, amends 021 and 025 | 2026-09-16 |
 | [058](ADR-058.md) | An agent can walk the tree, and MCP catches up with the other two surfaces | accepted, extends 013 | 2026-09-16 |
+| [059](ADR-059.md) | Undelete, a deleted-pages list, and per-page vacuum | accepted | 2026-09-18 |
 
 ## Writing one
 
