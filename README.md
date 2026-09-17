@@ -2,6 +2,8 @@
 
 **A wiki and tables your agents can write to, with every change reviewable.**
 
+![The Cairn console, showing a page with its tree, body and backlinks](docs/images/console.png)
+
 Source-available and self-hosted: free for any non-commercial use. Agents write pages and table rows directly, with no approval step, and every write is a revision you can review in a small console and undo. One container and one SQLite file, on your machine, your own server or Azure's free grants.
 
 Search finds pages by keyword and by meaning, with a small model that runs inside Cairn: no API key, and nothing leaves your server. Search by meaning works for English only; other languages get keyword search (ADR-021, ADR-022).

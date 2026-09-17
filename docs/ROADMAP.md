@@ -140,7 +140,7 @@ Before publishing on GitHub and posting to Hacker News. From the review of 2026-
 | Repository public | done | https://github.com/vespassassina/cairn |
 | Online and offline model decided | done | ADR-023: a local Cairn and a cloud one, kept in step by `cairn sync` |
 | Search over-matching fixed | done | ADR-021. Questions with no answer now return nothing |
-| README leads with the tagline and a console screenshot | next | |
+| README leads with the tagline and a console screenshot | done | 2026-09-17. `docs/images/console.png`, a real page from the Cairn project's own collection in the console (tree, body, rail), placed right under the tagline |
 | CI green on Linux, macOS and Windows | done | Tests, CLI build and smoke test pass on Linux x64, Linux Arm, macOS and Windows (run 34703011030) |
 | Sign the macOS and Windows executables | later | ADR-014 rule 7. Costs an Apple developer account and a Windows certificate |
 

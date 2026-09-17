@@ -6,6 +6,14 @@ Entries link to the ADR when there is one. A change of direction that has no ADR
 
 ## 2026-09-17
 
+### README leads with a console screenshot
+
+The launch checklist wanted the README to open with a picture of the console, not just the tagline. `docs/images/console.png` is a real page from the console's own "Cairn (the project)" collection: tree, body and rail, so the screenshot needs no fixture data and stays true as the console changes. Deliberately not a screenshot of the "Peptides" collection, which is the owner's own research and does not belong in a public repository.
+
+### The missing LESSONS entry for fault 1 (console-and-search-polish)
+
+Criterion 19 of `docs/specs/console-and-search-polish.md` asked for a `docs/LESSONS.md` entry for each of faults 1, 2, 4 and 7. Fault 1, the CLI printing REST's ETag/If-Match wording on a version conflict, was already fixed and tested; only its entry was missing. Added, closing out the spec's last open criterion. All six ADRs from the 2026-09-16 review (053 to 058) are now done.
+
 ### Search results are grouped by page, not by chunk (ADR-057)
 
 Search used to return one result slot per matching chunk. A page with every term repeated across several sections could fill most of a small result list with itself, `diversify()` in `packages/adapter-sqlite/src/search-index.ts` only approximated grouping (each page's first chunk before any page's second), and a limit counted chunks rather than the pages an agent actually cares about finding. ADR-057 replaces that heuristic with real grouping one layer above the index.
