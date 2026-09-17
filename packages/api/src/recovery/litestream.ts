@@ -33,3 +33,24 @@ export function momentsIn(text: string): string[] {
   }
   return [...found].sort().reverse();
 }
+
+/**
+ * How long ago an RFC3339 moment was, in words, for the recovery log
+ * (ADR-020's write-loss window made visible at the point it matters).
+ *
+ * Words, not a duration format, because the reader is deciding "does this
+ * matter" in the middle of an incident, not parsing a log.
+ */
+export function ageOf(momentIso: string, now: Date = new Date()): string | null {
+  const thenMs = Date.parse(momentIso);
+  if (Number.isNaN(thenMs)) return null;
+  const ms = now.getTime() - thenMs;
+  if (ms < 0) return "less than a second";
+  const seconds = ms / 1000;
+  if (seconds < 1) return "less than a second";
+  if (seconds < 60) return `about ${Math.round(seconds)}s`;
+  const minutes = seconds / 60;
+  if (minutes < 60) return `about ${Math.round(minutes)}m`;
+  const hours = minutes / 60;
+  return `about ${Math.round(hours)}h`;
+}

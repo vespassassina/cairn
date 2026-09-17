@@ -13,6 +13,18 @@ Rules:
 
 ## 2026-09-17
 
+### Run the write-loss test, then fix or minimise it, and do two of the three proposals
+
+> "run the write loss test, then propose fixes or ways to minimize impact and recover"
+
+The test that ADR-020 deferred to "the first real Azure deployment": how much a crash can lose, and whether a graceful stop loses anything. Run locally against a `file://` Litestream replica, using the real `docker/start.sh`, the real pinned Litestream binary and the real `recover.mjs`, so as to never touch the live Azure deployment or its credentials. Results: a graceful stop loses nothing (20/20 marker writes survived, every run); a hard kill loses only the last ~840-930ms of writes, and nothing at all once 2 seconds have passed since the last write.
+
+Three fixes were proposed: (1) a regression test for "graceful stop loses nothing", (2) tuning Litestream's `sync-interval` down via a generated config, to shrink the crash-only window further, (3) telling the operator how stale an ordinary restore is, not only a rewound or backup one. The owner's reply:
+
+> "do 1 and 3"
+
+Landed in: (1) `.github/workflows/ci.yml`'s `image` job, a new step that writes a page, stops the container gracefully, wipes its local volume and restarts against a `file://` replica, asserting the page survives; (2) `packages/api/src/recovery/ladder.ts` (the `restored` outcome now carries `latest`, the newest moment the replica held), `packages/api/src/recovery/litestream.ts` (`ageOf`) and `packages/api/src/entry/recover.ts`, which now logs how old that point was. Option 2, the `sync-interval` tuning, was left undone: the measured window is already sub-second and bounded, so it was not judged worth the added `-config` YAML plumbing yet.
+
 ### Implement all the ADRs from the 2026-09-16 review, and stop asking
 
 > "implement all adrs"

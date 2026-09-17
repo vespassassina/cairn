@@ -6,7 +6,7 @@ import { loadConfig } from "../config.js";
 import { openArchive } from "../backup/open.js";
 import type { Backup } from "../backup/archive.js";
 import { climb, type Ladder, type RestoreAttempt } from "../recovery/ladder.js";
-import { isPermanent, momentsIn } from "../recovery/litestream.js";
+import { ageOf, isPermanent, momentsIn } from "../recovery/litestream.js";
 
 /**
  * Bring a database back before the server opens it (ADR-051).
@@ -33,6 +33,24 @@ function say(line: string): void {
 
 function oops(line: string): void {
   process.stderr.write(`cairn: ${line}\n`);
+}
+
+/** Every moment `litestream ltx` reports for `replica`, newest first. */
+async function listMoments(replica: string, options: { verbose: boolean }): Promise<string[]> {
+  try {
+    const { stdout, stderr } = await run("litestream", ["ltx", "-level", "all", replica]);
+    const text = `${stdout}${stderr}`;
+    if (options.verbose) {
+      // Worth printing whole: when recovery fails this is the record of what
+      // the replica actually held, and on Azure the container's log is the
+      // only place the owner can see it (ADR-046).
+      process.stderr.write(text.endsWith("\n") ? text : `${text}\n`);
+    }
+    return momentsIn(text);
+  } catch (error) {
+    oops(`litestream ltx could not list the replica: ${(error as Error).message}`);
+    return [];
+  }
 }
 
 async function main(): Promise<number> {
@@ -118,20 +136,13 @@ async function main(): Promise<number> {
       }
     },
 
-    moments: async () => {
-      try {
-        const { stdout, stderr } = await run("litestream", ["ltx", "-level", "all", replica]);
-        const text = `${stdout}${stderr}`;
-        // Worth printing whole: when recovery fails this is the record of what
-        // the replica actually held, and on Azure the container's log is the
-        // only place the owner can see it (ADR-046).
-        process.stderr.write(text.endsWith("\n") ? text : `${text}\n`);
-        return momentsIn(text);
-      } catch (error) {
-        oops(`litestream ltx could not list the replica: ${(error as Error).message}`);
-        return [];
-      }
-    },
+    moments: () => listMoments(replica, { verbose: true }),
+
+    // Same listing as `moments`, but quiet: called on every ordinary restore,
+    // not only a failed one, so dumping the whole replica history here would
+    // put it in the log of every routine restart rather than only the ones
+    // where it is evidence of something.
+    latestMoment: async () => (await listMoments(replica, { verbose: false }))[0] ?? null,
 
     backups: (): Promise<Backup[]> | null => (archive === null ? null : archive.list()),
 
@@ -188,6 +199,13 @@ async function main(): Promise<number> {
       `3. Start empty only once you are certain nothing else holds a newer copy, because the first write overwrites the replica. Move ${database} aside and redeploy.`,
     );
     return 1;
+  }
+
+  if (outcome.kind === "restored" && outcome.latest !== null) {
+    const age = ageOf(outcome.latest);
+    if (age !== null) {
+      say(`the replica's newest point is ${age} old, which bounds what a crash right before this start could have cost`);
+    }
   }
 
   if (outcome.kind === "backup") {

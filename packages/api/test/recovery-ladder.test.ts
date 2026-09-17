@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { backupName, backupTime, type Backup } from "../src/backup/archive.js";
 import { climb, type Ladder, type RestoreAttempt } from "../src/recovery/ladder.js";
-import { isPermanent, momentsIn } from "../src/recovery/litestream.js";
+import { ageOf, isPermanent, momentsIn } from "../src/recovery/litestream.js";
 
 // The recovery ladder decides what Cairn starts on (ADR-051). Every rung below
 // the first loses something, so the order matters more than any single rung:
@@ -77,6 +77,7 @@ function build(partial: Partial<World> = {}): Watched {
       return attempt;
     },
     moments: async () => world.moments,
+    latestMoment: async () => world.moments[0] ?? null,
     backups: () => (world.backups === null ? null : Promise.resolve(world.backups)),
     fetchBackup: async (name, destination) => {
       fetched.push(name);
@@ -123,8 +124,19 @@ describe("the recovery ladder", () => {
     const { ladder, world } = build();
     world.restores.set("", ok);
 
-    expect(await climb(DB, ladder)).toEqual({ kind: "restored" });
+    expect(await climb(DB, ladder)).toEqual({ kind: "restored", latest: null });
     expect(world.files.get(DB)).toBe(true);
+  });
+
+  it("says how far behind a plain restore could be, not only a rewound one", async () => {
+    // The rewound and backup outcomes already name a moment; the ordinary
+    // restore, hit on every routine redeploy, used to say nothing about
+    // timing at all.
+    const { ladder, world } = build();
+    world.restores.set("", ok);
+    world.moments = ["2026-09-16T10:30:12Z", "2026-09-16T09:00:00Z"];
+
+    expect(await climb(DB, ladder)).toEqual({ kind: "restored", latest: "2026-09-16T10:30:12Z" });
   });
 
   it("starts empty, not from a backup, when the replica holds nothing yet", async () => {
@@ -276,6 +288,27 @@ describe("reading the moments out of a litestream listing", () => {
 
   it("finds nothing in output that holds no timestamps", () => {
     expect(momentsIn("no snapshots found\n")).toEqual([]);
+  });
+});
+
+describe("saying how old a moment is", () => {
+  it("rounds to whole seconds under a minute", () => {
+    const now = new Date("2026-09-16T10:00:02.400Z");
+    expect(ageOf("2026-09-16T10:00:00.000Z", now)).toBe("about 2s");
+  });
+
+  it("calls anything under a second just that, not '0s'", () => {
+    const now = new Date("2026-09-16T10:00:00.500Z");
+    expect(ageOf("2026-09-16T10:00:00.000Z", now)).toBe("less than a second");
+  });
+
+  it("rounds to minutes, then hours", () => {
+    expect(ageOf("2026-09-16T09:57:00Z", new Date("2026-09-16T10:00:00Z"))).toBe("about 3m");
+    expect(ageOf("2026-09-16T07:00:00Z", new Date("2026-09-16T10:00:00Z"))).toBe("about 3h");
+  });
+
+  it("is null for a moment it cannot parse, rather than a wrong number", () => {
+    expect(ageOf("not a timestamp", new Date())).toBeNull();
   });
 });
 

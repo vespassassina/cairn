@@ -138,6 +138,68 @@ jobs:
           fi
           cat "$RUNNER_TEMP/denied.log"
           grep -q "is not writable" "$RUNNER_TEMP/denied.log"
+      - name: smoke test a graceful stop and restore from a replica (ADR-020, ADR-046)
+        env:
+          SERVICE_TOKEN: ci-service-token-0123456789abcdef0123
+        run: |
+          # The property docs/LESSONS.md exists for (the 2026-09-15 outage): a
+          # graceful stop must lose nothing, because SQLite checkpoints its
+          # write-ahead log on close and Litestream then ships a finished file
+          # rather than a truncated one. shutdown-signal.test.ts already checks
+          # the close half of that from a unit test; this checks the other
+          # half, end to end, against the real image: a real restart with no
+          # local disk must recover the write through a real Litestream
+          # replica. The replica is a bind-mounted folder (file:// instead of
+          # abs:// or s3://), so this needs no cloud credentials.
+          {
+            echo CAIRN_PUBLIC_URL=https://cairn.example.com
+            echo CAIRN_AUTH_PROVIDER=github
+            echo "CAIRN_AUTH_SECRET=$(openssl rand -hex 32)"
+            echo CAIRN_OAUTH_CLIENT_ID=ci
+            echo CAIRN_OAUTH_CLIENT_SECRET=ci
+            echo CAIRN_ALLOWED_USERS=github:ci
+            echo "CAIRN_TOKEN=$SERVICE_TOKEN"
+            echo CAIRN_REPLICA_URL=file:///replica
+            # Short enough that the test does not sit through the real 25s
+            # default; long enough to still exercise the ordered shutdown
+            # (ADR-046), not just an instant close.
+            echo CAIRN_SHUTDOWN_SECONDS=8
+          } > "$RUNNER_TEMP/replica.env"
+          replica="$RUNNER_TEMP/cairn-replica"
+          data="$RUNNER_TEMP/cairn-replica-data"
+          mkdir -p "$replica" "$data" && sudo chown 1000:1000 "$replica" "$data"
+
+          docker run -d --name cairn-replica-1 -p 8789:8787 --env-file "$RUNNER_TEMP/replica.env" \
+            -v "$replica:/replica" -v "$data:/data" cairn:test
+          for _ in $(seq 1 30); do curl -fsS localhost:8789/health && break; sleep 1; done
+          curl -fsS localhost:8789/health
+          curl -fsS -X POST localhost:8789/api/v1/pages -H "authorization: Bearer $SERVICE_TOKEN" \
+            -H "content-type: application/json" -H "user-agent: ci" \
+            -d '{"title":"write-loss-marker","body":"proves a graceful stop loses nothing (ADR-020, ADR-046)","change_note":"ci replica test"}'
+
+          # A real orchestrator sends SIGTERM and waits, not a kill: docker
+          # stop does the same, and its grace period is longer than
+          # CAIRN_SHUTDOWN_SECONDS so the ordered shutdown gets to finish.
+          docker stop -t 20 cairn-replica-1
+          docker logs cairn-replica-1 2>&1 | tee "$RUNNER_TEMP/replica-1.log"
+          grep -q "stopping on SIGTERM" "$RUNNER_TEMP/replica-1.log"
+          grep -q "closed the database" "$RUNNER_TEMP/replica-1.log"
+          docker rm cairn-replica-1
+
+          # Simulate Azure Container Apps' ephemeral local disk: the local
+          # volume is gone and only the replica survives, so the next
+          # container has nothing to trust and must restore (ADR-051).
+          sudo rm -rf "${data:?}"/*
+
+          docker run -d --name cairn-replica-2 -p 8789:8787 --env-file "$RUNNER_TEMP/replica.env" \
+            -v "$replica:/replica" -v "$data:/data" cairn:test
+          for _ in $(seq 1 30); do curl -fsS localhost:8789/health && break; sleep 1; done
+          docker logs cairn-replica-2 2>&1 | tee "$RUNNER_TEMP/replica-2.log"
+          grep -q "restored from the replica" "$RUNNER_TEMP/replica-2.log"
+          curl -fsS "localhost:8789/api/v1/pages?limit=200" -H "authorization: Bearer $SERVICE_TOKEN" \
+            | tee "$RUNNER_TEMP/replica-2-pages.json"
+          grep -q "write-loss-marker" "$RUNNER_TEMP/replica-2-pages.json"
+          docker rm -f cairn-replica-2
       - name: check the compose file
         working-directory: deploy/docker
         run: |

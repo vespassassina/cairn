@@ -50,6 +50,12 @@ export interface Ladder {
    * back past damage at the tail.
    */
   moments(): Promise<string[]>;
+  /**
+   * The newest moment the replica holds, or null when it cannot be told.
+   * Called on the ordinary restore too, so the operator learns how far a
+   * plain restore could be behind, not only a rewound or backup one.
+   */
+  latestMoment(): Promise<string | null>;
   /** The backups held, oldest first, or null when backups are off. */
   backups(): Promise<Backup[]> | null;
   /** Bring one backup down to a local path. */
@@ -66,7 +72,7 @@ export interface Ladder {
 
 export type Outcome =
   | { kind: "local" }
-  | { kind: "restored" }
+  | { kind: "restored"; latest: string | null }
   | { kind: "empty" }
   | { kind: "rewound"; moment: string; skipped: number }
   | { kind: "backup"; name: string; broken: string | null }
@@ -103,8 +109,14 @@ export async function climb(database: string, ladder: Ladder): Promise<Outcome> 
     return { kind: "empty" };
   }
   if (plain.ok && (await ladder.sound(database))) {
+    // The newest point the replica holds, not what was actually restored: a
+    // plain restore always takes the newest point anyway, so this is how far
+    // behind the crash this database could be, which is the number an
+    // operator needs and the one the "rewound" and "backup" outcomes already
+    // give (ADR-020's write-loss window).
+    const latest = await ladder.latestMoment();
     ladder.say("restored from the replica, and it passed its integrity check");
-    return { kind: "restored" };
+    return { kind: "restored", latest };
   }
   if (plain.ok) {
     ladder.oops("the database restored from the replica did not pass its integrity check");

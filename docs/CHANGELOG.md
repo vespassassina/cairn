@@ -6,6 +6,17 @@ Entries link to the ADR when there is one. A change of direction that has no ADR
 
 ## 2026-09-17
 
+### ADR-020's write-loss window, measured, plus a regression test and a staleness signal
+
+The first real numbers for the question ADR-020 deferred: run locally against a `file://` Litestream replica, using the real `docker/start.sh` entrypoint, the real pinned Litestream 0.5.17 binary and the real `recover.mjs`, so nothing touched the live Azure deployment or its credentials. A graceful stop (SIGTERM, the shape a real container orchestrator uses) lost nothing across every run: SQLite's checkpoint on close, added for the 2026-09-15 outage (`docs/LESSONS.md`, ADR-046), leaves Litestream a finished file to ship. A hard kill (SIGKILL, an OOM or crash) lost only the writes made in roughly the last 840-930ms, bounded by Litestream's default one-second sync interval, and lost nothing at all once 2 seconds had passed since the last write.
+
+Two fixes followed, per the owner's direction (`docs/DIRECTIONS.md`):
+
+1. A CI regression test for the property that matters most: `.github/workflows/ci.yml`'s `image` job now writes a page, stops the container the way an orchestrator does, wipes its local volume to simulate Azure Container Apps' ephemeral disk, restarts against a `file://` replica, and asserts the page survived. Nothing before this exercised the full graceful-stop-then-restore path end to end; `shutdown-signal.test.ts` only checked the close half.
+2. Staleness on the ordinary restore path. `recover.ts`'s `rewound` and `backup` outcomes already named the moment they landed on; the plain `restored` outcome, hit on every routine redeploy, said nothing about timing. `Ladder.latestMoment()` (`packages/api/src/recovery/ladder.ts`, `recovery/litestream.ts`, `entry/recover.ts`) now reports the newest point the replica held, quietly, without the full replica-history dump the `moments()` listing does for the rungs that are already diagnosing a problem.
+
+A third option, moving `docker/start.sh`'s Litestream invocation to a `-config` YAML so `sync-interval` could be tuned below one second, was proposed and declined: the measured window is already sub-second and bounded, so it was not judged worth the added plumbing yet.
+
 ### README leads with a console screenshot
 
 The launch checklist wanted the README to open with a picture of the console, not just the tagline. `docs/images/console.png` is a real page from the console's own "Cairn (the project)" collection: tree, body and rail, so the screenshot needs no fixture data and stays true as the console changes. Deliberately not a screenshot of the "Peptides" collection, which is the owner's own research and does not belong in a public repository.
