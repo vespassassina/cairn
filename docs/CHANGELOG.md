@@ -6,6 +6,10 @@ Entries link to the ADR when there is one. A change of direction that has no ADR
 
 ## 2026-09-18
 
+### Added "finish your own writes before you sync" to the ADR-060 sync guidance
+
+The owner pointed out, after ADR-060 landed, that an agent should finish and save whatever it was writing (a `git commit` in a code repo, a pending Cairn write) before running `cairn sync --dry-run`, not after: a dry run only describes a side correctly when nothing is about to change under it. Added as `docs/AGENT-OPERATE.md` §5, point 2, ahead of the existing dry-run-first rule, which shifted to point 3 (later points renumbered to match; `docs/LESSONS.md`'s reference updated from §5.2 to §5.3).
+
 ### Fixed the real cause of the "eleven pages vanished" loss: `cairn sync` was deleting them, and stopped it (ADR-060)
 
 Redeploying the ADR-059 fix and syncing per the owner's instruction turned up a second CI-visible bug first (`listDeletedPages` tie-breaking same-millisecond revisions by `version`, a random UUID, instead of `rowid`; fixed in `packages/adapter-sqlite/src/document-store.ts`, see `docs/LESSONS.md`). Running `cairn sync` after that fix deleted two more pages ("Home lab", "NAS Wake-on-LAN...") from the laptop, the one side that still had them. Investigating that deletion found `cairn sync`'s own log had recorded the same thing happening to all eleven pages from the 2026-09-17 loss, at `2026-09-17T21:48:33`, before this session started: `cairn sync`'s `plan()` (`packages/cli/src/sync.ts`) treats a record's absence from a live snapshot as proof it was deleted, and propagates that as a delete to the side that still has it. The eleven pages, checked on Azure, had no revision history at all there, not a soft delete: absence with no trace, exactly what the sync tool cannot distinguish from a real deletion. ADR-059's "Litestream generation inconsistency, leading suspect" was never actually tested; the sync tool's own record of what it did was.
