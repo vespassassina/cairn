@@ -335,6 +335,16 @@ export async function resolveMerges(syncPlan: SyncPlan, clients: Record<Side, Ca
  * ADR-060 accepts that narrower risk rather than leaving pages unprotected
  * until rows grow the same history support.
  */
+/** Where to check for proof that a record was really deleted (ADR-060). Tables have no history and are not covered: a table is one record, not a list of them, so "absent" and "deleted" already mean the same thing for it. */
+function historyPath(action: SyncAction): string | null {
+  if (action.target === null) return null;
+  if (action.kind === "page") return `/pages/${encodeURIComponent(action.target.id)}/history?limit=1`;
+  if (action.kind === "row" && action.target.tableId !== null) {
+    return `/tables/${encodeURIComponent(action.target.tableId)}/rows/${encodeURIComponent(action.target.id)}/history?limit=1`;
+  }
+  return null;
+}
+
 export async function verifyDeletes(
   syncPlan: SyncPlan,
   clients: Record<Side, CairnClient>,
@@ -342,14 +352,15 @@ export async function verifyDeletes(
   const actions: SyncAction[] = [];
   const warnings: string[] = [];
   for (const action of syncPlan.actions) {
-    if (action.op !== "delete" || action.kind !== "page" || action.target === null) {
+    const path = action.op === "delete" ? historyPath(action) : null;
+    if (path === null || action.target === null) {
       actions.push(action);
       continue;
     }
     const from = other(action.to);
     let hasHistory = false;
     try {
-      const { json } = await clients[from].request("GET", `/pages/${encodeURIComponent(action.target.id)}/history?limit=1`);
+      const { json } = await clients[from].request("GET", path);
       hasHistory = list(json?.["revisions"]).length > 0;
     } catch (error) {
       if (!(error instanceof ApiError && error.status === 404)) throw error;

@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { closeContext, createApp, createContext, OWNER, type AppContext } from "@cairn/api";
+import { revisionRecordId } from "@cairn/core";
 import { run, type Io } from "../src/main.js";
 import { loadState, newer, parseInterval, plan, record, type Snapshot, type SyncRecord } from "../src/sync.js";
 
@@ -176,6 +177,22 @@ describe("cairn sync between two servers", () => {
     expect((await b.pages.get(b.workspaceId, "pg_tb-500")).body).toContain("Pairs with");
     expect(stdout).toContain("warning:");
     expect(stdout).toContain("pg_tb-500");
+    expect(stdout).toContain("no history at all");
+  });
+
+  it("recreates a row that vanished with no trace instead of deleting the copy that survived (ADR-060)", async () => {
+    await seed(a);
+    await sync();
+    const row = await b.tables.getRow(b.workspaceId, "col_peptides", "row_tb");
+    await b.tables.deleteRow(b.workspaceId, "col_peptides", "row_tb", row.version, BY);
+    await b.store.pruneRevisions(b.workspaceId, "row", revisionRecordId("row", "row_tb", "col_peptides"), "not-a-real-version");
+    expect(await b.tables.rowHistory(b.workspaceId, "col_peptides", "row_tb")).toEqual([]);
+
+    expect(await sync()).toBe(0);
+    await expect(a.tables.getRow(a.workspaceId, "col_peptides", "row_tb")).resolves.toBeTruthy();
+    await expect(b.tables.getRow(b.workspaceId, "col_peptides", "row_tb")).resolves.toBeTruthy();
+    expect(stdout).toContain("warning:");
+    expect(stdout).toContain("row_tb");
     expect(stdout).toContain("no history at all");
   });
 

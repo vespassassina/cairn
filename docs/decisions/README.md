@@ -66,8 +66,9 @@ A decision that changes is not edited away. Add a new ADR that supersedes it, an
 | [056](ADR-056.md) | The console is readable on a phone | accepted, extends 009 | 2026-09-16 |
 | [057](ADR-057.md) | A search result names each page once | accepted, amends 021 and 025 | 2026-09-16 |
 | [058](ADR-058.md) | An agent can walk the tree, and MCP catches up with the other two surfaces | accepted, extends 013 | 2026-09-16 |
-| [059](ADR-059.md) | Undelete, a deleted-pages list, and per-page vacuum | accepted, cause of the 2026-09-17 loss corrected by 060 | 2026-09-18 |
+| [059](ADR-059.md) | Undelete, a deleted-pages list, and per-page vacuum | accepted, cause of the 2026-09-17 loss corrected by 060, confirmed by 061 | 2026-09-18 |
 | [060](ADR-060.md) | `cairn sync` never deletes a page it cannot prove was deleted | accepted | 2026-09-18 |
+| [061](ADR-061.md) | The 2026-09-17 and 2026-09-18 losses were a stalled replica, not sync | accepted | 2026-09-18 |
 
 ## Writing one
 

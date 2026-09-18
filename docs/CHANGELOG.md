@@ -6,6 +6,12 @@ Entries link to the ADR when there is one. A change of direction that has no ADR
 
 ## 2026-09-18
 
+### Found the real cause of both Azure losses: a stalled Litestream replica, and extended `verifyDeletes` to rows (ADR-061, ADR-060)
+
+After ADR-060's fix was deployed and synced, the owner reported the Home Assistant collection missing again: "so deployed and synced, i again have lost the online docs on home assistant collection." `cairn sync`'s state file showed `last_sync` unchanged since before the redeploy, ruling sync out. Listing Litestream's replica in Azure Blob Storage end to end (`az storage blob list`, not a truncated sample) found the real mechanism: compaction levels 1 and 2, which a healthy server writes every 30 seconds to 5 minutes, have no files between `2026-09-15T20:40:00Z` and `2026-09-18T08:18:36Z`, a 59.5-hour gap spanning the whole 2026-09-17 incident. Replication to the replica had stalled; every restart inside that window reverted to the stale `2026-09-15T20:40` point, discarding everything written since, repeatedly. This is the same mechanism behind both the 2026-09-17 loss (ADR-059) and this redeploy's repeat loss of the same thirteen pages, not two separate incidents. See ADR-061, which also records that no Log Analytics workspace is wired to the Container App, so the revisions that ran inside the gap left no retrievable logs to pin down what triggered the stall.
+
+Separately, the owner asked for the general rule behind ADR-060 in plain terms: "let's assume that if a document has no guid in the other server, it has to be created and not deleted. no guid = create." Rechecking ADR-060's stated reason for excluding rows found it was wrong: it claimed rows have no history endpoint, but `GET /tables/:cid/rows/:rid/history` already existed, just unused by sync. Extended `verifyDeletes` (`packages/cli/src/sync.ts`) with a `historyPath` helper that picks the right history endpoint by the action's kind, so rows now get the same proof-before-delete treatment pages already had; added a test. Tables remain excluded by design: a table is one record, not a list, so its own absence already means it was deleted.
+
 ### PRD no longer calls Cairn a working name
 
 The owner restated the name: "we keep the name cairn. a stack of documents". ADR-044 had already closed PRD Q5, but the PRD's opening line still read "Working name ... Rename freely", so the doc disagreed with the decision. Replaced it with the settled name and the owner's gloss, pointing at ADR-044. No code changed.

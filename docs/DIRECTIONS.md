@@ -13,6 +13,10 @@ Rules:
 
 ## 2026-09-18
 
+### "so deployed and synced, i again have lost the online docs on home assistant collection. check please. Also let's assume that if a document has no guid in the other server, it has to be created and not deleted. no guid = create."
+
+Two directions in one message. The investigation landed in ADR-061: a stalled Litestream replica, not sync, is what lost the Home Assistant pages a second time. The "no guid = create" rule was already built for pages in ADR-060; extended it to rows too, since ADR-060's stated reason for excluding them turned out to be a factual error (rows do have a history endpoint). Landed in: `docs/decisions/ADR-061.md`, `packages/cli/src/sync.ts` (`historyPath`), `docs/decisions/ADR-060.md` (point 4 corrected).
+
 ### "we keep the name cairn. a stack of documents"
 
 Restates the 2026-09-15 decision to keep Cairn (ADR-044) and adds the gloss: a cairn is a stack of stones, Cairn is a stack of documents. Landed in: `docs/PRD.md` opening line, which still called Cairn a working name.
