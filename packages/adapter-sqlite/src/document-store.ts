@@ -188,6 +188,9 @@ interface RevisionRecord {
   snapshot: string;
 }
 
+/** A revision row as read back with its SQLite rowid (see listRevisions). */
+type RevisionRow = RevisionRecord & { rowid: number };
+
 function toRevision(record: RevisionRecord): Revision {
   return {
     workspaceId: record.workspace_id,
@@ -204,18 +207,24 @@ function toRevision(record: RevisionRecord): Revision {
   };
 }
 
-/** Keyset cursor for revision lists: the last item's time and version. */
-function encodeRevisionCursor(revision: Revision): string {
-  return Buffer.from(JSON.stringify([revision.createdAt, revision.version]), "utf8").toString(
-    "base64url",
-  );
+/**
+ * Keyset cursor for revision lists: the last item's time and rowid.
+ * Not `version`: version is a random UUID (packages/core/src/ids.ts), so
+ * ordering or bounding by it within the same created_at millisecond is
+ * meaningless. rowid is SQLite's own monotonic insertion order (see
+ * listRevisions and listDeletedPages, which caught this as a CI flake).
+ */
+function encodeRevisionCursor(row: RevisionRow): string {
+  return Buffer.from(JSON.stringify([row.created_at, row.rowid]), "utf8").toString("base64url");
 }
 
-function decodeRevisionCursor(cursor: string | null | undefined): [string, string] | null {
+function decodeRevisionCursor(cursor: string | null | undefined): [string, number] | null {
   if (!cursor) return null;
   try {
     const value = JSON.parse(Buffer.from(cursor, "base64url").toString("utf8")) as unknown;
-    return Array.isArray(value) && value.length === 2 ? [String(value[0]), String(value[1])] : null;
+    return Array.isArray(value) && value.length === 2 && Number.isFinite(Number(value[1]))
+      ? [String(value[0]), Number(value[1])]
+      : null;
   } catch {
     return null;
   }
@@ -926,25 +935,31 @@ export class SqliteDocumentStore implements DocumentStore {
   ): Promise<Paged<Revision>> {
     const limit = clampLimit(options.limit);
     const after = decodeRevisionCursor(options.cursor);
-    const records = asRecords<RevisionRecord>(
+    // The tie-break is rowid, SQLite's own monotonic insertion order, not
+    // version: version is a random UUID (packages/core/src/ids.ts), so within
+    // the same created_at millisecond, ordering by it picks the "latest"
+    // revision at random rather than the one actually written last. undelete
+    // (and anything else reading items[0] as "the latest") needs the real
+    // one, not a coin flip (caught as a CI flake on rest.test.ts).
+    const rows = asRecords<RevisionRow>(
       after
         ? this.db
             .prepare(
-              `SELECT * FROM revisions
+              `SELECT *, rowid FROM revisions
                WHERE workspace_id = ? AND kind = ? AND record_id = ?
-                 AND (created_at < ? OR (created_at = ? AND version < ?))
-               ORDER BY created_at DESC, version DESC LIMIT ?`,
+                 AND (created_at < ? OR (created_at = ? AND rowid < ?))
+               ORDER BY created_at DESC, rowid DESC LIMIT ?`,
             )
             .all(workspaceId, kind, recordId, after[0], after[0], after[1], limit + 1)
         : this.db
             .prepare(
-              `SELECT * FROM revisions
+              `SELECT *, rowid FROM revisions
                WHERE workspace_id = ? AND kind = ? AND record_id = ?
-               ORDER BY created_at DESC, version DESC LIMIT ?`,
+               ORDER BY created_at DESC, rowid DESC LIMIT ?`,
             )
             .all(workspaceId, kind, recordId, limit + 1),
     );
-    return this.paginateRevisions(records.map(toRevision), limit);
+    return this.paginateRevisions(rows, limit);
   }
 
   async listRecentRevisions(
@@ -961,22 +976,22 @@ export class SqliteDocumentStore implements DocumentStore {
       params.push(options.actorKind);
     }
     if (after) {
-      conditions.push("(created_at < ? OR (created_at = ? AND version < ?))");
+      conditions.push("(created_at < ? OR (created_at = ? AND rowid < ?))");
       params.push(after[0], after[0], after[1]);
     }
     params.push(limit + 1);
 
     // Conditions are fixed strings chosen above, never caller input, so the
     // statement text stays a closed set.
-    const records = asRecords<RevisionRecord>(
+    const rows = asRecords<RevisionRow>(
       this.db
         .prepare(
-          `SELECT * FROM revisions WHERE ${conditions.join(" AND ")}
-           ORDER BY created_at DESC, version DESC LIMIT ?`,
+          `SELECT *, rowid FROM revisions WHERE ${conditions.join(" AND ")}
+           ORDER BY created_at DESC, rowid DESC LIMIT ?`,
         )
         .all(...params),
     );
-    return this.paginateRevisions(records.map(toRevision), limit);
+    return this.paginateRevisions(rows, limit);
   }
 
   async listDeletedPages(
@@ -1010,30 +1025,30 @@ export class SqliteDocumentStore implements DocumentStore {
     ];
     const params: Array<string | number> = [workspaceId];
     if (after) {
-      conditions.push("(r.created_at < ? OR (r.created_at = ? AND r.version < ?))");
+      conditions.push("(r.created_at < ? OR (r.created_at = ? AND r.rowid < ?))");
       params.push(after[0], after[0], after[1]);
     }
     params.push(limit + 1);
 
-    const records = asRecords<RevisionRecord>(
+    const rows = asRecords<RevisionRow>(
       this.db
         .prepare(
-          `SELECT r.* FROM revisions r WHERE ${conditions.join(" AND ")}
-           ORDER BY r.created_at DESC, r.version DESC LIMIT ?`,
+          `SELECT r.*, r.rowid FROM revisions r WHERE ${conditions.join(" AND ")}
+           ORDER BY r.created_at DESC, r.rowid DESC LIMIT ?`,
         )
         .all(...params),
     );
-    return this.paginateRevisions(records.map(toRevision), limit);
+    return this.paginateRevisions(rows, limit);
   }
 
   // Helpers.
 
-  private paginateRevisions(items: Revision[], limit: number): Paged<Revision> {
-    const hasMore = items.length > limit;
-    const window = hasMore ? items.slice(0, limit) : items;
+  private paginateRevisions(rows: RevisionRow[], limit: number): Paged<Revision> {
+    const hasMore = rows.length > limit;
+    const window = hasMore ? rows.slice(0, limit) : rows;
     const last = window[window.length - 1];
     return {
-      items: window,
+      items: window.map(toRevision),
       cursor: hasMore && last ? encodeRevisionCursor(last) : null,
     };
   }
