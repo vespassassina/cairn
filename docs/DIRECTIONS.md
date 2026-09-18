@@ -13,6 +13,10 @@ Rules:
 
 ## 2026-09-18
 
+### "deployed ok, but in azure i only have 2 collections again. check what's going on" / "all 3"
+
+The owner flagged the missing collection right after the ADR-062 deploy; investigation found the source-built Litestream had corrupted a snapshot and lost 13 pages on its first restore. Proposed three actions (revert the Dockerfile to the pinned release, keep the backup cooldown, write it up and redeploy once CI passes) and the owner approved all three: "all 3". Landed in: `docs/decisions/ADR-063.md`, `Dockerfile` (reverted to the 0.5.17 release install), `docs/LESSONS.md`, this entry.
+
 ### "do #1 and #2, then test the litestream fix"
 
 After being asked "how do we fix the litestream?" and given a recommendation (tighten the independent backup now; build Litestream from source at the unmerged PR #1514 fix, since it's a plain Go binary and the fix is confirmed by the bug's own reporter), the owner approved both and asked for the result to be tested live, not just built. Landed in: `docs/decisions/ADR-062.md`, `Dockerfile` (Litestream source-build stage), `deploy/azure/deploy.sh` and `deploy/azure/main.bicep` (`CAIRN_BACKUP_AFTER_HOURS` defaults to `0.5` on Azure).

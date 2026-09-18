@@ -69,7 +69,8 @@ A decision that changes is not edited away. Add a new ADR that supersedes it, an
 | [059](ADR-059.md) | Undelete, a deleted-pages list, and per-page vacuum | accepted, cause of the 2026-09-17 loss corrected by 060, confirmed by 061 | 2026-09-18 |
 | [060](ADR-060.md) | `cairn sync` never deletes a page it cannot prove was deleted | accepted | 2026-09-18 |
 | [061](ADR-061.md) | The Azure losses were Litestream issue #1515, a confirmed upstream bug with no fix released | accepted | 2026-09-18 |
-| [062](ADR-062.md) | Mitigate the Litestream stall with a tighter backup cooldown and a source build of the unmerged fix | accepted | 2026-09-18 |
+| [062](ADR-062.md) | Mitigate the Litestream stall with a tighter backup cooldown and a source build of the unmerged fix | backup cooldown accepted, source build superseded by 063 | 2026-09-18 |
+| [063](ADR-063.md) | Revert the source-built Litestream, its first restore corrupted a snapshot and lost data | accepted | 2026-09-18 |
 
 ## Writing one
 

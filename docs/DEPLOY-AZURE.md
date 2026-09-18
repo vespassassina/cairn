@@ -32,7 +32,7 @@ Cairn stops after 30 minutes without a request, and the next request starts it a
 
 ## Durability
 
-Litestream issue #1515 (ADR-061, ADR-062) can silently stop the replica from advancing, with no restart clearing it, until a fix ships upstream. Cairn's own backups (ADR-049) do not go through Litestream and are unaffected. `deploy.sh` defaults `CAIRN_BACKUP_AFTER_HOURS` to `0.5` for that reason, so at most thirty minutes of writes are at risk from that bug while it is unfixed, rather than the general-purpose default of three hours. Raise it back with `CAIRN_BACKUP_AFTER_HOURS=3` (or any number of hours) once a released Litestream carries the fix.
+Litestream issue #1515 (ADR-061) can silently stop the replica from advancing, with no restart clearing it, until a fix ships upstream. A same-day attempt to build against an unreleased fix (ADR-062) instead corrupted a snapshot on its first restore and lost 13 pages, worse than the stall it was meant to fix; ADR-063 reverted it to the pinned, checksummed release. Cairn's own backups (ADR-049) do not go through Litestream and are unaffected by either bug. `deploy.sh` defaults `CAIRN_BACKUP_AFTER_HOURS` to `0.5` for that reason, so at most thirty minutes of writes are at risk while #1515 is unfixed, rather than the general-purpose default of three hours. Raise it back with `CAIRN_BACKUP_AFTER_HOURS=3` (or any number of hours) once a released Litestream carries a reviewed fix.
 
 ## Before you start
 
