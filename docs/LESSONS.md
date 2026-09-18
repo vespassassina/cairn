@@ -13,6 +13,13 @@ Each entry answers four questions:
 
 ## 2026-09-18
 
+### `list_deleted_pages` flaked on CI: a deleted page sometimes did not appear as deleted
+
+1. **What happened.** CI's `test (macos-latest)` job failed on the ADR-059 commit: `packages/api/test/rest.test.ts`'s new deleted-pages test timed out waiting for a page to show up in `GET /pages/deleted` right after deleting it. Not reproducible locally in isolation, only under load (running the full suite back to back).
+2. **Cause.** `listDeletedPages`'s SQL decides whether a revision is a record's newest one with a correlated `NOT EXISTS` that broke ties on equal `created_at` timestamps (same millisecond, common for a create-then-delete in one test) by comparing `version` lexically. `version` is a random UUID (`packages/core/src/ids.ts`), not a sortable value, so on roughly half of same-millisecond ties the older revision's UUID sorted higher than the newer one's, and the query concluded the deletion was *not* the newest revision, so the page was silently left out of the deleted list.
+3. **Fix.** Changed the tie-break to `r2.rowid > r.rowid` (`packages/adapter-sqlite/src/document-store.ts`), SQLite's own monotonic insertion order for the `revisions` table, which is correct regardless of two revisions landing in the same millisecond.
+4. **Lesson.** A random id (UUID, ULID-without-time-ordering) is never safe to sort by to answer "which one came later." When a tie-break needs true insertion order and the surrounding writes are fast enough to land in the same timestamp bucket, use the database's own row order (`rowid` in SQLite) rather than any application-assigned id, even one that looks orderly. The same `version`-as-tie-break pattern appears in a few other revision queries in this file (`listRecentRevisions`, `listRevisions`, the changes feed) inherited from before this change; they were not touched here since nothing surfaced a failure from them, but they carry the same latent risk and are worth revisiting.
+
 ### Eleven pages vanished from the live Azure Cairn with no deletion recorded anywhere
 
 1. **What happened.** The owner found eleven pages gone from the live Azure Cairn on 2026-09-17. `cairn changes` showed no delete for any of them, and no surviving page's history mentioned them either.

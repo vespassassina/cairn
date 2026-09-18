@@ -996,10 +996,16 @@ export class SqliteDocumentStore implements DocumentStore {
       "r.kind = 'page'",
       "r.deleted = 1",
       "NOT EXISTS (SELECT 1 FROM pages p WHERE p.workspace_id = r.workspace_id AND p.id = r.record_id)",
+      // The tie-break is r2.rowid, SQLite's own monotonic insertion order,
+      // not r2.version: version is a random UUID (packages/core/src/ids.ts),
+      // so comparing versions lexically to find "the newer one" is
+      // meaningless and, within the same created_at millisecond, wrongly
+      // excludes a just-deleted page from this list about as often as it
+      // includes it (caught as a CI flake on rest.test.ts).
       `NOT EXISTS (
          SELECT 1 FROM revisions r2
          WHERE r2.workspace_id = r.workspace_id AND r2.kind = 'page' AND r2.record_id = r.record_id
-           AND (r2.created_at > r.created_at OR (r2.created_at = r.created_at AND r2.version > r.version))
+           AND r2.rowid > r.rowid
        )`,
     ];
     const params: Array<string | number> = [workspaceId];
