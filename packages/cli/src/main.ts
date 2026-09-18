@@ -49,6 +49,7 @@ import {
   resolveMerges,
   saveState,
   statePath,
+  verifyDeletes,
   type Side,
   type SyncAction,
   type SyncPlan,
@@ -690,11 +691,12 @@ export async function run(argv: string[], io: Io): Promise<number> {
     const [snapshotA, snapshotB] = await Promise.all([readSide(clientA), readSide(clientB)]);
     const path = await statePath(credentials, urls.a, urls.b);
     const state = await loadState(path, urls.a, urls.b);
-    const syncPlan = await resolveMerges(plan(snapshotA, snapshotB, state.base), { a: clientA, b: clientB }, state.base);
+    const merged = await resolveMerges(plan(snapshotA, snapshotB, state.base), { a: clientA, b: clientB }, state.base);
+    const { plan: syncPlan, warnings: deleteWarnings } = await verifyDeletes(merged, { a: clientA, b: clientB });
     if (dry) {
-      const merged = (x: SyncAction) => (x.merge === undefined ? {} : { merged: true, parts: x.merge.parts });
-      out({ dry_run: true, actions: syncPlan.actions.map((x) => ({ key: x.key, op: x.op, to: urls[x.to], conflict: x.conflict, ...merged(x) })) }, () =>
-        describeSyncPlan(syncPlan, urls),
+      const mergeInfo = (x: SyncAction) => (x.merge === undefined ? {} : { merged: true, parts: x.merge.parts });
+      out({ dry_run: true, actions: syncPlan.actions.map((x) => ({ key: x.key, op: x.op, to: urls[x.to], conflict: x.conflict, ...mergeInfo(x) })), warnings: deleteWarnings }, () =>
+        describeSyncPlan(syncPlan, urls) + deleteWarnings.map((w) => `  warning: ${w}\n`).join(""),
       );
       return null;
     }
@@ -706,6 +708,7 @@ export async function run(argv: string[], io: Io): Promise<number> {
       },
       state.base,
     );
+    report.warnings.push(...deleteWarnings);
     await saveState(path, { servers: [urls.a, urls.b], last_sync: new Date().toISOString(), base });
     out(report as unknown as Json, () => describeSyncReport(report, urls));
     return report;

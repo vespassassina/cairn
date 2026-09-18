@@ -160,6 +160,25 @@ describe("cairn sync between two servers", () => {
     expect(stdout).toContain(`to ${B_URL}: 1 deleted`);
   });
 
+  it("recreates a page that vanished with no trace instead of deleting the copy that survived (ADR-060)", async () => {
+    await seed(a);
+    await sync();
+    // Simulate real data loss on B, not a delete: the page and every one of
+    // its revisions are gone, unlike a genuine delete, which always leaves a
+    // revision behind (ADR-059). A hard as opposed to soft delete.
+    const tb = await b.pages.get(b.workspaceId, "pg_tb-500");
+    await b.pages.delete(b.workspaceId, "pg_tb-500", tb.version, BY);
+    await b.store.pruneRevisions(b.workspaceId, "page", "pg_tb-500", "not-a-real-version");
+    expect(await b.pages.history(b.workspaceId, "pg_tb-500")).toEqual([]);
+
+    expect(await sync()).toBe(0);
+    expect((await a.pages.get(a.workspaceId, "pg_tb-500")).body).toContain("Pairs with");
+    expect((await b.pages.get(b.workspaceId, "pg_tb-500")).body).toContain("Pairs with");
+    expect(stdout).toContain("warning:");
+    expect(stdout).toContain("pg_tb-500");
+    expect(stdout).toContain("no history at all");
+  });
+
   it("lets the newer edit win where both changed the same part, and keeps the other in history", async () => {
     await seed(a);
     await sync();

@@ -13,6 +13,14 @@ Rules:
 
 ## 2026-09-18
 
+### "ok redeploy then sync"
+
+Explicit, one-time authorization to redeploy the ADR-059 fix to Azure and then sync the laptop and Azure instances. The first deploy attempt found nothing new to deploy: the push's CI run had actually failed on `macos-latest` (a `listDeletedPages` flake, root-caused and fixed; see `docs/LESSONS.md`). Fixed, pushed, redeployed once CI was green (`cairn--0000024`). The sync half of the instruction then surfaced the ADR-060 incident below before it could be completed safely.
+
+### "wtf, you should not have deleted the data on laptop but propagate to remote." / "recover the deleted pages. and find a fix for this" / "then update the skill to avoid this type of bugs and regression"
+
+`cairn sync`, run as the second half of "ok redeploy then sync," deleted two pages from the laptop that Azure had lost with no trace, correctly by its own (wrong) logic but not what the owner wanted or expected. Recovered the two pages plus eleven more from the original 2026-09-17 loss (same mechanism, confirmed retroactively), fixed `cairn sync` itself so it can no longer turn an unproven absence into a deletion, and updated `docs/AGENT-OPERATE.md` and `skills/cairn/SKILL.md` to tell an agent to dry-run and read the warnings before a sync against a Cairn that might have missing data. Landed in ADR-060, `packages/cli/src/sync.ts`, `packages/cli/src/main.ts`, `packages/cli/test/sync.test.ts`, `docs/LESSONS.md`, `docs/AGENT-OPERATE.md`, `skills/cairn/SKILL.md`, this commit.
+
 ### "recreate them" (the eleven pages missing from the live Azure Cairn) / "make sure a delete appears in the history" / "make it possible to undo. a delete from the history"
 
 Recovered the eleven pages from the local laptop's revision history and re-created them on Azure at their original ids via `cairn import`, verified working. Investigated whether a delete failing to show up in history was a code bug: it is not, an end-to-end test showed the existing path already records and surfaces a deletion; the Azure gap is real data loss for pages that never went through `delete()`. Built undelete (`undelete_page` / `POST /pages/:id/undelete` / `cairn undelete`) so a genuine in-app delete can be undone from its history, keeping the page's id and its pre-deletion history intact. Landed in ADR-059, `packages/core/src/services/pages.ts`, `packages/core/src/history/revisions.ts`, `packages/api/src/operations.ts`, `packages/api/src/rest/routes.ts`, `packages/api/src/mcp/tools.ts`, `packages/cli/src/main.ts`, `docs/CHANGELOG.md`, this commit.

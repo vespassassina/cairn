@@ -309,6 +309,63 @@ export async function resolveMerges(syncPlan: SyncPlan, clients: Record<Side, Ca
   return { actions, base: syncPlan.base };
 }
 
+/**
+ * Confirms every planned deletion before it is applied (ADR-060). `plan`
+ * only sees who currently holds which hash: a key present with the last-
+ * agreed hash on one side and simply absent from the other's snapshot looks
+ * the same whether that other side genuinely deleted it or has lost the
+ * record some other way (a bug, a bad replica, a page a snapshot failed to
+ * enumerate). Propagating the second case as a delete destroys the only
+ * surviving copy, which is exactly what turned an earlier, unrelated data
+ * loss on the Cairn server into a second, sync-caused one (see
+ * `docs/LESSONS.md`, "A sync-caused, repeatable data loss" and the original
+ * "Eleven pages vanished" entry it corrects).
+ *
+ * A page's own history survives its deletion (ADR-059): a real delete always
+ * leaves at least one revision behind, `history` starting from it even
+ * though the page itself is gone. So the side that appears to have deleted
+ * a page is asked for that page's history; a non-empty answer confirms a
+ * real deletion, safe to propagate. An empty answer means there is no
+ * evidence a deletion ever happened there, so the action is turned into a
+ * `put` that recreates the page on the side missing it, and a warning says
+ * so, rather than silently deleting the side that still has it.
+ *
+ * Rows have no history endpoint to check this against (ADR-005: search and
+ * history are page concerns), so a missing row is still taken as deleted;
+ * ADR-060 accepts that narrower risk rather than leaving pages unprotected
+ * until rows grow the same history support.
+ */
+export async function verifyDeletes(
+  syncPlan: SyncPlan,
+  clients: Record<Side, CairnClient>,
+): Promise<{ plan: SyncPlan; warnings: string[] }> {
+  const actions: SyncAction[] = [];
+  const warnings: string[] = [];
+  for (const action of syncPlan.actions) {
+    if (action.op !== "delete" || action.kind !== "page" || action.target === null) {
+      actions.push(action);
+      continue;
+    }
+    const from = other(action.to);
+    let hasHistory = false;
+    try {
+      const { json } = await clients[from].request("GET", `/pages/${encodeURIComponent(action.target.id)}/history?limit=1`);
+      hasHistory = list(json?.["revisions"]).length > 0;
+    } catch (error) {
+      if (!(error instanceof ApiError && error.status === 404)) throw error;
+    }
+    if (hasHistory) {
+      actions.push(action);
+      continue;
+    }
+    warnings.push(
+      `${action.target.label} (${action.target.id}) is not deleted: it has no history at all on ${clients[from].baseUrl}, so its absence there is not proof it was deleted. Recreating it there from ${clients[action.to].baseUrl} instead of deleting the copy that still exists.`,
+    );
+    actions.push({ ...action, op: "put", to: from, source: action.target, target: null, conflict: false });
+  }
+  return { plan: { actions, base: syncPlan.base }, warnings };
+}
+
 export interface SyncReport {
   written: Record<Side, { pages: number; tables: number; rows: number; deleted: number }>;
   /**
