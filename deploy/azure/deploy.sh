@@ -31,6 +31,13 @@
 #                              (default 30); the next request starts it again
 #   CAIRN_ALWAYS_ON            true: never stop, so no cold starts, for a small
 #                              monthly cost beyond the free grant (default false)
+#   CAIRN_BACKUP_AFTER_HOURS   after a write, back up if the newest backup is
+#                              older than this many hours (default 0.5, tighter
+#                              than the app's own default of 3). This path
+#                              does not go through Litestream, so a short
+#                              value bounds what issue #1515 (ADR-061,
+#                              ADR-062) can lose while that bug is unfixed
+#                              upstream
 #
 # The signing secret is generated on the first run and kept, with the other
 # secrets you give it, in deploy/azure/.cairn-deploy.env: readable only by
@@ -75,6 +82,7 @@ fi
 : "${CAIRN_EMBEDDINGS:=local}"
 : "${CAIRN_IDLE_MINUTES:=30}"
 : "${CAIRN_ALWAYS_ON:=false}"
+: "${CAIRN_BACKUP_AFTER_HOURS:=0.5}"
 if [ -z "${CAIRN_AUTH_SECRET:-}" ]; then
   CAIRN_AUTH_SECRET="$(openssl rand -hex 32)"
   say "generated a signing secret, kept in $secrets_file"
@@ -98,6 +106,7 @@ CAIRN_AUTH_SECRET_PREVIOUS='$CAIRN_AUTH_SECRET_PREVIOUS'
 CAIRN_EMBEDDINGS='$CAIRN_EMBEDDINGS'
 CAIRN_IDLE_MINUTES='$CAIRN_IDLE_MINUTES'
 CAIRN_ALWAYS_ON='$CAIRN_ALWAYS_ON'
+CAIRN_BACKUP_AFTER_HOURS='$CAIRN_BACKUP_AFTER_HOURS'
 SAVED
 
 case "$CAIRN_IDLE_MINUTES" in
@@ -109,6 +118,9 @@ fi
 case "$CAIRN_ALWAYS_ON" in
   true | false) ;;
   *) fail "CAIRN_ALWAYS_ON must be true or false" ;;
+esac
+case "$CAIRN_BACKUP_AFTER_HOURS" in
+  '' | *[!0-9.]*) fail "CAIRN_BACKUP_AFTER_HOURS must be a number of hours greater than 0" ;;
 esac
 
 if [ -n "$CAIRN_OAUTH_CLIENT_ID" ]; then
@@ -213,7 +225,8 @@ trap 'rm -f "$params"' EXIT
   printf '"authSecretPrevious":{"value":%s},' "$(json_string "$CAIRN_AUTH_SECRET_PREVIOUS")"
   printf '"embeddings":{"value":%s},' "$(json_string "$CAIRN_EMBEDDINGS")"
   printf '"idleMinutes":{"value":%s},' "$CAIRN_IDLE_MINUTES"
-  printf '"alwaysOn":{"value":%s}' "$CAIRN_ALWAYS_ON"
+  printf '"alwaysOn":{"value":%s},' "$CAIRN_ALWAYS_ON"
+  printf '"backupAfterHours":{"value":%s}' "$(json_string "$CAIRN_BACKUP_AFTER_HOURS")"
   printf '}}'
 } > "$params"
 

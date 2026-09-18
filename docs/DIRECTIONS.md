@@ -13,6 +13,10 @@ Rules:
 
 ## 2026-09-18
 
+### "do #1 and #2, then test the litestream fix"
+
+After being asked "how do we fix the litestream?" and given a recommendation (tighten the independent backup now; build Litestream from source at the unmerged PR #1514 fix, since it's a plain Go binary and the fix is confirmed by the bug's own reporter), the owner approved both and asked for the result to be tested live, not just built. Landed in: `docs/decisions/ADR-062.md`, `Dockerfile` (Litestream source-build stage), `deploy/azure/deploy.sh` and `deploy/azure/main.bicep` (`CAIRN_BACKUP_AFTER_HOURS` defaults to `0.5` on Azure).
+
 ### "proceed backup and then 1,2,3"
 
 Approved, after the live reproduction of the Azure loss: take a safety-net backup, then keep the container warm, research the Litestream issue, and propose a fix. Landed in: a laptop-sourced export to `/tmp/cairn-azure-safety-net-*` (not an Azure export, since Azure's own copy was what was fragile), a background keep-alive ping, and `docs/decisions/ADR-061.md`'s confirmed root cause (Litestream issue #1515) with mitigation options.

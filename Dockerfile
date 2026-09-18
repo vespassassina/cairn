@@ -31,28 +31,30 @@ RUN npm install --omit=dev --no-audit --no-fund \
   && find node_modules/onnxruntime-node/bin -mindepth 3 -maxdepth 3 -type d ! -path "*/linux/${arch}" -exec rm -rf {} + \
   && node fetch-model.mjs /src/dist/server/models
 
+# Built from source at a pinned commit on an open, unmerged upstream PR
+# (ADR-062), not from a release: issue #1515 is a confirmed bug in every
+# released 0.5.x build (0.5.14 through 0.5.17, the version this image ran
+# before) where the follower's gap-bridging logic never consults the L9
+# snapshot, so a stall it cannot bridge is silent and survives a restart.
+# PR #1514 (darkgnotic/litestream, branch snapshot_compaction_coordination)
+# adds fillFollowGapFromSnapshot, which lets it consult L9; the bug's own
+# reporter confirmed it resolves #1515. No release carries this fix yet.
+# Revert to the pinned-release-tarball model (see git history) once
+# benbjohnson/litestream ships a tagged version with the fix.
+FROM golang:1-bookworm AS litestream-build
+ARG LITESTREAM_FORK=darkgnotic/litestream
+ARG LITESTREAM_COMMIT=9dad482c64a0d156fea1ff8c07b56cd288b07035
+RUN git clone --no-checkout "https://github.com/${LITESTREAM_FORK}.git" /src \
+  && cd /src \
+  && git checkout "$LITESTREAM_COMMIT" \
+  && CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.Version=${LITESTREAM_COMMIT}" \
+       -o /usr/local/bin/litestream ./cmd/litestream
+
 FROM debian:bookworm-slim AS litestream
-ARG TARGETARCH
-# Pinned, and checked against the checksums published with the release.
-# Keep this current: 0.5 is a rewrite, and the corruption and restore fixes
-# land in patch releases (ADR-046).
-ARG LITESTREAM_VERSION=0.5.17
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates curl \
+  && apt-get install -y --no-install-recommends ca-certificates \
   && rm -rf /var/lib/apt/lists/*
-RUN set -eu; \
-  case "$TARGETARCH" in \
-    amd64) file="litestream-${LITESTREAM_VERSION}-linux-x86_64.tar.gz"; \
-           sum="cfb371176d164437ae869f8351cfde49bd1804ae71c61923f75c9cba9c9c006d" ;; \
-    arm64) file="litestream-${LITESTREAM_VERSION}-linux-arm64.tar.gz"; \
-           sum="f8ca4a050095c1efbda2c4365172e61bf9d955ea0d9ac42f448b52e51819baa5" ;; \
-    *) echo "no Litestream build for $TARGETARCH" >&2; exit 1 ;; \
-  esac; \
-  curl -fsSL -o /tmp/litestream.tar.gz \
-    "https://github.com/benbjohnson/litestream/releases/download/v${LITESTREAM_VERSION}/${file}"; \
-  echo "${sum}  /tmp/litestream.tar.gz" | sha256sum -c -; \
-  mkdir -p /tmp/litestream && tar -xzf /tmp/litestream.tar.gz -C /tmp/litestream; \
-  install -m 0755 "$(find /tmp/litestream -type f -name litestream | head -n 1)" /usr/local/bin/litestream
+COPY --from=litestream-build /usr/local/bin/litestream /usr/local/bin/litestream
 
 FROM node:24-slim
 ENV NODE_ENV=production \

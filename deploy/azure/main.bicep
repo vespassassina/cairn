@@ -70,6 +70,9 @@ param idleMinutes int = 30
 @description('Keep one copy running at all times: no cold starts, billed at the lower idle rate while unused, which goes beyond the free grant.')
 param alwaysOn bool = false
 
+@description('After a write, back up if the newest backup is older than this many hours (ADR-049). Litestream issue #1515 (ADR-061, ADR-062) can silently stop the replica from advancing, so a shorter value bounds how much a stall like that can lose; this path does not go through Litestream and is unaffected by that bug. Tighter than the app\'s own built-in default of 3.')
+param backupAfterHours string = '0.5'
+
 @description('Optional service token, at least 32 characters, for scripts that cannot sign in.')
 @secure()
 param serviceToken string = ''
@@ -139,6 +142,7 @@ var baseEnv = [
   { name: 'CAIRN_ALLOWED_USERS', value: allowedUsers }
   { name: 'CAIRN_REPLICA_URL', value: 'abs://${storage.name}@${blobContainerName}/cairn.sqlite' }
   { name: 'CAIRN_BACKUP_TO', value: 'abs://${storage.name}@${backupContainerName}/backups' }
+  { name: 'CAIRN_BACKUP_AFTER_HOURS', value: backupAfterHours }
   { name: 'CAIRN_EMBEDDINGS', value: embeddings }
 ]
 var oidcEnv = authProvider == 'oidc' ? [ { name: 'CAIRN_OIDC_ISSUER', value: oidcIssuer } ] : []

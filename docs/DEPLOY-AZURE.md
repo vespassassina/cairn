@@ -30,6 +30,10 @@ Cairn stops after 30 minutes without a request, and the next request starts it a
 
 `cairn sync --every` counts as use. Syncing more often than every `CAIRN_IDLE_MINUTES` keeps Cairn awake all the time, billed at the full rate rather than the idle one, so either sync less often than that, or turn on `CAIRN_ALWAYS_ON`.
 
+## Durability
+
+Litestream issue #1515 (ADR-061, ADR-062) can silently stop the replica from advancing, with no restart clearing it, until a fix ships upstream. Cairn's own backups (ADR-049) do not go through Litestream and are unaffected. `deploy.sh` defaults `CAIRN_BACKUP_AFTER_HOURS` to `0.5` for that reason, so at most thirty minutes of writes are at risk from that bug while it is unfixed, rather than the general-purpose default of three hours. Raise it back with `CAIRN_BACKUP_AFTER_HOURS=3` (or any number of hours) once a released Litestream carries the fix.
+
 ## Before you start
 
 1. An Azure subscription with pay-as-you-go billing. The free grants apply to it.
