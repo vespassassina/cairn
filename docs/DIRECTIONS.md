@@ -13,6 +13,10 @@ Rules:
 
 ## 2026-09-18
 
+### "proceed backup and then 1,2,3"
+
+Approved, after the live reproduction of the Azure loss: take a safety-net backup, then keep the container warm, research the Litestream issue, and propose a fix. Landed in: a laptop-sourced export to `/tmp/cairn-azure-safety-net-*` (not an Azure export, since Azure's own copy was what was fragile), a background keep-alive ping, and `docs/decisions/ADR-061.md`'s confirmed root cause (Litestream issue #1515) with mitigation options.
+
 ### "so deployed and synced, i again have lost the online docs on home assistant collection. check please. Also let's assume that if a document has no guid in the other server, it has to be created and not deleted. no guid = create."
 
 Two directions in one message. The investigation landed in ADR-061: a stalled Litestream replica, not sync, is what lost the Home Assistant pages a second time. The "no guid = create" rule was already built for pages in ADR-060; extended it to rows too, since ADR-060's stated reason for excluding them turned out to be a factual error (rows do have a history endpoint). Landed in: `docs/decisions/ADR-061.md`, `packages/cli/src/sync.ts` (`historyPath`), `docs/decisions/ADR-060.md` (point 4 corrected).
