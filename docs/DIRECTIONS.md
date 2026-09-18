@@ -13,6 +13,10 @@ Rules:
 
 ## 2026-09-18
 
+### "we keep the name cairn. a stack of documents"
+
+Restates the 2026-09-15 decision to keep Cairn (ADR-044) and adds the gloss: a cairn is a stack of stones, Cairn is a stack of documents. Landed in: `docs/PRD.md` opening line, which still called Cairn a working name.
+
 ### "ok redeploy then sync"
 
 Explicit, one-time authorization to redeploy the ADR-059 fix to Azure and then sync the laptop and Azure instances. The first deploy attempt found nothing new to deploy: the push's CI run had actually failed on `macos-latest` (a `listDeletedPages` flake, root-caused and fixed; see `docs/LESSONS.md`). Fixed, pushed, redeployed once CI was green (`cairn--0000024`). The sync half of the instruction then surfaced the ADR-060 incident below before it could be completed safely.

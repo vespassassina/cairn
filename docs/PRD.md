@@ -1,6 +1,6 @@
 # Cairn: PRD v0.1
 
-Working name. A cairn is a stack of stones that marks a trail. Rename freely.
+A cairn is a stack of stones that marks a trail. Cairn is a stack of documents. The name is settled (ADR-044).
 
 Status: draft
 Owner: Diego

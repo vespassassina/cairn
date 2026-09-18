@@ -6,6 +6,10 @@ Entries link to the ADR when there is one. A change of direction that has no ADR
 
 ## 2026-09-18
 
+### PRD no longer calls Cairn a working name
+
+The owner restated the name: "we keep the name cairn. a stack of documents". ADR-044 had already closed PRD Q5, but the PRD's opening line still read "Working name ... Rename freely", so the doc disagreed with the decision. Replaced it with the settled name and the owner's gloss, pointing at ADR-044. No code changed.
+
 ### Added "finish your own writes before you sync" to the ADR-060 sync guidance
 
 The owner pointed out, after ADR-060 landed, that an agent should finish and save whatever it was writing (a `git commit` in a code repo, a pending Cairn write) before running `cairn sync --dry-run`, not after: a dry run only describes a side correctly when nothing is about to change under it. Added as `docs/AGENT-OPERATE.md` §5, point 2, ahead of the existing dry-run-first rule, which shifted to point 3 (later points renumbered to match; `docs/LESSONS.md`'s reference updated from §5.2 to §5.3).
