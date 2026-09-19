@@ -13,6 +13,14 @@ Rules:
 
 ## 2026-09-19
 
+### "does it make sense to have a kanban in cairn? for tracking project management stuff? [...] a kanban that the user can work with. also tasks and tasklists, hierarchical, structures (think asana)." / "rich editor is for phase 2. keep it there. add there the kanban and asana functionalities"
+
+The owner asked whether project tracking belonged in Cairn, then placed it explicitly: the kanban board and hierarchical task/tasklist structure go in Phase 2 alongside the rich editor, not before. Landed in `docs/ROADMAP.md`'s Phase 2 section: the `Tasks` table (rows, no new capability) can be built any time, the interactive board and hierarchy view wait for the editor's gate per ADR-009's scope limits.
+
+### "attachments as rows in a built-in Attachments table + SHA-256-addressed blobs, uploaded direct to blob storage. Accepted. with preview in pic format if available and pictures referenced in the pages."
+
+The owner accepted ADR-064 and added a requirement: a generated preview for image attachments. Landed as ADR-064 decision 6 (thumbnail generation, WASM codec, best-effort, four raster formats only) and the ADR's status moved to accepted. The two other open questions in the proposed draft (cross-page blob sharing, refusing SVG) were resolved with the recommended default rather than raised again, noted in the ADR's "Decisions made on acceptance" section.
+
 ### "can cairn store pictures too? can we store diagrams, pics, and eventually docs? perhaps storing in blob and linking?" / "i am a senior cloud solutions architect, i still know something 🙂 draft the ADR."
 
 The owner asked whether attachments were feasible and sketched the shape themselves: blob storage, linked from pages. Landed as ADR-064 (proposed): a built-in `Attachments` table for metadata, blobs keyed by SHA-256, uploads signed direct to blob storage so bytes never pass through the API or an MCP tool call.
