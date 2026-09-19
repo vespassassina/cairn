@@ -13,6 +13,14 @@ Rules:
 
 ## 2026-09-19
 
+### "also graph editing (tree and network) to edit graphs uploaded by the agent"
+
+The owner asked for a person to be able to edit, not just view, a tree or network diagram an agent wrote as text. Landed in `docs/ROADMAP.md`'s Phase 2 section as its own item: an interactive editor over a Mermaid or DOT graph that writes structural edits back out as the same text grammar, gated on the editor same as the kanban board.
+
+### "blog, simple posts, photo gallery if needed"
+
+The owner narrowed the existing 2026-09-14 "more kinds of content" direction: blog posts stay simple, and a photo gallery is added only if the attachment thumbnail grid (ADR-064 decision 6) isn't enough on its own. Landed as an amendment to the same Phase 2 roadmap row.
+
 ### "does it make sense to have a kanban in cairn? for tracking project management stuff? [...] a kanban that the user can work with. also tasks and tasklists, hierarchical, structures (think asana)." / "rich editor is for phase 2. keep it there. add there the kanban and asana functionalities"
 
 The owner asked whether project tracking belonged in Cairn, then placed it explicitly: the kanban board and hierarchical task/tasklist structure go in Phase 2 alongside the rich editor, not before. Landed in `docs/ROADMAP.md`'s Phase 2 section: the `Tasks` table (rows, no new capability) can be built any time, the interactive board and hierarchy view wait for the editor's gate per ADR-009's scope limits.
