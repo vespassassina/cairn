@@ -71,6 +71,8 @@ A decision that changes is not edited away. Add a new ADR that supersedes it, an
 | [061](ADR-061.md) | The Azure losses were Litestream issue #1515, a confirmed upstream bug with no fix released | accepted | 2026-09-18 |
 | [062](ADR-062.md) | Mitigate the Litestream stall with a tighter backup cooldown and a source build of the unmerged fix | backup cooldown accepted, source build superseded by 063 | 2026-09-18 |
 | [063](ADR-063.md) | Revert the source-built Litestream, its first restore corrupted a snapshot and lost data | accepted | 2026-09-18 |
+| [064](ADR-064.md) | Attachments are rows plus content-addressed blobs, uploaded direct | proposed | 2026-09-19 |
+| [065](ADR-065.md) | Mermaid, Vega-Lite and Viz.js are the text-form visualizations; everything else is an attachment | accepted | 2026-09-19 |
 
 ## Writing one
 

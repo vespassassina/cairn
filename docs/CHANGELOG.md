@@ -4,6 +4,10 @@ What changed, and why. Newest first. One entry per meaningful change: code, desi
 
 Entries link to the ADR when there is one. A change of direction that has no ADR yet still gets an entry here.
 
+## 2026-09-19
+
+**Drafted ADR-064 (attachments) and accepted ADR-065 (the text-visualization stack).** ADR-064 proposes attachments as rows in a built-in `Attachments` table, blobs addressed by SHA-256, and uploads signed direct to blob storage rather than proxied through the API or an MCP tool call, following PRD P1 item 4; it is `proposed`, pending the owner's sign-off on cross-page blob sharing and refusing SVG uploads outright. ADR-065 settles what carries diagrams and charts as text: Mermaid for hand-authored diagrams (already the standing choice), Vega-Lite for charts generated from a table's own data, Viz.js for the console's own wiki graph view (backlinks, neighbours), and D3 kept out of content entirely. Everything without a text-native shape, blueprints, floor plans, scans, goes through ADR-064's attachments instead of being forced into a diagram grammar.
+
 ## 2026-09-18
 
 **Reverted the source-built Litestream: its first restore corrupted a snapshot and lost 13 pages (ADR-063).** The mitigation deployed and verified earlier the same day turned out to have traded issue #1515's silent stall for a silent snapshot-corruption bug in the same unmerged branch, discovered only because the owner noticed Azure's console showing 2 collections instead of 3. The container's startup log showed the real story: a corrupt L9 snapshot triggered Cairn's own restore integrity check, which rolled the database back to 09:32 UTC and silently dropped 9 later replication points, the "Home Assistant & Homelab" collection and 10 more pages. Recovered with `cairn export --instance laptop` then `cairn import --instance azure` (13 created, 1 updated, 108 unchanged); `cairn sync`'s own dry run was tried first and would have propagated the loss by deleting those same 13 pages from the laptop copy, so it was not used. Dockerfile reverted to the pinned, checksummed 0.5.17 release; `CAIRN_BACKUP_AFTER_HOURS=0.5` stays, since it was not implicated. See `docs/LESSONS.md`.

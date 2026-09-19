@@ -11,6 +11,16 @@ Rules:
 3. Every entry says where it landed: an ADR, a doc, a commit, or "not yet".
 4. A later direction that reverses an earlier one does not edit it. Add the new one and point back.
 
+## 2026-09-19
+
+### "can cairn store pictures too? can we store diagrams, pics, and eventually docs? perhaps storing in blob and linking?" / "i am a senior cloud solutions architect, i still know something 🙂 draft the ADR."
+
+The owner asked whether attachments were feasible and sketched the shape themselves: blob storage, linked from pages. Landed as ADR-064 (proposed): a built-in `Attachments` table for metadata, blobs keyed by SHA-256, uploads signed direct to blob storage so bytes never pass through the API or an MCP tool call.
+
+### "for visualiozations, can we use D3? we can just add it. what other diagrams, blueprints, planimetries, visualizations, treeviews we can add in text form? what libs do we need?" / "we use mermaid, vega-lite, viz.js (for the wiki graph) and add attachments, pics and files for the rest"
+
+The owner picked the visualization stack directly: Mermaid, Vega-Lite and Viz.js as the text-form formats, D3 excluded from content, everything else routed through attachments. Landed as ADR-065 (accepted).
+
 ## 2026-09-18
 
 ### "deployed ok, but in azure i only have 2 collections again. check what's going on" / "all 3"
