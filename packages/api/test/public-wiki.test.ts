@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Hono } from "hono";
 import { createApp } from "../src/app.js";
 import { createContext, OWNER, type AppContext } from "../src/context.js";
+import { createPublishToken, revokePublishToken } from "../src/publish-tokens.js";
 
 // The webmention route's SSRF guard resolves the sender's address for real
 // (citations.test.ts covers that resolution directly); here it only needs to
@@ -286,6 +287,102 @@ describe("what search engines are told", () => {
     const page = await stranger(`/w/${parent.id}`);
     expect(page.headers.get("content-security-policy")).toContain("script-src 'self'");
     expect(page.headers.get("x-content-type-options")).toBe("nosniff");
+  });
+});
+
+describe("token-gated subtrees (ADR-066)", () => {
+  it("stays open, no token needed, until one is issued", async () => {
+    const { parent } = await aSmallWiki();
+    expect((await stranger(`/w/${parent.id}`)).status).toBe(200);
+  });
+
+  it("answers the same 404 as an unpublished page when no token is presented", async () => {
+    const { parent, child } = await aSmallWiki();
+    await createPublishToken(context, { pageId: parent.id, name: "accountant", description: null }, { actor: OWNER });
+    const gatedParent = await stranger(`/w/${parent.id}`);
+    const gatedChild = await stranger(`/w/${child.id}`);
+    expect(gatedParent.status).toBe(404);
+    expect(gatedChild.status).toBe(404);
+    expect(gatedParent.body).not.toContain("What this wiki covers.");
+  });
+
+  it("serves a gated page with the right token as ?token=, and refuses a wrong one", async () => {
+    const { parent } = await aSmallWiki();
+    const created = await createPublishToken(context, { pageId: parent.id, name: "accountant", description: null }, { actor: OWNER });
+    const right = await stranger(`/w/${parent.id}?token=${encodeURIComponent(created.token)}`);
+    expect(right.status).toBe(200);
+    expect(right.body).toContain("What this wiki covers.");
+    const wrong = await stranger(`/w/${parent.id}?token=not-the-token`);
+    expect(wrong.status).toBe(404);
+  });
+
+  it("serves a gated page with the right token as an Authorization: Bearer header", async () => {
+    const { parent } = await aSmallWiki();
+    const created = await createPublishToken(context, { pageId: parent.id, name: "script", description: null }, { actor: OWNER });
+    const response = await app.fetch(
+      new Request(`${ORIGIN}/w/${parent.id}`, { headers: { authorization: `Bearer ${created.token}` } }),
+    );
+    expect(response.status).toBe(200);
+  });
+
+  it("gates the whole subtree from wherever the token was issued", async () => {
+    const { parent, child } = await aSmallWiki();
+    const created = await createPublishToken(context, { pageId: parent.id, name: "accountant", description: null }, { actor: OWNER });
+    const under = await stranger(`/w/${child.id}?token=${encodeURIComponent(created.token)}`);
+    expect(under.status).toBe(200);
+    expect(under.body).toContain("A peptide.");
+  });
+
+  it("stops working once revoked, while another token for the same subtree still does", async () => {
+    const { parent } = await aSmallWiki();
+    const revoked = await createPublishToken(context, { pageId: parent.id, name: "accountant", description: null }, { actor: OWNER });
+    const kept = await createPublishToken(context, { pageId: parent.id, name: "brother", description: null }, { actor: OWNER });
+    await revokePublishToken(context, revoked.id, { actor: OWNER });
+    expect((await stranger(`/w/${parent.id}?token=${encodeURIComponent(revoked.token)}`)).status).toBe(404);
+    expect((await stranger(`/w/${parent.id}?token=${encodeURIComponent(kept.token)}`)).status).toBe(200);
+  });
+
+  it("reopens the subtree, no auth, once its only token is revoked (ADR-066 decision 3)", async () => {
+    const { parent } = await aSmallWiki();
+    const created = await createPublishToken(context, { pageId: parent.id, name: "accountant", description: null }, { actor: OWNER });
+    await revokePublishToken(context, created.id, { actor: OWNER });
+    expect((await stranger(`/w/${parent.id}`)).status).toBe(200);
+  });
+
+  it("carries the token through breadcrumb and child links, within the gated subtree only", async () => {
+    const { parent, child } = await aSmallWiki();
+    const created = await createPublishToken(context, { pageId: parent.id, name: "accountant", description: null }, { actor: OWNER });
+    const page = await stranger(`/w/${parent.id}?token=${encodeURIComponent(created.token)}`);
+    expect(page.body).toContain(`href="/w/${child.id}?token=${encodeURIComponent(created.token)}"`);
+  });
+
+  it("excludes a gated subtree from the /w listing", async () => {
+    const { parent, child } = await aSmallWiki();
+    const open = await context.pages.create(context.workspaceId, { title: "Open notes", body: "x" }, { actor: OWNER });
+    await publish(open.id, open.version);
+    await createPublishToken(context, { pageId: parent.id, name: "accountant", description: null }, { actor: OWNER });
+
+    const index = await stranger("/w");
+    expect(index.body).not.toContain("Peptides");
+    expect(index.body).not.toContain("BPC-157");
+    expect(index.body).not.toContain(parent.id);
+    expect(index.body).not.toContain(child.id);
+    expect(index.body).toContain("Open notes");
+  });
+
+  it("excludes a gated page from the sitemap", async () => {
+    const { parent, child } = await aSmallWiki();
+    await createPublishToken(context, { pageId: parent.id, name: "accountant", description: null }, { actor: OWNER });
+    const sitemap = await stranger("/sitemap.xml");
+    expect(sitemap.body).not.toContain(parent.id);
+    expect(sitemap.body).not.toContain(child.id);
+  });
+
+  it("excludes a gated collection from /.well-known/cairn.json", async () => {
+    const { parent } = await aSmallWiki();
+    await createPublishToken(context, { pageId: parent.id, name: "accountant", description: null }, { actor: OWNER });
+    const body = JSON.parse((await stranger("/.well-known/cairn.json")).body);
+    expect(body.collections).toEqual([]);
   });
 });
 

@@ -486,6 +486,51 @@ describe("publishing (ADR-032)", () => {
   });
 });
 
+describe("publish tokens (ADR-066)", () => {
+  it("issues a token once, lists it without the token value, and revokes it", async () => {
+    const created = await createBuildLog();
+    const id = String(created.json["id"]);
+    await call("/publish", { method: "POST", body: { id, public: true, version: created.json["version"] } });
+
+    const issued = await call("/publish-tokens", {
+      method: "POST",
+      body: { page_id: id, name: "accountant", description: "for the accountant", change_note: "Sharing the build log" },
+    });
+    expect(issued.status).toBe(201);
+    expect(typeof issued.json["token"]).toBe("string");
+    expect(issued.json["token"]).not.toBe("");
+    expect(issued.json).not.toHaveProperty("token_hash");
+
+    const listed = await call(`/publish-tokens?page=${id}`);
+    expect(listed.status).toBe(200);
+    const tokens = listed.json["tokens"] as Record<string, unknown>[];
+    expect(tokens).toHaveLength(1);
+    expect(tokens[0]?.["name"]).toBe("accountant");
+    expect(tokens[0]).not.toHaveProperty("token");
+    expect(tokens[0]?.["revoked_at"]).toBeNull();
+
+    const revoked = await call(`/publish-tokens/${String(issued.json["id"])}/revoke`, {
+      method: "POST",
+      body: { change_note: "No longer needed" },
+    });
+    expect(revoked.status).toBe(200);
+    expect(revoked.json["revoked_at"]).not.toBeNull();
+  });
+
+  it("requires a page to list tokens for", async () => {
+    const missing = await call("/publish-tokens");
+    expect(missing.status).toBe(400);
+  });
+
+  it("answers 404 when issuing a token for a page that does not exist", async () => {
+    const missing = await call("/publish-tokens", {
+      method: "POST",
+      body: { page_id: "pg_missing", name: "x" },
+    });
+    expect(missing.status).toBe(404);
+  });
+});
+
 describe("tables in the tree and rows as links (ADR-024)", () => {
   it("creates a table under a page, moves it, and reports links from rows", async () => {
     const home = await call("/pages", { method: "POST", body: { title: "Peptides", body: "Hub.", change_note: "A home for the peptide tables" } });

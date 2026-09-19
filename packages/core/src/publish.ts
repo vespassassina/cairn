@@ -35,3 +35,31 @@ export function publishedPages(pages: readonly Page[]): Page[] {
   const published = publishedIds(pages);
   return pages.filter((page) => published.has(page.id));
 }
+
+/**
+ * Which published page, if any, gates reading `pageId` with a publish token
+ * (ADR-066). A token is attached to the page it was issued on, and it gates
+ * that page's whole subtree, so this walks upward from `pageId`, same shape
+ * as `publishedIds`, and returns the nearest ancestor (or the page itself)
+ * that carries an active token. `null` means the page needs no token.
+ */
+export function gateRootOf(pageId: Id, pages: readonly Page[], tokenPageIds: ReadonlySet<Id>): Page | null {
+  const byId = new Map(pages.map((page) => [page.id, page]));
+  const seen = new Set<Id>();
+  let current = byId.get(pageId);
+  while (current && !seen.has(current.id)) {
+    if (tokenPageIds.has(current.id)) return current;
+    seen.add(current.id);
+    current = current.parentId === null ? undefined : byId.get(current.parentId);
+  }
+  return null;
+}
+
+/** Every published page whose read requires a publish token (ADR-066). */
+export function gatedIds(pages: readonly Page[], tokenPageIds: ReadonlySet<Id>): Set<Id> {
+  const gated = new Set<Id>();
+  for (const page of pages) {
+    if (gateRootOf(page.id, pages, tokenPageIds)) gated.add(page.id);
+  }
+  return gated;
+}

@@ -16,6 +16,9 @@ import {
   listDeletedPages,
   moveRecord,
   publishPage,
+  createPublishTokenOp,
+  listPublishTokensOp,
+  revokePublishTokenOp,
   toFieldDefs,
   undeletePage,
   vacuumPage,
@@ -152,6 +155,12 @@ const schemas = {
     // True publishes the page and everything under it; false takes it down.
     public: z.boolean(),
     version: z.string().min(1),
+    change_note: CHANGE_NOTE,
+  }),
+  createPublishToken: z.object({
+    page_id: z.string().min(1),
+    name: z.string().min(1),
+    description: z.string().nullable().optional(),
     change_note: CHANGE_NOTE,
   }),
   move: z.object({
@@ -715,6 +724,28 @@ export function restRoutes(context: AppContext, callerFor: CallerFor): Hono {
   api.post("/publish", async (c) => {
     const input = await parseBody(c, schemas.publish);
     return c.json(await publishPage(context, input.id, input.public, input.version, by(c, input.change_note)));
+  });
+
+  // Publish tokens (ADR-066): gate a published subtree behind a named,
+  // revocable token. Console and CLI only, never MCP, same as /publish.
+
+  api.post("/publish-tokens", async (c) => {
+    const input = await parseBody(c, schemas.createPublishToken);
+    return c.json(
+      await createPublishTokenOp(context, input.page_id, input.name, input.description, by(c, input.change_note)),
+      201,
+    );
+  });
+
+  api.get("/publish-tokens", async (c) => {
+    const pageId = c.req.query("page");
+    if (!pageId) throw new BadRequest("Pass the page to list tokens for as page.", [{ field: "page", message: "required" }]);
+    return c.json({ tokens: await listPublishTokensOp(context, pageId) });
+  });
+
+  api.post("/publish-tokens/:id/revoke", async (c) => {
+    const input = await parseBody(c, schemas.deleteBody);
+    return c.json(await revokePublishTokenOp(context, c.req.param("id"), by(c, input.change_note)));
   });
 
   api.post("/move", async (c) => {

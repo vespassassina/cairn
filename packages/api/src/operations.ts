@@ -21,6 +21,7 @@ import {
   type SearchMode,
 } from "@cairn/core";
 import type { AppContext } from "./context.js";
+import { createPublishToken, listPublishTokens, revokePublishToken, type PublishTokenSummary } from "./publish-tokens.js";
 
 /**
  * What the MCP tools and the REST API share (ADR-013 rule 1).
@@ -535,6 +536,44 @@ export async function publishPage(
     by,
   );
   return { id, public: written.public, version: written.version };
+}
+
+/**
+ * Publish tokens (ADR-066): gate a published subtree behind a named,
+ * revocable token instead of publishing it wide open. The console and the
+ * CLI both issue and revoke tokens, so the rule lives here, same as
+ * `publishPage`. Never wired to MCP (ADR-066 decision 6, mirrors ADR-032
+ * decision 5): an agent should not be able to hand out or take away read
+ * access to the owner's own subtree.
+ */
+export function publishTokenJson(token: PublishTokenSummary): Record<string, unknown> {
+  return {
+    id: token.id,
+    page: token.page,
+    name: token.name,
+    description: token.description,
+    created_at: token.createdAt,
+    revoked_at: token.revokedAt,
+  };
+}
+
+export async function createPublishTokenOp(
+  context: AppContext,
+  pageId: string,
+  name: string,
+  description: string | null | undefined,
+  by: WriteContext,
+): Promise<Record<string, unknown>> {
+  const created = await createPublishToken(context, { pageId, name, description }, by);
+  return { ...publishTokenJson(created), token: created.token };
+}
+
+export async function listPublishTokensOp(context: AppContext, pageId: string): Promise<Record<string, unknown>[]> {
+  return (await listPublishTokens(context, pageId)).map(publishTokenJson);
+}
+
+export async function revokePublishTokenOp(context: AppContext, id: string, by: WriteContext): Promise<Record<string, unknown>> {
+  return publishTokenJson(await revokePublishToken(context, id, by));
 }
 
 export async function moveRecord(

@@ -2,9 +2,10 @@
 import type { Context, Hono } from "hono";
 import { raw } from "hono/html";
 import type { Child, FC } from "hono/jsx";
-import { isCairnPageAddress, publishedIds, sourceHref, type Page, type Paged } from "@cairn/core";
+import { gateRootOf, gatedIds, isCairnPageAddress, publishedIds, sourceHref, type Page, type Paged } from "@cairn/core";
 import type { AppContext } from "../context.js";
 import { citedByOf, receiveCitation, WebmentionError } from "../citations.js";
+import { activeTokenPageIds, verifyPublishToken } from "../publish-tokens.js";
 import { ASSET_VERSION, documentTitle, HEAD_TAGS } from "./assets.js";
 import { When } from "./layout.js";
 import { createMarkdownRenderer, type LinkResolver } from "./markdown.js";
@@ -56,7 +57,22 @@ const renderMarkdown = createMarkdownRenderer();
 /** Upper bound on pages read to work out what is published. Personal scale. */
 const MAX_PAGES = 5_000;
 
-export const wikiHref = (pageId: string) => `/w/${encodeURIComponent(pageId)}`;
+/**
+ * A page's address under `/w`. `token` is carried along only when the page
+ * itself needs one (ADR-066): a link inside an open subtree never grows a
+ * `?token=`, even when the page rendering it happens to be gated.
+ */
+export const wikiHref = (pageId: string, token?: string | null) =>
+  `/w/${encodeURIComponent(pageId)}${token ? `?token=${encodeURIComponent(token)}` : ""}`;
+
+/** The token a request presented, from `?token=` or `Authorization: Bearer` (ADR-066 decision 4). */
+function presentedToken(c: Context): string | null {
+  const query = c.req.query("token");
+  if (query) return query;
+  const auth = c.req.header("authorization");
+  if (auth?.toLowerCase().startsWith("bearer ")) return auth.slice(7).trim() || null;
+  return null;
+}
 
 async function allPages(context: AppContext): Promise<Page[]> {
   const pages: Page[] = [];
@@ -80,11 +96,11 @@ async function published(context: AppContext): Promise<Page[]> {
  * Names and addresses for published pages only. A link to anything else is
  * unknown to this resolver, and `plainWhenUnknown` turns it into plain text.
  */
-function resolverFor(pages: readonly Page[]): LinkResolver {
+function resolverFor(pages: readonly Page[], gated: ReadonlySet<string>, token: string | null): LinkResolver {
   const titles = new Map(pages.map((page) => [page.id, page.title]));
   return {
     title: (id) => titles.get(id) ?? null,
-    href: (id) => (titles.has(id) ? wikiHref(id) : null),
+    href: (id) => (titles.has(id) ? wikiHref(id, gated.has(id) ? token : null) : null),
     plainWhenUnknown: true,
   };
 }
@@ -253,7 +269,13 @@ export function registerPublicWiki(app: Hono, options: PublicWikiOptions): void 
     );
 
   app.get("/w", async (c) => {
-    const pages = await published(context);
+    const allPublished = await published(context);
+    const tokenPageIds = await activeTokenPageIds(context);
+    // A token-gated subtree does not appear in the listing at all (ADR-066
+    // decision 7's reasoning, applied here too): nothing a stranger can
+    // browse to should point at something they cannot read without a token.
+    const gated = gatedIds(allPublished, tokenPageIds);
+    const pages = allPublished.filter((page) => !gated.has(page.id));
     // The shortest honest list of what is here: everything else hangs below
     // one of these roots.
     const roots = rootsOf(pages);
@@ -302,7 +324,16 @@ export function registerPublicWiki(app: Hono, options: PublicWikiOptions): void 
     const page = byId.get(c.req.param("id"));
     if (!page) return missing(c);
 
-    const links = resolverFor(pages);
+    // A token-gated page answers the same 404 as a nonexistent one to a
+    // stranger with no or the wrong token (ADR-066 decision 4): which of the
+    // two is true would itself be a leak, same reasoning as `missing`.
+    const tokenPageIds = await activeTokenPageIds(context);
+    const gateRoot = gateRootOf(page.id, pages, tokenPageIds);
+    const presented = presentedToken(c);
+    if (gateRoot && !(presented && (await verifyPublishToken(context, gateRoot.id, presented)))) return missing(c);
+
+    const gated = gatedIds(pages, tokenPageIds);
+    const links = resolverFor(pages, gated, presented);
     const children = pages.filter((child) => child.parentId === page.id);
     const trail = ancestorsOf(page, byId);
     const citedBy = await citedByOf(context, page.id);
@@ -321,7 +352,7 @@ export function registerPublicWiki(app: Hono, options: PublicWikiOptions): void 
             <ol class="ak-breadcrumb">
               {trail.map((ancestor) => (
                 <li>
-                  <a href={wikiHref(ancestor.id)}>{ancestor.title}</a>
+                  <a href={wikiHref(ancestor.id, gated.has(ancestor.id) ? presented : null)}>{ancestor.title}</a>
                 </li>
               ))}
               <li aria-current="page">{page.title}</li>
@@ -369,7 +400,7 @@ export function registerPublicWiki(app: Hono, options: PublicWikiOptions): void 
               <ul>
                 {children.map((child) => (
                   <li>
-                    <a href={wikiHref(child.id)}>{child.title}</a>
+                    <a href={wikiHref(child.id, gated.has(child.id) ? presented : null)}>{child.title}</a>
                   </li>
                 ))}
               </ul>
@@ -420,7 +451,11 @@ export function registerPublicWiki(app: Hono, options: PublicWikiOptions): void 
   // One flat sitemap. A wiki large enough to need the index format is past
   // what this serves well anyway (ADR-032 consequence 4).
   app.get("/sitemap.xml", async (c) => {
-    const pages = await published(context);
+    // Same rule as /w and /.well-known/cairn.json (ADR-066 decision 7): a
+    // crawler-facing surface never names a page it cannot then read.
+    const allPublished = await published(context);
+    const gated = gatedIds(allPublished, await activeTokenPageIds(context));
+    const pages = allPublished.filter((page) => !gated.has(page.id));
     const base = origin(c);
     const urls = [
       `<url><loc>${escapeXml(`${base}/w`)}</loc></url>`,
@@ -452,7 +487,9 @@ export function registerPublicWiki(app: Hono, options: PublicWikiOptions): void 
   // `collections` is built from the published set, so it names nothing that
   // is not already on /w.
   app.get("/.well-known/cairn.json", async (c) => {
-    const pages = await published(context);
+    const allPublished = await published(context);
+    const gated = gatedIds(allPublished, await activeTokenPageIds(context));
+    const pages = allPublished.filter((page) => !gated.has(page.id));
     const base = origin(c);
     const self = options.selfDescription ?? { name: "Cairn", description: null, language: "en", topics: null };
     const body: Record<string, unknown> = {

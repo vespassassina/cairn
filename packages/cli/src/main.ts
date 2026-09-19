@@ -125,6 +125,11 @@ Write (every write is a revision the owner can review and undo)
       with no sign-in, at <server>/w. Publishing a collection publishes its wiki
   cairn unpublish <page-id> --version V   take it back down
       Publishing is per server: it never travels with sync, export or import
+  cairn publish-token create <page-id> --name NAME [--description D]
+      issue a token gating that published subtree; shown once, save it. No
+      token issued means no auth, same as plain publish
+  cairn publish-token list <page-id>      tokens issued for that subtree, revoked or not
+  cairn publish-token revoke <token-id>   take one token back; the rest keep working
   All writes take --note "why", shown to the owner, and --source S (repeatable):
   a URL or short citation for where the facts came from, added to the page's or row's sources.
   append, replace-section and write take --verified: you re-checked the page's facts and they
@@ -227,6 +232,7 @@ const OPTIONS = {
   set: { type: "string", multiple: true },
   field: { type: "string", multiple: true },
   description: { type: "string" },
+  name: { type: "string" },
   id: { type: "string" },
   since: { type: "string" },
   agents: { type: "boolean" },
@@ -1198,6 +1204,51 @@ export async function run(argv: string[], io: Io): Promise<number> {
             : `ok ${id} and everything under it are private again, version ${String(json?.["version"])}\n`,
         );
         return 0;
+      }
+
+      case "publish-token": {
+        const sub = args[0];
+        if (sub === "create") {
+          const pageId = need(args[1], "the page whose subtree the token gates");
+          const name = need(flags.name, "--name NAME, so you can tell this token from another later");
+          warnIfNoNote();
+          const { json } = await client.request("POST", "/publish-tokens", {
+            body: {
+              page_id: pageId,
+              name,
+              ...(flags.description ? { description: flags.description } : {}),
+              ...(note ? { change_note: note } : {}),
+            },
+          });
+          out(json, () =>
+            `ok token "${name}" created for ${pageId}: ${String(json?.["token"])}\n` +
+            "   shown once, not stored: save it now. Anyone with it can read that subtree at\n" +
+            `   ${client.baseUrl}/w/${encodeURIComponent(pageId)}?token=${String(json?.["token"])}\n`,
+          );
+          return 0;
+        }
+        if (sub === "list") {
+          const pageId = need(args[1], "the page to list tokens for");
+          const { json } = await client.request("GET", `/publish-tokens?page=${encodeURIComponent(pageId)}`);
+          out(json, () => {
+            const tokens = list(json?.["tokens"]);
+            if (tokens.length === 0) return `no tokens for ${pageId}: it has no auth if published, per ADR-066\n`;
+            return tokens
+              .map((t) => `${String(t["id"])}  ${String(t["name"])}${t["revoked_at"] ? "  (revoked)" : ""}${t["description"] ? `  ${String(t["description"])}` : ""}\n`)
+              .join("");
+          });
+          return 0;
+        }
+        if (sub === "revoke") {
+          const id = need(args[1], "the token id to revoke, from cairn publish-token list <page>");
+          warnIfNoNote();
+          const { json } = await client.request("POST", `/publish-tokens/${encodeURIComponent(id)}/revoke`, {
+            body: note ? { change_note: note } : {},
+          });
+          out(json, () => `ok token ${id} revoked\n`);
+          return 0;
+        }
+        throw new UsageError(`cairn publish-token needs a subcommand: create <page> --name NAME, list <page>, or revoke <id>. Got "${sub ?? ""}".`);
       }
 
       case "move": {
