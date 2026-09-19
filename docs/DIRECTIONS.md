@@ -13,6 +13,18 @@ Rules:
 
 ## 2026-09-19
 
+### "also for the publish thing, allow publishing with token (no token = no auth) token is attached to the subtree published and multiple tokens can be issued with a name and description."
+
+The owner asked for token-gated publishing alongside the existing fully-open one. Landed as ADR-066: a `PublishTokens` table, named and described, attached to a subtree the same way `public` cascades; zero tokens means today's ADR-032 no-auth behaviour unchanged.
+
+### "can we have sso with google and other providers to login the user? is there an outside general provider i can integrate to manage sharing security (readonly for now)"
+
+Answered in chat, no doc change needed: ADR-017 already supports Google and any other OpenID Connect provider for the owner's own sign-in (a config change, not new code). Recommended against adding an external identity provider (Auth0, Clerk, WorkOS) for read-only sharing, since ADR-066's tokens are deliberately identity-less and don't need one; flagged that an external provider would earn its place only if named per-person guests (PRD P2 item 6) get built.
+
+### "let's look at this later, the named guests. the idea is i can share with to an email address, then he has to just authenticate that he is the owner of such email address, example against google or apple or msft or facebook. i don't want to manage password or users. just email and eventually a role." / "but track this as an ADR"
+
+The owner described the shape of guest sharing and asked to defer building it, then asked for it tracked as an ADR anyway so the design doesn't drift before it's picked up. Landed as ADR-067, design only, deferred: a `GuestGrants` table keyed by email and a `reader` role, checked against the verified-email claim ADR-017's existing OAuth flow already produces, no new sign-in system and no user database.
+
 ### "also graph editing (tree and network) to edit graphs uploaded by the agent"
 
 The owner asked for a person to be able to edit, not just view, a tree or network diagram an agent wrote as text. Landed in `docs/ROADMAP.md`'s Phase 2 section as its own item: an interactive editor over a Mermaid or DOT graph that writes structural edits back out as the same text grammar, gated on the editor same as the kanban board.

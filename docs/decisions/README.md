@@ -73,6 +73,8 @@ A decision that changes is not edited away. Add a new ADR that supersedes it, an
 | [063](ADR-063.md) | Revert the source-built Litestream, its first restore corrupted a snapshot and lost data | accepted | 2026-09-18 |
 | [064](ADR-064.md) | Attachments are rows plus content-addressed blobs, uploaded direct | accepted | 2026-09-19 |
 | [065](ADR-065.md) | Mermaid, Vega-Lite and Viz.js are the text-form visualizations; everything else is an attachment | accepted | 2026-09-19 |
+| [066](ADR-066.md) | A published subtree can be gated by a named token | accepted | 2026-09-19 |
+| [067](ADR-067.md) | A guest is an email address, proven against a provider Cairn already trusts | accepted, design only, deferred | 2026-09-19 |
 
 ## Writing one
 

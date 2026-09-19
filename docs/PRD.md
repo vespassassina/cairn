@@ -256,8 +256,8 @@ Status 2026-09-12: Azure uses Container Apps and Blob Storage instead of Functio
 3. **Similarity edges** computed from vectors at write time ("related pages").
 4. **Client-side embeddings** in the browser via Transformers.js with a pinned model.
 5. **Import** from Notion export and Obsidian vaults. The Obsidian half, both ways, is now a roadmap item of its own ("Against a notes app kept in git").
-6. **Permissions** beyond workspace membership: per-page sharing, read-only guests.
-7. **Publishing:** a collection served read-only to anyone and indexable by search engines, or exported as a static site for any static host. On the roadmap since 2026-09-14.
+6. **Permissions** beyond workspace membership: per-page sharing, read-only guests. Shaped by ADR-067 (2026-09-19): a guest is an email address, proven by signing in to a provider Cairn already trusts (Google, Microsoft, Apple, Facebook, all OIDC), never a password or account Cairn manages, granted a `reader` role on one subtree. Design only, deferred.
+7. **Publishing:** a collection served read-only to anyone and indexable by search engines, or exported as a static site for any static host. On the roadmap since 2026-09-14. Extended by ADR-066 (2026-09-19): a published subtree can additionally be gated by a named, revocable token, for sharing with someone who doesn't need to be identified, just given the link.
 
 ## 10. Success metrics
 
