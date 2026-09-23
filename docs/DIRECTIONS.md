@@ -11,6 +11,12 @@ Rules:
 3. Every entry says where it landed: an ADR, a doc, a commit, or "not yet".
 4. A later direction that reverses an earlier one does not edit it. Add the new one and point back.
 
+## 2026-09-23
+
+### "add to the cli when calling a remote one, a message that it might take several seconds"
+
+The owner asked for a heads-up before the CLI talks to a non-loopback Cairn, since a remote instance (Azure, asleep after 30 minutes idle) can take up to 30 seconds to answer. Landed in `packages/cli/src/main.ts`: a stderr line printed once resolution has picked a `baseUrl`, gated on `!isLoopback(baseUrl)`, right before the request is made.
+
 ## 2026-09-19
 
 ### "also for the publish thing, allow publishing with token (no token = no auth) token is attached to the subtree published and multiple tokens can be issued with a name and description."

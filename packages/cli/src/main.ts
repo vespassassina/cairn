@@ -652,6 +652,9 @@ export async function run(argv: string[], io: Io): Promise<number> {
 
   // A service token wins; otherwise a stored sign-in, refreshed if needed.
   const token = io.env["CAIRN_TOKEN"] ?? (await tokenFor(baseUrl));
+  if (!isLoopback(baseUrl)) {
+    io.stderr(`${baseUrl} is not on this machine; if it has been idle, this can take up to 30 seconds while it wakes up.\n`);
+  }
   const client = new CairnClient({
     baseUrl,
     token,

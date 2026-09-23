@@ -218,6 +218,8 @@ describe("choosing an instance", () => {
     await contexts[CLOUD]!.pages.create(contexts[CLOUD]!.workspaceId, { title: "In the cloud", body: "x" }, BY);
     expect(await cairn("overview", "--instance", "cloud")).toBe(0);
     expect(stdout).toContain("In the cloud");
+    expect(stderr).toContain(`${CLOUD} is not on this machine`);
+    expect(stderr).toContain("up to 30 seconds while it wakes up");
     expect(await cairn("overview", "--instance", "nope")).toBe(2);
     expect(stderr).toContain("Registered: laptop, cloud");
 
