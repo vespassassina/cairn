@@ -14,6 +14,7 @@ import {
   listChanges,
   listChildren,
   listDeletedPages,
+  listStalePages,
   moveRecord,
   publishPage,
   createPublishTokenOp,
@@ -36,6 +37,7 @@ import {
   sourceChangesJson,
   verifiedTimes,
   searchPages,
+  stalePageJson,
   writeRow,
 } from "../operations.js";
 import { workspaceSummary } from "../mcp/summary.js";
@@ -425,6 +427,20 @@ export function restRoutes(context: AppContext, callerFor: CallerFor): Hono {
       limit: limitParam(c, 50),
     });
     return c.json({ pages: result.items.map(deletedPageSummary), cursor: result.cursor });
+  });
+
+  // Before /pages/:id, so "stale" is never read as an id (ADR-073).
+  api.get("/pages/stale", async (c) => {
+    const result = await listStalePages(context, {
+      cursor: c.req.query("cursor") ?? null,
+      limit: limitParam(c, 50),
+    });
+    return c.json({
+      pages: result.items.map(stalePageJson),
+      cursor: result.cursor,
+      never_verified_count: result.neverVerifiedCount,
+      oldest_verified_at: result.oldestVerifiedAt,
+    });
   });
 
   api.post("/pages", async (c) => {

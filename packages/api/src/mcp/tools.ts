@@ -16,6 +16,7 @@ import {
   listChanges,
   listChildren,
   listDeletedPages,
+  listStalePages,
   moveRecord,
   pageSummary,
   renderDiff,
@@ -24,6 +25,7 @@ import {
   rowJson,
   searchPages,
   sourceChangesJson,
+  stalePageJson,
   undeletePage,
   vacuumPage,
   verifiedTimes,
@@ -321,6 +323,35 @@ export function registerTools(server: McpServer, context: AppContext, actor: Act
       try {
         const result = await listDeletedPages(context, { cursor: cursor ?? null, ...(limit === undefined ? {} : { limit }) });
         return json({ pages: result.items.map(deletedPageSummary), cursor: result.cursor });
+      } catch (error) {
+        return toolError(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "list_stale_pages",
+    {
+      title: "Pages needing a re-check",
+      description:
+        "Pages in freshness order (ADR-028), same as the console's Freshness screen: never verified first, oldest updated first, then verified pages, oldest verified first. " +
+        "Use it to find what to review when asked to check what needs re-checking, or on your own initiative. Re-check a page's facts, then write with verified: true (append, replace-section or write) when they still hold.",
+      inputSchema: {
+        cursor: z.string().optional().describe("From a previous call, to go further into the list."),
+        limit: z.number().int().min(1).max(200).optional(),
+      },
+    },
+    async ({ cursor, limit }): Promise<ToolResult> => {
+      try {
+        const result = await listStalePages(context, { cursor: cursor ?? null, ...(limit === undefined ? {} : { limit }) });
+        const budgeted = budgetList(result.items, (page) => JSON.stringify(stalePageJson(page)));
+        return json({
+          pages: budgeted.items.map(stalePageJson),
+          truncated: budgeted.truncated || result.cursor !== null,
+          cursor: result.cursor,
+          never_verified_count: result.neverVerifiedCount,
+          oldest_verified_at: result.oldestVerifiedAt,
+        });
       } catch (error) {
         return toolError(error);
       }

@@ -25,7 +25,7 @@ import {
   type Row,
 } from "@cairn/core";
 import { OWNER, type AppContext } from "../context.js";
-import { moveRecord, publishPage } from "../operations.js";
+import { listStalePages, moveRecord, publishPage, type StalePageSummary } from "../operations.js";
 import { ASSET_VERSION, CONSOLE_CSS, CONSOLE_JS, documentTitle, FAVICON_SVG, HEAD_TAGS, ICON_180_PNG, ICON_512_PNG, MANIFEST } from "./assets.js";
 import { ActorPill, ageOf, Banner, DiffView, Layout, setFooterFactsProvider, Verified, When } from "./layout.js";
 import { createMarkdownRenderer, pageHref, type LinkResolver } from "./markdown.js";
@@ -139,6 +139,28 @@ async function allPages(context: AppContext): Promise<Page[]> {
   return pages;
 }
 
+/**
+ * Every page in freshness order (ADR-028), via the shared `listStalePages`
+ * operation (ADR-073), walking its cursor until exhausted so the screen
+ * keeps showing everything in one table, same as before the rewrite.
+ */
+async function allStalePages(
+  context: AppContext,
+): Promise<{ items: StalePageSummary[]; neverVerifiedCount: number; oldestVerifiedAt: string | null }> {
+  const items: StalePageSummary[] = [];
+  let cursor: string | null = null;
+  let neverVerifiedCount = 0;
+  let oldestVerifiedAt: string | null = null;
+  do {
+    const batch = await listStalePages(context, { cursor, limit: 200 });
+    items.push(...batch.items);
+    neverVerifiedCount = batch.neverVerifiedCount;
+    oldestVerifiedAt = batch.oldestVerifiedAt;
+    cursor = batch.cursor;
+  } while (cursor !== null);
+  return { items, neverVerifiedCount, oldestVerifiedAt };
+}
+
 const tableHref = (id: string) => `/t/${encodeURIComponent(id)}`;
 const rowHref = (tableId: string, rowId: string) => `${tableHref(tableId)}/r/${encodeURIComponent(rowId)}`;
 
@@ -200,8 +222,8 @@ async function targetRows(context: AppContext, table: Table, tables: Table[]): P
   return rows;
 }
 
-function ancestorsOf(pageId: string | null, byId: Map<string, Page>): Page[] {
-  const chain: Page[] = [];
+function ancestorsOf<T extends { parentId: string | null }>(pageId: string | null, byId: Map<string, T>): T[] {
+  const chain: T[] = [];
   const seen = new Set<string>();
   let current = pageId ? byId.get(pageId) : undefined;
   while (current?.parentId && !seen.has(current.parentId)) {
@@ -1745,15 +1767,9 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
   // Freshness (ADR-028): pages whose facts were confirmed longest ago come
   // first, after the ones never confirmed, so the owner knows what to re-check.
   app.get("/freshness", async (c) => {
-    const pages = await allPages(context);
-    const byId = new Map(pages.map((page) => [page.id, page]));
-    const never = pages
-      .filter((page) => page.verifiedAt === null)
-      .sort((a, b) => a.updatedAt.localeCompare(b.updatedAt));
-    const verified = pages
-      .filter((page) => page.verifiedAt !== null)
-      .sort((a, b) => a.verifiedAt!.localeCompare(b.verifiedAt!));
-    const collectionOf = (page: Page) => ancestorsOf(page.id, byId)[0] ?? page;
+    const { items, neverVerifiedCount, oldestVerifiedAt } = await allStalePages(context);
+    const byId = new Map(items.map((page) => [page.id, page]));
+    const collectionOf = (page: StalePageSummary) => ancestorsOf(page.id, byId)[0] ?? page;
 
     return render(
       c,
@@ -1769,10 +1785,10 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
           </div>
         </header>
         <p>
-          {pages.length} pages: {verified.length} verified, {never.length} never verified
-          {verified[0] ? <>. The oldest check was {ageOf(verified[0].verifiedAt!)}.</> : "."}
+          {items.length} pages: {items.length - neverVerifiedCount} verified, {neverVerifiedCount} never verified
+          {oldestVerifiedAt ? <>. The oldest check was {ageOf(oldestVerifiedAt)}.</> : "."}
         </p>
-        {pages.length === 0 ? (
+        {items.length === 0 ? (
           <p class="ak-empty">No pages yet.</p>
         ) : (
           <div class="ak-tblwrap">
@@ -1786,7 +1802,7 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
                 </tr>
               </thead>
               <tbody>
-                {[...never, ...verified].map((page) => {
+                {items.map((page) => {
                   const root = collectionOf(page);
                   return (
                     <tr>

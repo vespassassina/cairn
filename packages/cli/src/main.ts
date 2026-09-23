@@ -107,6 +107,8 @@ Read
   cairn revision <page-id | table-id/row-id> <version>  one old version, with a diff
   cairn peek <page-id> <version>          one old version in full, changing nothing
   cairn changes [--since T] [--agents|--people]   what changed, newest first
+  cairn stale [--limit N]                 pages needing a re-check, never verified
+                                          first, then oldest verified first (ADR-028)
 
 Write (every write is a revision the owner can review and undo)
   cairn create --title T [--parent ID] [--tag X]...     body from --text, --file or stdin
@@ -1390,6 +1392,20 @@ export async function run(argv: string[], io: Io): Promise<number> {
           );
           const more = json?.["cursor"] ? `\nmore: --cursor ${String(json["cursor"])}` : "";
           return `${lines.join("\n") || "nothing deleted"}${more}\n`;
+        });
+        return 0;
+      }
+
+      case "stale": {
+        const { json } = await client.request("GET", `/pages/stale${query({ limit: flags.limit, cursor: flags.cursor })}`);
+        out(json, () => {
+          const lines = list(json?.["pages"]).map((p) => {
+            const when = p["verified_at"] ? `verified ${String(p["verified_at"])}` : "never verified";
+            return `${String(p["id"])}  "${String(p["title"])}"  ${when}, updated ${String(p["updated_at"])}`;
+          });
+          const summary = `${lines.length} shown, ${String(json?.["never_verified_count"] ?? 0)} never verified in the workspace`;
+          const more = json?.["cursor"] ? `\nmore: --cursor ${String(json["cursor"])}` : "";
+          return `${lines.join("\n") || "nothing stale"}\n${summary}${more}\n`;
         });
         return 0;
       }

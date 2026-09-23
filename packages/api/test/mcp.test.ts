@@ -128,6 +128,7 @@ describe("transport and auth", () => {
         "get_revision",
         "list_children",
         "list_deleted_pages",
+        "list_stale_pages",
         "list_tables",
         "move",
         "query_table",
@@ -895,6 +896,44 @@ describe("agent navigation (ADR-058)", () => {
 
     const stillDeleted = await callTool("list_deleted_pages");
     expect((stillDeleted.data["pages"] as Array<Record<string, unknown>>).some((p) => p["id"] === id)).toBe(false);
+  });
+
+  it("lists pages in freshness order with list_stale_pages, never verified first (ADR-073)", async () => {
+    const never = await callTool("create_page", { title: "Retatrutide notes", body: "Not yet checked." });
+    const older = await callTool("create_page", { title: "Semaglutide notes", body: "Checked a while ago." });
+    const newer = await callTool("create_page", { title: "Tirzepatide notes", body: "Checked recently." });
+
+    const olderPage = await context.pages.get(context.workspaceId, older.data["id"] as string);
+    await context.pages.update(
+      context.workspaceId,
+      older.data["id"] as string,
+      { title: olderPage.title, body: olderPage.body, parentId: olderPage.parentId, tags: olderPage.tags, verifiedAt: "2020-01-01T00:00:00Z" },
+      olderPage.version,
+      { actor: { kind: "agent", id: "test", label: "test" }, note: "backdate for test" },
+    );
+    const newerPage = await context.pages.get(context.workspaceId, newer.data["id"] as string);
+    await context.pages.update(
+      context.workspaceId,
+      newer.data["id"] as string,
+      { title: newerPage.title, body: newerPage.body, parentId: newerPage.parentId, tags: newerPage.tags, verifiedAt: "2024-01-01T00:00:00Z" },
+      newerPage.version,
+      { actor: { kind: "agent", id: "test", label: "test" }, note: "backdate for test" },
+    );
+
+    const listed = await callTool("list_stale_pages");
+    expect(listed.isError).toBe(false);
+    const ids = (listed.data["pages"] as Array<Record<string, unknown>>).map((p) => p["id"]);
+    expect(ids.indexOf(never.data["id"])).toBeLessThan(ids.indexOf(older.data["id"]));
+    expect(ids.indexOf(older.data["id"])).toBeLessThan(ids.indexOf(newer.data["id"]));
+    expect(listed.data["never_verified_count"]).toBeGreaterThanOrEqual(1);
+    expect(listed.data["oldest_verified_at"]).toBe("2020-01-01T00:00:00.000Z");
+    expect(listed.data["cursor"]).toBeDefined();
+    expect(listed.data["truncated"]).toBeDefined();
+
+    const firstPage = await callTool("list_stale_pages", { limit: 1 });
+    expect((firstPage.data["pages"] as unknown[]).length).toBe(1);
+    expect((firstPage.data["pages"] as Array<Record<string, unknown>>)[0]!["id"]).toBe(never.data["id"]);
+    expect(firstPage.data["cursor"]).toBeTruthy();
   });
 
   it("refuses undelete_page for a page that still exists, naming restore instead", async () => {

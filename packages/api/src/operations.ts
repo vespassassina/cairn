@@ -800,6 +800,105 @@ export async function undeletePage(context: AppContext, id: string, by: WriteCon
   return context.pages.undelete(context.workspaceId, id, by);
 }
 
+/** A page as `list_stale_pages` / `GET /pages/stale` / `cairn stale` report it. */
+export interface StalePageSummary {
+  id: string;
+  title: string;
+  parentId: string | null;
+  verifiedAt: string | null;
+  updatedAt: string;
+}
+
+/** `StalePageSummary` in the snake_case shape every surface sends over the wire. */
+export function stalePageJson(page: StalePageSummary): Record<string, unknown> {
+  return {
+    id: page.id,
+    title: page.title,
+    parent_id: page.parentId,
+    verified_at: page.verifiedAt,
+    updated_at: page.updatedAt,
+  };
+}
+
+export interface StalePagesResult {
+  items: StalePageSummary[];
+  cursor: string | null;
+  /** How many of the workspace's pages have never been verified. */
+  neverVerifiedCount: number;
+  /** The oldest `verified_at` among verified pages, null when none are. */
+  oldestVerifiedAt: string | null;
+}
+
+/** Upper bound on pages walked to build the freshness order. Fine at personal scale, matches console.tsx's MAX_TREE_PAGES. */
+const MAX_STALE_PAGES = 5_000;
+
+const STALE_PAGE_LIMIT = 50;
+const MAX_STALE_LIMIT = 200;
+
+function encodeStaleCursor(offset: number): string {
+  return Buffer.from(`o:${offset}`, "utf8").toString("base64url");
+}
+
+function decodeStaleCursor(cursor: string | null | undefined): number {
+  if (!cursor) return 0;
+  const match = /^o:(\d+)$/.exec(Buffer.from(cursor, "base64url").toString("utf8"));
+  if (!match) throw new ValidationError([{ field: "cursor", message: "not a cursor from list_stale_pages" }]);
+  return Number(match[1]);
+}
+
+async function allPagesForStaleness(context: AppContext): Promise<Page[]> {
+  const pages: Page[] = [];
+  let cursor: string | null = null;
+  do {
+    const batch: Paged<Page> = await context.store.listPages(context.workspaceId, { limit: 500, cursor });
+    pages.push(...batch.items);
+    cursor = batch.cursor;
+  } while (cursor !== null && pages.length < MAX_STALE_PAGES);
+  return pages;
+}
+
+/**
+ * Every page, in the console's own freshness order (ADR-028): never verified
+ * first, oldest updated first, then verified, oldest verified first. Shared
+ * by REST's `GET /pages/stale`, MCP's `list_stale_pages` tool, `cairn stale`
+ * and the console's `/freshness` screen (ADR-073), so all four agree.
+ *
+ * Built the same way the console's own page walk always was: a bounded
+ * cursor walk over `DocumentStore.listPages`, sorted in memory. No new store
+ * method, no new column, no new index.
+ */
+export async function listStalePages(
+  context: AppContext,
+  options: { cursor?: string | null; limit?: number },
+): Promise<StalePagesResult> {
+  const pages = await allPagesForStaleness(context);
+  const never = pages
+    .filter((page) => page.verifiedAt === null)
+    .sort((a, b) => a.updatedAt.localeCompare(b.updatedAt));
+  const verified = pages
+    .filter((page) => page.verifiedAt !== null)
+    .sort((a, b) => a.verifiedAt!.localeCompare(b.verifiedAt!));
+  const ordered = [...never, ...verified];
+
+  const offset = decodeStaleCursor(options.cursor);
+  const limit = Math.max(1, Math.min(MAX_STALE_LIMIT, options.limit ?? STALE_PAGE_LIMIT));
+  const slice = ordered.slice(offset, offset + limit);
+  const nextOffset = offset + slice.length;
+
+  return {
+    items: slice.map((page) => ({
+      id: page.id,
+      title: page.title,
+      parentId: page.parentId,
+      verifiedAt: page.verifiedAt,
+      updatedAt: page.updatedAt,
+    })),
+    cursor: nextOffset < ordered.length ? encodeStaleCursor(nextOffset) : null,
+    neverVerifiedCount: never.length,
+    oldestVerifiedAt: verified[0]?.verifiedAt ?? null,
+  };
+}
+
 /**
  * Prune a page's history to its current version and compact the database
  * (ADR-059). Shared by REST's `POST /pages/:id/vacuum`, MCP's `vacuum_page`

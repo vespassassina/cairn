@@ -43,7 +43,10 @@ once only if it would have mattered. If it says to sign in, ask the user to run
 5. `cairn read` shows when a page was last `verified`. When you re-check a page's
    facts and they still hold, add `--verified` to the edit, or run
    `cairn append <page-id> --verified --note "why"` to change nothing else.
-6. Link pages with `[[page-id]]` in the body. A link to another Cairn's
+6. Asked what needs a re-check, or on your own initiative, run `cairn stale` for
+   pages never verified first, then oldest verified first. Re-check one, then
+   write with `--verified` when it still holds.
+7. Link pages with `[[page-id]]` in the body. A link to another Cairn's
    published page, an ordinary Markdown link ending `/w/<page-id>`, joins the
    link graph the same way.
 

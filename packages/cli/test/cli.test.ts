@@ -231,6 +231,37 @@ describe("cairn", () => {
     expect(stdout).not.toContain(id);
   });
 
+  it("lists pages in freshness order with cairn stale, never verified first (ADR-073)", async () => {
+    const never = await createLog();
+    stdin = "## Motors\n\n2207 1750kv.";
+    expect(await cairn("create", "--title", "Verified a while ago", "--note", "note")).toBe(0);
+    const olderMatch = /^ok (\S+) version (\S+)$/.exec(stdout.trim());
+    const olderId = olderMatch![1]!;
+    stdin = null;
+
+    const olderPage = await context.pages.get(context.workspaceId, olderId);
+    await context.pages.update(
+      context.workspaceId,
+      olderId,
+      { title: olderPage.title, body: olderPage.body, parentId: olderPage.parentId, tags: olderPage.tags, verifiedAt: "2020-01-01T00:00:00Z" },
+      olderPage.version,
+      { actor: { kind: "agent", id: "test", label: "test" }, note: "backdate for test" },
+    );
+
+    expect(await cairn("stale")).toBe(0);
+    const neverIndex = stdout.indexOf(never.id);
+    const olderIndex = stdout.indexOf(olderId);
+    expect(neverIndex).toBeGreaterThanOrEqual(0);
+    expect(olderIndex).toBeGreaterThan(neverIndex);
+    expect(stdout).toContain("never verified");
+    expect(stdout).toContain("verified 2020-01-01T00:00:00.000Z");
+    expect(stdout).toContain("never verified in the workspace");
+
+    expect(await cairn("stale", "--limit", "1")).toBe(0);
+    expect(stdout).toContain(never.id);
+    expect(stdout).toContain("more: --cursor");
+  });
+
   it("refuses undelete for a page that still exists, naming restore instead", async () => {
     const { id } = await createLog();
     expect(await cairn("undelete", id)).toBe(1);

@@ -873,6 +873,36 @@ describe("freshness (ADR-028)", () => {
     });
     expect(bad.status).toBe(422);
   });
+
+  it("lists pages in freshness order at GET /pages/stale, never verified first, then oldest verified first (ADR-073)", async () => {
+    const never = await call("/pages", { method: "POST", body: { title: "BPC-157", body: "Not yet checked." } });
+    const olderVerified = await call("/pages", { method: "POST", body: { title: "TB-500", body: "Checked a while ago." } });
+    const newerVerified = await call("/pages", { method: "POST", body: { title: "CJC-1295", body: "Checked recently." } });
+
+    const setVerifiedAt = async (created: Awaited<ReturnType<typeof call>>, verifiedAt: string) =>
+      call(`/pages/${String(created.json["id"])}`, {
+        method: "PUT",
+        headers: { "if-match": created.headers.get("etag")! },
+        body: { title: String(created.json["title"]), body: String(created.json["body"]), verified_at: verifiedAt },
+      });
+    await setVerifiedAt(olderVerified, "2020-01-01T00:00:00Z");
+    await setVerifiedAt(newerVerified, "2024-01-01T00:00:00Z");
+
+    const { json } = await call("/pages/stale");
+    const ids = (json["pages"] as Array<Record<string, unknown>>).map((p) => p["id"]);
+    expect(ids.indexOf(String(never.json["id"]))).toBeLessThan(ids.indexOf(String(olderVerified.json["id"])));
+    expect(ids.indexOf(String(olderVerified.json["id"]))).toBeLessThan(ids.indexOf(String(newerVerified.json["id"])));
+    expect(json["never_verified_count"]).toBe(1);
+    expect(json["oldest_verified_at"]).toBe("2020-01-01T00:00:00.000Z");
+
+    const firstPage = await call("/pages/stale?limit=1");
+    expect((firstPage.json["pages"] as unknown[]).length).toBe(1);
+    expect((firstPage.json["pages"] as Array<Record<string, unknown>>)[0]!["id"]).toBe(String(never.json["id"]));
+    expect(firstPage.json["cursor"]).toBeTruthy();
+
+    const secondPage = await call(`/pages/stale?limit=1&cursor=${encodeURIComponent(String(firstPage.json["cursor"]))}`);
+    expect((secondPage.json["pages"] as Array<Record<string, unknown>>)[0]!["id"]).toBe(String(olderVerified.json["id"]));
+  });
 });
 
 describe("edit times (ADR-030)", () => {

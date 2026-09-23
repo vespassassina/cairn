@@ -614,6 +614,13 @@ Later the same day, `grep --include=*.ts` failed with "no matches found", the em
 3. **Fix.** Omit the key instead of setting it to undefined, and map undefined values out before passing input on.
 4. **Lesson.** Under this flag, build option objects by adding keys, not by listing every key with a possibly undefined value.
 
+### A new MCP instructions sentence broke the fixed-text ceiling
+
+1. **What happened.** Building ADR-073, adding one new paragraph to `SERVER_INSTRUCTIONS` (pointing an agent at `list_stale_pages`) failed `summary.test.ts`'s "keeps the fixed instructions inside their own ceiling": 1570 characters against a 1500 `FIXED_INSTRUCTIONS_CEILING`.
+2. **Cause.** `SERVER_INSTRUCTIONS` was already close to its ceiling (ADR-055's whole point: the summary needs guaranteed room, not whatever is left over), and a full new paragraph, with its own blank-line separators, cost more than expected.
+3. **Fix.** Folded the new sentence into the existing `verified: true` sentence instead of a new paragraph, landing at 1461 characters.
+4. **Lesson.** `SERVER_INSTRUCTIONS` has no slack: a change here should extend an existing sentence before adding a new paragraph, and the ceiling test should be run right after editing the file, not saved for the full suite.
+
 ### Vite 5 could not resolve `node:sqlite`
 
 1. **What happened.** Tests failed to import `node:sqlite`.

@@ -80,6 +80,7 @@ A decision that changes is not edited away. Add a new ADR that supersedes it, an
 | [070](ADR-070.md) | A sync conflicts list in the console, derived from history | accepted, Context corrected by 071 | 2026-09-23 |
 | [071](ADR-071.md) | ADR-070's "three note shapes" was wrong; there are two, and that's complete | accepted | 2026-09-23 |
 | [072](ADR-072.md) | The vector margin miss on q17 is an accepted limitation, not a bug | accepted | 2026-09-23 |
+| [073](ADR-073.md) | Stale-page reviews reach MCP, REST and the CLI, not just the console | accepted | 2026-09-23 |
 
 ## Writing one
 

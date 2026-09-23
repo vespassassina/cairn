@@ -33,7 +33,7 @@ Read before you answer. When a topic may be in Cairn, call search first, then ge
 
 Write back what lasts: findings, decisions and their reasons, corrected facts. Search first and prefer update_page over a new page, so knowledge does not split across duplicates. Link related pages with [[page-id]]. Put structured records in a table with upsert_row.
 
-Every write needs change_note saying what changed and why, and sources when a fact came from somewhere: a URL, DOI, PubMed id or short citation, the original rather than a summary. Pass verified: true when you re-check a page and it still holds. Writes apply at once and every one is kept as a revision the owner can review and restore, so write freely but accurately.
+Every write needs change_note saying what changed and why, and sources when a fact came from somewhere: a URL, DOI, PubMed id or short citation, the original rather than a summary. Pass verified: true when you re-check a page and it still holds; find what needs one with list_stale_pages. Writes apply at once and every one is kept as a revision the owner can review and restore, so write freely but accurately.
 
 Writes carry the version you read. On version_conflict, read the page again, merge your change into the new text, and retry. Never overwrite blindly.
 
