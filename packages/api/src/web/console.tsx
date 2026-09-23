@@ -1126,11 +1126,13 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
   app.get("/changes", async (c) => {
     const who = c.req.query("who");
     const actorKind = who === "agent" ? "agent" : who === "person" ? "user" : undefined;
+    const conflictOnly = c.req.query("conflict") === "1";
     const cursor = c.req.query("cursor") ?? null;
     const recent = await context.store.listRecentRevisions(ws, {
       limit: 50,
       cursor,
       ...(actorKind ? { actorKind } : {}),
+      ...(conflictOnly ? { syncConflict: true } : {}),
     });
     const tables = new Map(
       (await context.tables.list(ws)).map((table) => [table.id, table]),
@@ -1150,13 +1152,34 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
       return `${table?.name ?? "Table"}: ${rowLabel(values, table, rowIdOf(revision))}`;
     };
 
+    // Builds a `/changes` href carrying whichever of `who`/`conflict` isn't
+    // the one this chip toggles, so the two filters combine in the URL
+    // (ADR-070 decision 2 / spec acceptance criterion 5).
+    const changesHref = (params: { who?: string | undefined; conflict?: boolean | undefined }) => {
+      const query = new URLSearchParams();
+      if (params.who) query.set("who", params.who);
+      if (params.conflict) query.set("conflict", "1");
+      const search = query.toString();
+      return search ? `/changes?${search}` : "/changes";
+    };
+
     const chip = (value: string | undefined, label: string) => (
       <a
         class="ak-chip"
-        href={value ? `/changes?who=${value}` : "/changes"}
+        href={changesHref({ who: value, conflict: conflictOnly })}
         aria-pressed={(who ?? "") === (value ?? "") ? "true" : "false"}
       >
         {label}
+      </a>
+    );
+
+    const conflictChip = (
+      <a
+        class="ak-chip"
+        href={changesHref({ who: actorKind ? who : undefined, conflict: !conflictOnly })}
+        aria-pressed={conflictOnly ? "true" : "false"}
+      >
+        Sync conflicts
       </a>
     );
 
@@ -1177,6 +1200,7 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
           {chip(undefined, "Everyone")}
           {chip("agent", "Agents only")}
           {chip("person", "People only")}
+          {conflictChip}
         </div>
         {recent.items.length === 0 ? (
           <div class="ak-empty">No changes yet.</div>
@@ -1214,6 +1238,7 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
               class="ak-btn"
               href={`/changes?${new URLSearchParams({
                 ...(who ? { who } : {}),
+                ...(conflictOnly ? { conflict: "1" } : {}),
                 cursor: recent.cursor,
               }).toString()}`}
             >

@@ -77,7 +77,8 @@ A decision that changes is not edited away. Add a new ADR that supersedes it, an
 | [067](ADR-067.md) | A guest is an email address, proven against a provider Cairn already trusts | accepted, design only, deferred | 2026-09-19 |
 | [068](ADR-068.md) | jSquash is the WASM codec for attachment thumbnails | accepted, GIF part superseded by 069 | 2026-09-23 |
 | [069](ADR-069.md) | GIF is dropped from attachment thumbnails; `@jsquash/gif` does not exist | accepted | 2026-09-23 |
-| [070](ADR-070.md) | A sync conflicts list in the console, derived from history | accepted | 2026-09-23 |
+| [070](ADR-070.md) | A sync conflicts list in the console, derived from history | accepted, Context corrected by 071 | 2026-09-23 |
+| [071](ADR-071.md) | ADR-070's "three note shapes" was wrong; there are two, and that's complete | accepted | 2026-09-23 |
 
 ## Writing one
 

@@ -582,6 +582,56 @@ export function runDocumentStoreConformance(
         expect(elsewhere.items).toEqual([]);
       });
 
+      it("lists recent revisions filtered to sync conflicts, combined with actor kind", async () => {
+        const later = "2099-01-02T00:00:00.000Z";
+        await store.putRevision(
+          WS,
+          revision("pg_conflict_none", "cn1", null, {
+            createdAt: later,
+            actor: OWNER,
+            note: "Synced from http://elsewhere, where it was deleted",
+          }),
+        );
+        await store.putRevision(
+          WS,
+          revision("pg_conflict_user", "cu1", null, {
+            createdAt: "2099-01-02T00:00:01.000Z",
+            actor: OWNER,
+            note: "Synced from http://elsewhere. Sync conflict: this was the newer edit; the one it replaced is in this record's history",
+          }),
+        );
+        await store.putRevision(
+          WS,
+          revision("pg_conflict_agent", "ca1", null, {
+            createdAt: "2099-01-02T00:00:02.000Z",
+            actor: AGENT,
+            note: "Merged in sync with http://elsewhere. Sync conflict: 2 parts changed on both kept the newer edit, this server's edit; the version this replaced is in this record's history",
+          }),
+        );
+
+        await eventually(async () => {
+          const conflicts = await store.listRecentRevisions(WS, {
+            limit: 10,
+            syncConflict: true,
+          });
+          expect(conflicts.items.map((r) => r.version)).toEqual(["ca1", "cu1"]);
+
+          const agentConflicts = await store.listRecentRevisions(WS, {
+            limit: 10,
+            syncConflict: true,
+            actorKind: "agent",
+          });
+          expect(agentConflicts.items.map((r) => r.version)).toEqual(["ca1"]);
+
+          const userConflicts = await store.listRecentRevisions(WS, {
+            limit: 10,
+            syncConflict: true,
+            actorKind: "user",
+          });
+          expect(userConflicts.items.map((r) => r.version)).toEqual(["cu1"]);
+        });
+      });
+
       it("deletes a revision, idempotently", async () => {
         await store.putRevision(WS, revision("pg_rev_gone", "g1", null));
         await store.deleteRevision(WS, "page", "pg_rev_gone", "g1");

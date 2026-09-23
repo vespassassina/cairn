@@ -279,6 +279,32 @@ describe("reviewing and editing", () => {
     expect(agents.html).not.toContain("By owner");
   });
 
+  it("filters to sync conflicts, combinable with the actor filter (ADR-070)", async () => {
+    await context.pages.create(context.workspaceId, { title: "Plain edit", body: "x" }, {
+      actor: OWNER,
+      note: "Just an edit",
+    });
+    await context.pages.create(context.workspaceId, { title: "Conflict by owner", body: "y" }, {
+      actor: OWNER,
+      note: "Synced from http://elsewhere. Sync conflict: this was the newer edit; the one it replaced is in this record's history",
+    });
+    await context.pages.create(context.workspaceId, { title: "Conflict by agent", body: "z" }, {
+      actor: AGENT.actor,
+      note: "Merged in sync with http://elsewhere. Sync conflict: 2 parts changed on both kept the newer edit, this server's edit; the version this replaced is in this record's history",
+    });
+
+    const conflicts = await get("/changes?conflict=1");
+    expect(conflicts.html).toContain("Conflict by owner");
+    expect(conflicts.html).toContain("Conflict by agent");
+    expect(conflicts.html).not.toContain("Plain edit");
+    expect(conflicts.html).toMatch(/aria-pressed="true">\s*Sync conflicts/);
+
+    const both = await get("/changes?conflict=1&who=agent");
+    expect(both.html).toContain("Conflict by agent");
+    expect(both.html).not.toContain("Conflict by owner");
+    expect(both.html).not.toContain("Plain edit");
+  });
+
   it("renders a page in read mode with backlinks and who changed it last", async () => {
     const hub = await context.pages.create(context.workspaceId, { title: "Hub", body: "hub" }, {
       actor: OWNER,

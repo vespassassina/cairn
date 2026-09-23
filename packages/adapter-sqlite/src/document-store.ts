@@ -964,7 +964,12 @@ export class SqliteDocumentStore implements DocumentStore {
 
   async listRecentRevisions(
     workspaceId: WorkspaceId,
-    options: { limit?: number; cursor?: string | null; actorKind?: Actor["kind"] } = {},
+    options: {
+      limit?: number;
+      cursor?: string | null;
+      actorKind?: Actor["kind"];
+      syncConflict?: boolean;
+    } = {},
   ): Promise<Paged<Revision>> {
     const limit = clampLimit(options.limit);
     const after = decodeRevisionCursor(options.cursor);
@@ -974,6 +979,14 @@ export class SqliteDocumentStore implements DocumentStore {
     if (options.actorKind) {
       conditions.push("actor_kind = ?");
       params.push(options.actorKind);
+    }
+    if (options.syncConflict) {
+      // Exact substring match, not FTS (ADR-021 covers search relevance,
+      // not this): the "Sync conflict:" marker is written by sync.ts's
+      // note() function — see the comment there. Change one, check the
+      // other, or this filter silently stops finding conflicts.
+      conditions.push("note LIKE ?");
+      params.push("%Sync conflict:%");
     }
     if (after) {
       conditions.push("(created_at < ? OR (created_at = ? AND rowid < ?))");

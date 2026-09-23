@@ -459,6 +459,12 @@ export async function apply(
     }
   };
 
+  // The literal substring "Sync conflict:" below is a stable marker: the
+  // console's sync-conflicts filter (ADR-070) matches revisions whose note
+  // contains it, in packages/adapter-sqlite/src/document-store.ts's
+  // listRecentRevisions (the `note LIKE '%Sync conflict:%'` condition).
+  // Changing or removing the substring in either shape below silently
+  // empties that list; check that filter before editing this string.
   const note = (action: SyncAction) => {
     const from = sides[other(action.to)].url;
     if (action.op === "delete") return `Synced from ${from}, where it was deleted`;

@@ -211,6 +211,11 @@ export interface DocumentStore {
   /**
    * Eventual. Revisions across the workspace, newest first, for the review
    * console's recent changes. `actorKind` filters to people or agents.
+   * `syncConflict`, when `true`, returns only revisions whose `note`
+   * contains the literal substring "Sync conflict:" (ADR-070) — the marker
+   * `cairn sync`'s `apply()` writes onto a revision that won a conflict.
+   * Combines with `actorKind` as AND, not OR. Absent or `false` leaves
+   * behaviour unchanged.
    */
   listRecentRevisions(
     workspaceId: WorkspaceId,
@@ -218,6 +223,7 @@ export interface DocumentStore {
       limit?: number;
       cursor?: string | null;
       actorKind?: Actor["kind"];
+      syncConflict?: boolean;
     },
   ): Promise<Paged<Revision>>;
 
