@@ -75,6 +75,7 @@ A decision that changes is not edited away. Add a new ADR that supersedes it, an
 | [065](ADR-065.md) | Mermaid, Vega-Lite and Viz.js are the text-form visualizations; everything else is an attachment | accepted | 2026-09-19 |
 | [066](ADR-066.md) | A published subtree can be gated by a named token | accepted | 2026-09-19 |
 | [067](ADR-067.md) | A guest is an email address, proven against a provider Cairn already trusts | accepted, design only, deferred | 2026-09-19 |
+| [068](ADR-068.md) | jSquash is the WASM codec for attachment thumbnails | accepted | 2026-09-23 |
 
 ## Writing one
 
