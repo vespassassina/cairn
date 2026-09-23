@@ -602,6 +602,10 @@ export function attachmentJson(row: AttachmentSummary): Record<string, unknown> 
     content_type: row.contentType,
     bytes: row.bytes,
     status: row.status,
+    // Decision 6: the key of the generated thumbnail blob, or null. Never a
+    // URL by itself — get_attachment resolves it the same way it resolves
+    // the original's download URL, only once there is one to resolve.
+    thumbnail_key: row.thumbnailKey,
     version: row.version,
     created_at: row.createdAt,
   };
@@ -621,8 +625,8 @@ export async function confirmAttachmentUploadOp(context: AppContext, id: string,
 }
 
 export async function getAttachmentOp(context: AppContext, id: string): Promise<Record<string, unknown>> {
-  const { row, downloadUrl } = await getAttachment(context, id);
-  return { ...attachmentJson(row), download_url: downloadUrl };
+  const { row, downloadUrl, thumbnailUrl } = await getAttachment(context, id);
+  return { ...attachmentJson(row), download_url: downloadUrl, thumbnail_url: thumbnailUrl };
 }
 
 export async function listAttachmentsOp(context: AppContext, pageId: string): Promise<Record<string, unknown>[]> {

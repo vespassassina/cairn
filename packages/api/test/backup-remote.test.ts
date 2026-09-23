@@ -577,6 +577,17 @@ describe("the Azure blob archive", () => {
     expect(await store.head("cairn-2026-09-17T10-00-00Z.sqlite")).toBeNull();
   });
 
+  it("writes and reads bytes directly with a single Put Blob, for a thumbnail (ADR-064 decision 6)", async () => {
+    const held = new Map<string, Buffer>();
+    const store = archive(await stubAzure(held));
+
+    const bytes = new Uint8Array([1, 2, 3, 4]);
+    await store.putBytes("sha256/abc123-thumb", bytes, "image/webp");
+
+    expect(await store.head("sha256/abc123-thumb")).toEqual({ bytes: 4 });
+    expect(await store.getBytes("sha256/abc123-thumb")).toEqual(bytes);
+  });
+
   describe("SAS URLs", () => {
     it("mints a URL with the sv/st/se/sr/sp/sk*/sig parameters a SAS needs", async () => {
       const held = new Map<string, Buffer>();

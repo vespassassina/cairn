@@ -21,6 +21,15 @@ export interface AttachmentBlobStore {
   uploadUrl(key: string, expiresInSeconds: number): Promise<string>;
   /** A short-lived URL to GET the bytes from, downloading under `filename`. */
   downloadUrl(key: string, expiresInSeconds: number, filename: string): Promise<string>;
+  /**
+   * Writes bytes to `key` directly from the server (ADR-064 decision 6's
+   * thumbnail): unlike `uploadUrl`, the bytes never leave the process as a
+   * link, because the server itself generated them and is the one writing
+   * them. Null if nothing is there yet to read back the way `head` is.
+   */
+  put(key: string, bytes: Uint8Array, contentType: string): Promise<void>;
+  /** The bytes at `key`, for the server's own use, or null if nothing is there. */
+  get(key: string): Promise<Uint8Array | null>;
 }
 
 /** `attachment; filename="..."`, the same convention decision 5 asks every download to carry. */
@@ -46,6 +55,16 @@ class S3AttachmentStore implements AttachmentBlobStore {
       responseContentDisposition: dispositionFor(filename),
     });
   }
+
+  put(key: string, bytes: Uint8Array, contentType: string) {
+    return this.archive.putBytes(key, bytes, contentType);
+  }
+
+  async get(key: string): Promise<Uint8Array | null> {
+    const found = await this.archive.head(key);
+    if (!found) return null;
+    return this.archive.getBytes(key);
+  }
 }
 
 class AzureAttachmentStore implements AttachmentBlobStore {
@@ -62,6 +81,16 @@ class AzureAttachmentStore implements AttachmentBlobStore {
 
   downloadUrl(key: string, expiresInSeconds: number, filename: string) {
     return this.archive.sasUrl(key, { permissions: "r", expiresInSeconds, contentDisposition: dispositionFor(filename) });
+  }
+
+  put(key: string, bytes: Uint8Array, contentType: string) {
+    return this.archive.putBytes(key, bytes, contentType);
+  }
+
+  async get(key: string): Promise<Uint8Array | null> {
+    const found = await this.archive.head(key);
+    if (!found) return null;
+    return this.archive.getBytes(key);
   }
 }
 

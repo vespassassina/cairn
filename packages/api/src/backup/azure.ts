@@ -261,6 +261,33 @@ export class AzureBlobArchive implements Archive {
     if (!response.ok) await this.fail(`delete ${name}`, response);
   }
 
+  /**
+   * Writes `bytes` straight to `name` with a single Put Blob, no file on
+   * disk either side. Used by `attachments-blob.ts` for a thumbnail
+   * (ADR-064 decision 6): small enough that the block-list dance `put()`
+   * above does for a whole database is unneeded, and this sets the
+   * `Content-Type` the caller asks for, which `put()` hardcodes.
+   */
+  async putBytes(name: string, bytes: Uint8Array, contentType: string): Promise<void> {
+    const response = await fetch(this.url(name), {
+      method: "PUT",
+      headers: await this.headers({
+        "Content-Length": String(bytes.length),
+        "Content-Type": contentType,
+        "x-ms-blob-type": "BlockBlob",
+      }),
+      body: bytes as never,
+    });
+    if (!response.ok) await this.fail(`upload ${name}`, response);
+  }
+
+  /** The bytes at `name`, read straight into memory. The read half of `putBytes`. */
+  async getBytes(name: string): Promise<Uint8Array> {
+    const response = await fetch(this.url(name), { headers: await this.headers() });
+    if (!response.ok) await this.fail(`download ${name}`, response);
+    return new Uint8Array(await response.arrayBuffer());
+  }
+
   /** The size of one blob without downloading it, or null if it does not exist. */
   async head(name: string): Promise<{ bytes: number } | null> {
     const response = await fetch(this.url(name), { method: "HEAD", headers: await this.headers() });

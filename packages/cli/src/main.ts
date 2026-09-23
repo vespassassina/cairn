@@ -1344,7 +1344,11 @@ export async function run(argv: string[], io: Io): Promise<number> {
           const { json } = await client.request("GET", `/attachments/${encodeURIComponent(id)}`);
           out(json, () =>
             json?.["download_url"]
-              ? `${String(json["download_url"])}\n`
+              ? `${String(json["download_url"])}\n` +
+                // decision 6: a preview only once one exists. Never printed as
+                // missing or pending — the download URL above always works
+                // regardless of whether a thumbnail ever lands.
+                (json["thumbnail_url"] ? `thumbnail: ${String(json["thumbnail_url"])}\n` : "")
               : `${String(json?.["filename"])} is not uploaded yet (status: ${String(json?.["status"])}). Run cairn attachment create again, or wait for the upload to be confirmed.\n`,
           );
           return 0;

@@ -431,6 +431,27 @@ export class S3Archive implements Archive {
     await pipeline(Readable.fromWeb(response.body as never), createWriteStream(destination));
   }
 
+  /**
+   * Writes `bytes` straight to `name`, no file on disk either side. Used by
+   * `attachments-blob.ts` for a thumbnail (ADR-064 decision 6): small enough
+   * to hold in memory, and the caller needs the right `Content-Type` set,
+   * which `put()` above hardcodes for the backup case and this does not.
+   */
+  async putBytes(name: string, bytes: Uint8Array, contentType: string): Promise<void> {
+    const response = await this.send("PUT", this.url(name), UNSIGNED, bytes, {
+      "content-length": String(bytes.length),
+      "content-type": contentType,
+    });
+    if (!response.ok) await this.fail(`upload ${name}`, response);
+  }
+
+  /** The bytes at `name`, read straight into memory. The read half of `putBytes`. */
+  async getBytes(name: string): Promise<Uint8Array> {
+    const response = await this.send("GET", this.url(name), EMPTY_SHA256);
+    if (!response.ok) await this.fail(`download ${name}`, response);
+    return new Uint8Array(await response.arrayBuffer());
+  }
+
   async remove(name: string): Promise<void> {
     const response = await this.send("DELETE", this.url(name), EMPTY_SHA256);
     if (response.status === 404) return;

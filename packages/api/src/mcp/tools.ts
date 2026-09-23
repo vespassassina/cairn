@@ -893,7 +893,7 @@ export function registerTools(server: McpServer, context: AppContext, actor: Act
     {
       title: "Read an attachment's metadata",
       description:
-        "The attachment's row, plus a short-lived download_url once its upload is confirmed. download_url is null while it is still pending: call confirm_attachment_upload first, or wait for whoever is uploading it to.",
+        "The attachment's row, plus a short-lived download_url once its upload is confirmed. download_url is null while it is still pending: call confirm_attachment_upload first, or wait for whoever is uploading it to. For one of the four raster types (PNG, JPEG, WebP, GIF), thumbnail_url is a short-lived link to a small WebP preview, generated best-effort in the background after confirm; it is null until that finishes, and stays null if generation fails or the type has no preview (ADR-064 decision 6) — never treat a null thumbnail_url as an error, fall back to showing the file by name.",
       inputSchema: {
         attachment_id: z.string(),
       },

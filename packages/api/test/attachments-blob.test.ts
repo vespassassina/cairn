@@ -92,6 +92,36 @@ describe("openAttachmentsStore", () => {
     expect(await get.text()).toBe("hello");
   });
 
+  it("writes and reads bytes directly, server-side, for a thumbnail (ADR-064 decision 6)", async () => {
+    const held = new Map<string, Buffer>();
+    const endpoint = await serve((request, response, body) => {
+      const url = new URL(request.url!, "http://s3");
+      const key = decodeURIComponent(url.pathname.replace(/^\/cairn-attachments\/?/, ""));
+      if (request.method === "PUT") {
+        expect(request.headers["content-type"]).toBe("image/webp");
+        held.set(key, body);
+        response.writeHead(200).end();
+        return;
+      }
+      // GET
+      const found = held.get(key);
+      if (!found) response.writeHead(404).end();
+      else response.writeHead(200).end(found);
+    });
+
+    const config: AttachmentsConfig = { to: "s3://cairn-attachments/attachments", region: "eu-west-1", endpoint };
+    const store = openAttachmentsStore(config)!;
+
+    const key = "sha256/abc123-thumb";
+    expect(await store.get(key)).toBeNull();
+
+    const bytes = new Uint8Array([1, 2, 3, 4]);
+    await store.put(key, bytes, "image/webp");
+
+    const back = await store.get(key);
+    expect(back).toEqual(bytes);
+  });
+
   // `AttachmentsConfig` has no origin override for `abs://` (unlike
   // `S3ArchiveOptions.endpoint`), so an Azure stub cannot be pointed at from
   // here the way the S3 one above is. `AzureBlobArchive.sasUrl`'s "cw" and

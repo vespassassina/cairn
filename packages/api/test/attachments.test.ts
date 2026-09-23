@@ -1,5 +1,9 @@
 import { NotFoundError, ValidationError } from "@cairn/core";
+import { eventually } from "@cairn/core/testing";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { encode as encodePng } from "@jsquash/png";
+import { encode as encodeJpeg } from "@jsquash/jpeg";
+import { encode as encodeWebp } from "@jsquash/webp";
 import { closeContext, createContext, OWNER, type AppContext } from "../src/context.js";
 import type { AttachmentBlobStore } from "../src/attachments-blob.js";
 import {
@@ -24,13 +28,20 @@ import {
 
 const SHA = "a".repeat(64);
 
-/** In-memory blob store: `bytes` set by the test stands in for "the upload landed". */
+/**
+ * In-memory blob store. `_land` stands in for the PUT a real caller would
+ * make straight to the signed upload URL; it takes either a byte count (the
+ * original tests, which only ever care about size) or real bytes (the
+ * thumbnail tests below, which need something a codec can actually decode).
+ * `put`/`get` back the thumbnail's own server-side write and read.
+ */
 function fakeStore(initial: Record<string, number> = {}): AttachmentBlobStore {
-  const sizes = new Map(Object.entries(initial));
+  const blobs = new Map<string, Uint8Array>();
+  for (const [key, bytes] of Object.entries(initial)) blobs.set(key, new Uint8Array(bytes));
   return {
     async head(key) {
-      const bytes = sizes.get(key);
-      return bytes === undefined ? null : { bytes };
+      const found = blobs.get(key);
+      return found === undefined ? null : { bytes: found.length };
     },
     async uploadUrl(key) {
       return `https://blob.example/${key}?upload`;
@@ -38,12 +49,16 @@ function fakeStore(initial: Record<string, number> = {}): AttachmentBlobStore {
     async downloadUrl(key, _expires, filename) {
       return `https://blob.example/${key}?download&filename=${encodeURIComponent(filename)}`;
     },
-    // Test-only: marks the blob as landed, standing in for the PUT a real
-    // caller would make straight to the signed upload URL.
-    _land(key: string, bytes: number) {
-      sizes.set(key, bytes);
+    async put(key, bytes) {
+      blobs.set(key, bytes);
     },
-  } as AttachmentBlobStore & { _land(key: string, bytes: number): void };
+    async get(key) {
+      return blobs.get(key) ?? null;
+    },
+    _land(key: string, bytes: number | Uint8Array) {
+      blobs.set(key, typeof bytes === "number" ? new Uint8Array(bytes) : bytes);
+    },
+  } as AttachmentBlobStore & { _land(key: string, bytes: number | Uint8Array): void };
 }
 
 describe("attachments (ADR-064)", () => {
@@ -235,5 +250,128 @@ describe("attachments (ADR-064)", () => {
     const swept = await sweepAbandonedAttachments(context, 0);
     expect(swept.removed).toBe(0);
     expect((await getAttachment(context, row.id)).row.id).toBe(row.id);
+  });
+
+  describe("thumbnails (ADR-064 decision 6, ADR-068)", () => {
+    /** A tiny solid-colour image, real pixels through the real codec — not a stub. */
+    function pixels(width: number, height: number): Uint8ClampedArray {
+      const data = new Uint8ClampedArray(width * height * 4);
+      for (let i = 0; i < data.length; i += 4) {
+        data[i] = 200;
+        data[i + 1] = 40;
+        data[i + 2] = 40;
+        data[i + 3] = 255;
+      }
+      return data;
+    }
+
+    // Larger than the 320px target on both edges, so a real resize happens,
+    // not just a re-encode.
+    const WIDTH = 400;
+    const HEIGHT = 300;
+
+    async function fixture(contentType: "image/png" | "image/jpeg" | "image/webp"): Promise<Uint8Array> {
+      const data = pixels(WIDTH, HEIGHT);
+      const encoded =
+        contentType === "image/png"
+          ? await encodePng({ data, width: WIDTH, height: HEIGHT })
+          : contentType === "image/jpeg"
+            ? await encodeJpeg({ data, width: WIDTH, height: HEIGHT })
+            : await encodeWebp({ data, width: WIDTH, height: HEIGHT });
+      return new Uint8Array(encoded);
+    }
+
+    for (const contentType of ["image/png", "image/jpeg", "image/webp"] as const) {
+      it(`generates a thumbnail for a committed ${contentType} attachment`, async () => {
+        const store = fakeStore() as ReturnType<typeof fakeStore> & { _land(key: string, bytes: number | Uint8Array): void };
+        context.attachmentsStore = store;
+        await page("pg_a");
+        const bytes = await fixture(contentType);
+        const { row } = await createAttachment(
+          context,
+          { pageId: "pg_a", filename: `photo.${contentType.split("/")[1]}`, altText: null, sha256: SHA, contentType, bytes: bytes.length },
+          { actor: OWNER },
+        );
+        store._land(row.blobKey, bytes);
+        const confirmed = await confirmAttachmentUpload(context, row.id, { actor: OWNER });
+        // Thumbnail generation is queued after confirm and never awaited by
+        // it (decision 6), so the confirm response itself never carries one.
+        expect(confirmed.thumbnailKey).toBeNull();
+
+        const withThumbnail = await eventually(async () => {
+          const { row: current } = await getAttachment(context, row.id);
+          if (current.thumbnailKey === null) throw new Error("thumbnail not generated yet");
+          return current;
+        });
+        expect(withThumbnail.thumbnailKey).toBe(`${row.blobKey}-thumb`);
+        const stored = await store.get(withThumbnail.thumbnailKey!);
+        expect(stored).not.toBeNull();
+        expect(stored!.length).toBeGreaterThan(0);
+      });
+    }
+
+    it("leaves thumbnailKey null, and does not throw, when the uploaded bytes are corrupt", async () => {
+      const store = fakeStore() as ReturnType<typeof fakeStore> & { _land(key: string, bytes: number | Uint8Array): void };
+      context.attachmentsStore = store;
+      await page("pg_a");
+      const corrupt = new Uint8Array([1, 2, 3, 4, 5]);
+      const { row } = await createAttachment(
+        context,
+        { pageId: "pg_a", filename: "broken.png", altText: null, sha256: SHA, contentType: "image/png", bytes: corrupt.length },
+        { actor: OWNER },
+      );
+      store._land(row.blobKey, corrupt);
+      const confirmed = await confirmAttachmentUpload(context, row.id, { actor: OWNER });
+      expect(confirmed.status).toBe("committed");
+      expect(confirmed.thumbnailKey).toBeNull();
+
+      // The background attempt runs and fails fast on corrupt bytes; give it
+      // a moment, then confirm it never set the field rather than merely
+      // that it had not yet, the way a bare `eventually` on a positive
+      // condition could not.
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      const { row: after } = await getAttachment(context, row.id);
+      expect(after.thumbnailKey).toBeNull();
+    });
+
+    it("leaves thumbnailKey null for a GIF: ADR-068's @jsquash/gif does not exist on npm (see docs/LESSONS.md)", async () => {
+      const store = fakeStore() as ReturnType<typeof fakeStore> & { _land(key: string, bytes: number | Uint8Array): void };
+      context.attachmentsStore = store;
+      await page("pg_a");
+      // GIF89a header plus a minimal trailer is enough to prove this is about
+      // the missing decoder, not about the bytes being unparsable.
+      const gif = new Uint8Array([0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 0x3b]);
+      const { row } = await createAttachment(
+        context,
+        { pageId: "pg_a", filename: "a.gif", altText: null, sha256: SHA, contentType: "image/gif", bytes: gif.length },
+        { actor: OWNER },
+      );
+      store._land(row.blobKey, gif);
+      const confirmed = await confirmAttachmentUpload(context, row.id, { actor: OWNER });
+      expect(confirmed.status).toBe("committed");
+
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      const { row: after } = await getAttachment(context, row.id);
+      expect(after.thumbnailKey).toBeNull();
+    });
+
+    it("does not generate a thumbnail for a non-raster attachment type", async () => {
+      const store = fakeStore() as ReturnType<typeof fakeStore> & { _land(key: string, bytes: number | Uint8Array): void };
+      context.attachmentsStore = store;
+      await page("pg_a");
+      const bytes = new Uint8Array([1, 2, 3]);
+      const { row } = await createAttachment(
+        context,
+        { pageId: "pg_a", filename: "a.zip", altText: null, sha256: SHA, contentType: "application/zip", bytes: bytes.length },
+        { actor: OWNER },
+      );
+      store._land(row.blobKey, bytes);
+      const confirmed = await confirmAttachmentUpload(context, row.id, { actor: OWNER });
+      expect(confirmed.thumbnailKey).toBeNull();
+
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      const { row: after } = await getAttachment(context, row.id);
+      expect(after.thumbnailKey).toBeNull();
+    });
   });
 });

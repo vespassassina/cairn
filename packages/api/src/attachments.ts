@@ -2,6 +2,7 @@ import { NotFoundError, ValidationError } from "@cairn/core";
 import type { WriteContext } from "@cairn/core";
 import type { AppContext } from "./context.js";
 import { ownerVia } from "./context.js";
+import { isRasterType, makeThumbnail } from "./attachments-thumbnail.js";
 
 /**
  * Attachments (ADR-064): binary files, uploaded direct to blob storage and
@@ -62,6 +63,10 @@ async function findOrCreateTable(context: AppContext) {
         // that tracks it. Added here to close that gap (resolved inline per
         // the owner's direction, no addendum ADR).
         { name: "status", type: "select", options: ["pending", "committed"], required: true },
+        // Decision 6: null until a thumbnail lands, and null forever if
+        // generation fails or the type is not one of the four raster types.
+        // Never required — a missing thumbnail is not an error.
+        { name: "thumbnailKey", type: "text" },
       ],
     },
     { actor: ownerVia("attachment") },
@@ -84,6 +89,8 @@ export interface AttachmentSummary {
   contentType: string;
   bytes: number;
   status: "pending" | "committed";
+  /** Set once a thumbnail lands (decision 6). Null while pending, on failure, or for a non-raster type. */
+  thumbnailKey: string | null;
   version: string;
   createdAt: string;
 }
@@ -99,6 +106,7 @@ function summarize(row: { id: string; values: Record<string, unknown>; version: 
     contentType: String(row.values["contentType"] ?? ""),
     bytes: Number(row.values["bytes"] ?? 0),
     status: row.values["status"] === "committed" ? "committed" : "pending",
+    thumbnailKey: typeof row.values["thumbnailKey"] === "string" ? (row.values["thumbnailKey"] as string) : null,
     version: row.version,
     createdAt: row.createdAt,
   };
@@ -155,6 +163,7 @@ export async function createAttachment(
         contentType: params.contentType,
         bytes: params.bytes,
         status: "pending",
+        thumbnailKey: null,
       },
     },
     by,
@@ -194,7 +203,52 @@ export async function confirmAttachmentUpload(context: AppContext, rowId: string
     by,
     { id: row.id, expectedVersion: row.version },
   );
-  return summarize(updated);
+  const summary = summarize(updated);
+
+  // Decision 6: queued after the row is committed, never awaited and never
+  // allowed to throw into this call — a slow or failed thumbnail must not
+  // hold up, or fail, an upload that already landed.
+  void queueThumbnail(context, tbl.id, summary).catch(() => {
+    // queueThumbnail already treats every failure inside it as best-effort;
+    // this is only a backstop against an unexpected rejection escaping it.
+  });
+
+  return summary;
+}
+
+/**
+ * Generates and stores a thumbnail for a just-committed raster attachment,
+ * then records its key on the row (decision 6). Every failure along the way
+ * — nothing to read back, a codec that cannot handle the file, a storage
+ * error, a version race with some other write to the row — is treated the
+ * same way: `thumbnailKey` stays null, and nothing is thrown or logged at
+ * error level, because a missing thumbnail is not an error anywhere in this
+ * system, only a fallback to a generic file icon wherever attachments list.
+ */
+async function queueThumbnail(context: AppContext, tableId: string, attachment: AttachmentSummary): Promise<void> {
+  if (!isRasterType(attachment.contentType)) return;
+  const store = context.attachmentsStore;
+  if (!store) return;
+  try {
+    const original = await store.get(attachment.blobKey);
+    if (!original) return;
+    const thumbnail = await makeThumbnail(original.buffer as ArrayBuffer, attachment.contentType);
+    const thumbnailKey = `${attachment.blobKey}-thumb`;
+    await store.put(thumbnailKey, new Uint8Array(thumbnail), "image/webp");
+
+    // Re-read the row: time has passed since confirm returned, and some
+    // other write may have moved its version on.
+    const row = await context.tables.getRow(context.workspaceId, tableId, attachment.id);
+    await context.tables.upsertRow(
+      context.workspaceId,
+      tableId,
+      { values: { ...row.values, thumbnailKey } },
+      { actor: ownerVia("attachment-thumbnail") },
+      { id: row.id, expectedVersion: row.version },
+    );
+  } catch {
+    // See the function comment: every failure here is swallowed on purpose.
+  }
 }
 
 /**
@@ -202,13 +256,21 @@ export async function confirmAttachmentUpload(context: AppContext, rowId: string
  * before confirming should retry after `confirm_attachment_upload`, not be
  * handed a URL to a blob that may not exist.
  */
-export async function getAttachment(context: AppContext, rowId: string): Promise<{ row: AttachmentSummary; downloadUrl: string | null }> {
+export async function getAttachment(
+  context: AppContext,
+  rowId: string,
+): Promise<{ row: AttachmentSummary; downloadUrl: string | null; thumbnailUrl: string | null }> {
   const tbl = await table(context);
   const row = summarize(await context.tables.getRow(context.workspaceId, tbl.id, rowId));
-  if (row.status !== "committed") return { row, downloadUrl: null };
+  if (row.status !== "committed") return { row, downloadUrl: null, thumbnailUrl: null };
   const store = requireBlobStore(context);
   const downloadUrl = await store.downloadUrl(row.blobKey, DOWNLOAD_URL_SECONDS, row.filename);
-  return { row, downloadUrl };
+  // Same filename convention as the original, just named for what it is:
+  // a browser choosing to save it keeps "photo.png-thumb" clearly a
+  // by-product of "photo.png", not a second original.
+  const thumbnailUrl =
+    row.thumbnailKey === null ? null : await store.downloadUrl(row.thumbnailKey, DOWNLOAD_URL_SECONDS, `${row.filename}-thumb`);
+  return { row, downloadUrl, thumbnailUrl };
 }
 
 /** Every committed attachment on a page, for a page's attachment list or export. */

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import type { Hono } from "hono";
 import { eventually } from "@cairn/core/testing";
+import { encode as encodePng } from "@jsquash/png";
 import { createApp } from "../src/app.js";
 import { createContext, type AppContext } from "../src/context.js";
 
@@ -535,11 +536,11 @@ describe("attachments (ADR-064)", () => {
   const SHA = "c".repeat(64);
 
   function fakeStore() {
-    const sizes = new Map<string, number>();
+    const blobs = new Map<string, Uint8Array>();
     return {
       async head(key: string) {
-        const bytes = sizes.get(key);
-        return bytes === undefined ? null : { bytes };
+        const found = blobs.get(key);
+        return found === undefined ? null : { bytes: found.length };
       },
       async uploadUrl(key: string) {
         return `https://blob.example/${key}?upload`;
@@ -547,10 +548,30 @@ describe("attachments (ADR-064)", () => {
       async downloadUrl(key: string, _expires: number, filename: string) {
         return `https://blob.example/${key}?download&filename=${encodeURIComponent(filename)}`;
       },
-      land(key: string, bytes: number) {
-        sizes.set(key, bytes);
+      async put(key: string, bytes: Uint8Array) {
+        blobs.set(key, bytes);
+      },
+      async get(key: string) {
+        return blobs.get(key) ?? null;
+      },
+      land(key: string, bytes: number | Uint8Array) {
+        blobs.set(key, typeof bytes === "number" ? new Uint8Array(bytes) : bytes);
       },
     };
+  }
+
+  /** A tiny real PNG, through the real codec (ADR-068), so a thumbnail actually generates. */
+  async function tinyPng(): Promise<Uint8Array> {
+    const width = 40;
+    const height = 30;
+    const data = new Uint8ClampedArray(width * height * 4);
+    for (let i = 0; i < data.length; i += 4) {
+      data[i] = 30;
+      data[i + 1] = 90;
+      data[i + 2] = 200;
+      data[i + 3] = 255;
+    }
+    return new Uint8Array(await encodePng({ data, width, height }));
   }
 
   it("has no attachment storage in this suite's default context: create answers a clear 422, not a 500", async () => {
@@ -568,6 +589,7 @@ describe("attachments (ADR-064)", () => {
     context.attachmentsStore = store;
     const page = await createBuildLog();
     const pageId = String(page.json["id"]);
+    const png = await tinyPng();
 
     const created = await call("/attachments", {
       method: "POST",
@@ -577,7 +599,7 @@ describe("attachments (ADR-064)", () => {
         alt_text: "the ESC wiring diagram",
         sha256: SHA,
         content_type: "image/png",
-        bytes: 12,
+        bytes: png.length,
         change_note: "Added the wiring photo",
       },
     });
@@ -586,7 +608,7 @@ describe("attachments (ADR-064)", () => {
     expect(created.json["upload_url"]).toContain(`sha256/${SHA}`);
     const id = String(created.json["id"]);
 
-    store.land(`sha256/${SHA}`, 12);
+    store.land(`sha256/${SHA}`, png);
     const confirmed = await call(`/attachments/${id}/confirm`, { method: "POST", body: {} });
     expect(confirmed.status).toBe(200);
     expect(confirmed.json["status"]).toBe("committed");
@@ -595,13 +617,27 @@ describe("attachments (ADR-064)", () => {
     expect(fetched.status).toBe(200);
     expect(fetched.json["download_url"]).toContain("esc-wiring.png");
 
+    // Decision 6's thumbnail is generated off the critical path, so it is
+    // not there on the read straight after confirm — poll for it the way
+    // every other derived field in this suite does (hard rule 11).
+    const withThumbnail = await eventually(async () => {
+      const again = await call(`/attachments/${id}`);
+      if (again.json["thumbnail_url"] === null) throw new Error("thumbnail not generated yet");
+      return again;
+    });
+    expect(withThumbnail.json["thumbnail_key"]).toBe(`sha256/${SHA}-thumb`);
+    expect(withThumbnail.json["thumbnail_url"]).toContain("sha256/" + SHA + "-thumb");
+
     const listed = await call(`/attachments?page=${pageId}`);
     expect(listed.status).toBe(200);
     const attachments = listed.json["attachments"] as Record<string, unknown>[];
     expect(attachments).toHaveLength(1);
     expect(attachments[0]?.["filename"]).toBe("esc-wiring.png");
 
-    const deleted = await call(`/attachments/${id}`, { method: "DELETE", headers: { "if-match": String(confirmed.json["version"]) } });
+    // The thumbnail write above moved the row's version on; delete must use
+    // the version as of the last read, the same rule any optimistic-
+    // concurrency write in this codebase follows.
+    const deleted = await call(`/attachments/${id}`, { method: "DELETE", headers: { "if-match": String(withThumbnail.json["version"]) } });
     expect(deleted.status).toBe(204);
     expect((await call(`/attachments?page=${pageId}`)).json["attachments"]).toEqual([]);
   });

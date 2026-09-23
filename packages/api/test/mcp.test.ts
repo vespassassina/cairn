@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import type { Hono } from "hono";
+import { eventually } from "@cairn/core/testing";
+import { encode as encodePng } from "@jsquash/png";
 import { createApp } from "../src/app.js";
 import { createContext, type AppContext } from "../src/context.js";
 import { INSTRUCTIONS_BUDGET, SERVER_INSTRUCTIONS } from "../src/mcp/instructions.js";
@@ -992,11 +994,11 @@ describe("attachments (ADR-064)", () => {
   const SHA = "d".repeat(64);
 
   function fakeStore() {
-    const sizes = new Map<string, number>();
+    const blobs = new Map<string, Uint8Array>();
     return {
       async head(key: string) {
-        const bytes = sizes.get(key);
-        return bytes === undefined ? null : { bytes };
+        const found = blobs.get(key);
+        return found === undefined ? null : { bytes: found.length };
       },
       async uploadUrl(key: string) {
         return `https://blob.example/${key}?upload`;
@@ -1004,10 +1006,30 @@ describe("attachments (ADR-064)", () => {
       async downloadUrl(key: string, _expires: number, filename: string) {
         return `https://blob.example/${key}?download&filename=${encodeURIComponent(filename)}`;
       },
-      land(key: string, bytes: number) {
-        sizes.set(key, bytes);
+      async put(key: string, bytes: Uint8Array) {
+        blobs.set(key, bytes);
+      },
+      async get(key: string) {
+        return blobs.get(key) ?? null;
+      },
+      land(key: string, bytes: number | Uint8Array) {
+        blobs.set(key, typeof bytes === "number" ? new Uint8Array(bytes) : bytes);
       },
     };
+  }
+
+  /** A tiny real PNG, through the real codec (ADR-068), so a thumbnail actually generates. */
+  async function tinyPng(): Promise<Uint8Array> {
+    const width = 40;
+    const height = 30;
+    const data = new Uint8ClampedArray(width * height * 4);
+    for (let i = 0; i < data.length; i += 4) {
+      data[i] = 30;
+      data[i + 1] = 90;
+      data[i + 2] = 200;
+      data[i + 3] = 255;
+    }
+    return new Uint8Array(await encodePng({ data, width, height }));
   }
 
   it("is refused with a clear error when this Cairn has no attachment storage configured", async () => {
@@ -1028,6 +1050,7 @@ describe("attachments (ADR-064)", () => {
     context.attachmentsStore = store;
     const page = await callTool("create_page", { title: "Wiring notes", body: "x" });
     const pageId = page.data["id"] as string;
+    const png = await tinyPng();
 
     const created = await callTool("create_attachment", {
       page_id: pageId,
@@ -1035,14 +1058,14 @@ describe("attachments (ADR-064)", () => {
       alt_text: "the ESC wiring diagram",
       sha256: SHA,
       content_type: "image/png",
-      bytes: 12,
+      bytes: png.length,
     });
     expect(created.isError).toBe(false);
     expect(created.data["status"]).toBe("pending");
     expect(created.data["upload_url"]).toContain(`sha256/${SHA}`);
     const id = created.data["id"] as string;
 
-    store.land(`sha256/${SHA}`, 12);
+    store.land(`sha256/${SHA}`, png);
     const confirmed = await callTool("confirm_attachment_upload", { attachment_id: id });
     expect(confirmed.isError).toBe(false);
     expect(confirmed.data["status"]).toBe("committed");
@@ -1050,12 +1073,24 @@ describe("attachments (ADR-064)", () => {
     const fetched = await callTool("get_attachment", { attachment_id: id });
     expect(fetched.data["download_url"]).toContain("esc-wiring.png");
 
+    // Off the critical path (decision 6): poll for the thumbnail the way
+    // every other derived field in this suite does (hard rule 11).
+    const withThumbnail = await eventually(async () => {
+      const again = await callTool("get_attachment", { attachment_id: id });
+      if (again.data["thumbnail_url"] === null) throw new Error("thumbnail not generated yet");
+      return again;
+    });
+    expect(withThumbnail.data["thumbnail_key"]).toBe(`sha256/${SHA}-thumb`);
+    expect(withThumbnail.data["thumbnail_url"]).toContain(`sha256/${SHA}-thumb`);
+
     const listed = await callTool("list_attachments", { page_id: pageId });
     const attachments = listed.data["attachments"] as Array<Record<string, unknown>>;
     expect(attachments).toHaveLength(1);
     expect(attachments[0]!["filename"]).toBe("esc-wiring.png");
 
-    const deleted = await callTool("delete_attachment", { attachment_id: id, version: confirmed.data["version"] as string });
+    // The thumbnail write above moved the row's version on; delete must use
+    // the version as of the last read.
+    const deleted = await callTool("delete_attachment", { attachment_id: id, version: withThumbnail.data["version"] as string });
     expect(deleted.isError).toBe(false);
     const afterDelete = await callTool("list_attachments", { page_id: pageId });
     expect(afterDelete.data["attachments"]).toEqual([]);

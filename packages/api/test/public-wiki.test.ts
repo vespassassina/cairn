@@ -1,9 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Hono } from "hono";
+import { eventually } from "@cairn/core/testing";
+import { encode as encodePng } from "@jsquash/png";
 import { createApp } from "../src/app.js";
 import { createContext, OWNER, type AppContext } from "../src/context.js";
 import { createPublishToken, revokePublishToken } from "../src/publish-tokens.js";
-import { createAttachment, confirmAttachmentUpload } from "../src/attachments.js";
+import { createAttachment, confirmAttachmentUpload, getAttachment } from "../src/attachments.js";
 import type { AttachmentBlobStore } from "../src/attachments-blob.js";
 
 // The webmention route's SSRF guard resolves the sender's address for real
@@ -527,11 +529,11 @@ describe("attachments on a published page (ADR-064)", () => {
   const SHA = "e".repeat(64);
 
   function fakeStore(): AttachmentBlobStore {
-    const sizes = new Map<string, number>();
+    const blobs = new Map<string, Uint8Array>();
     return {
       async head(key) {
-        const bytes = sizes.get(key);
-        return bytes === undefined ? null : { bytes };
+        const found = blobs.get(key);
+        return found === undefined ? null : { bytes: found.length };
       },
       async uploadUrl(key) {
         return `https://blob.example/${key}?upload`;
@@ -539,11 +541,17 @@ describe("attachments on a published page (ADR-064)", () => {
       async downloadUrl(key, _expires, filename) {
         return `https://blob.example/${key}?download&filename=${encodeURIComponent(filename)}`;
       },
-      // Test-only: stands in for the PUT a real caller would make.
-      _land(key: string, bytes: number) {
-        sizes.set(key, bytes);
+      async put(key, bytes) {
+        blobs.set(key, bytes);
       },
-    } as AttachmentBlobStore & { _land(key: string, bytes: number): void };
+      async get(key) {
+        return blobs.get(key) ?? null;
+      },
+      // Test-only: stands in for the PUT a real caller would make.
+      _land(key: string, bytes: number | Uint8Array) {
+        blobs.set(key, typeof bytes === "number" ? new Uint8Array(bytes) : bytes);
+      },
+    } as AttachmentBlobStore & { _land(key: string, bytes: number | Uint8Array): void };
   }
 
   it("renders a confirmed attachment as an image with a signed URL, for a stranger with no session", async () => {
@@ -572,6 +580,41 @@ describe("attachments on a published page (ADR-064)", () => {
     expect(page.status).toBe(200);
     expect(page.body).toContain(`src="https://blob.example/${row.blobKey}?download`);
     expect(page.body).toContain("wiring.png");
+  });
+
+  it("keeps using the original's signed URL inline even once a thumbnail exists (decision 6 is for a list of attachments, not this)", async () => {
+    const store = fakeStore() as AttachmentBlobStore & { _land(key: string, bytes: number | Uint8Array): void };
+    context.attachmentsStore = store;
+
+    const parent = await context.pages.create(context.workspaceId, { title: "Build log", body: "placeholder" }, { actor: OWNER });
+    const png = new Uint8Array(await encodePng({ data: new Uint8ClampedArray(4 * 4 * 4).fill(255), width: 4, height: 4 }));
+    const { row } = await createAttachment(
+      context,
+      { pageId: parent.id, filename: "wiring.png", altText: "the ESC wiring", sha256: SHA, contentType: "image/png", bytes: png.length },
+      { actor: OWNER },
+    );
+    store._land(row.blobKey, png);
+    await confirmAttachmentUpload(context, row.id, { actor: OWNER });
+    // Wait for the background thumbnail so this test proves the inline
+    // renderer ignores it, not just that it never got the chance to use it.
+    await eventually(async () => {
+      const { row: current } = await getAttachment(context, row.id);
+      if (current.thumbnailKey === null) throw new Error("thumbnail not generated yet");
+    });
+
+    const withBody = await context.pages.update(
+      context.workspaceId,
+      parent.id,
+      { title: parent.title, body: `See the diagram.\n\n![the ESC wiring](attachment:${row.id})` },
+      parent.version,
+      { actor: OWNER },
+    );
+    await publish(parent.id, withBody.version);
+
+    const page = await stranger(`/w/${parent.id}`);
+    expect(page.status).toBe(200);
+    expect(page.body).toContain(`src="https://blob.example/${row.blobKey}?download`);
+    expect(page.body).not.toContain("-thumb");
   });
 
   it("marks a reference to a missing or unconfirmed attachment as broken, without leaking anything", async () => {
