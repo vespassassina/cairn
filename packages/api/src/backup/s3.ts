@@ -83,6 +83,69 @@ export interface SignInput {
 }
 
 /**
+ * The canonical request and its signed-header list, the part SigV4's header
+ * mode and query mode (presigning) build identically. Shared so the two
+ * modes cannot drift apart on what actually gets hashed.
+ */
+function canonicalRequestOf(
+  method: string,
+  url: URL,
+  headers: Record<string, string>,
+  payload: string,
+): { canonicalRequest: string; signedHeaders: string } {
+  // Header names lowercased and sorted, values trimmed: the canonical form both
+  // sides must agree on byte for byte.
+  const names = Object.keys(headers)
+    .map((name) => name.toLowerCase())
+    .sort();
+  const canonicalHeaders = names
+    .map((name) => {
+      const [, value] = Object.entries(headers).find(([key]) => key.toLowerCase() === name)!;
+      return `${name}:${value.trim().replace(/\s+/g, " ")}\n`;
+    })
+    .join("");
+  const signedHeaders = names.join(";");
+
+  // Query parameters sorted by name, each encoded, as the canonical form wants.
+  const query = [...url.searchParams.entries()]
+    .map(([key, value]) => [encodeRfc3986(key), encodeRfc3986(value)] as const)
+    .sort((a, b) => (a[0] === b[0] ? a[1].localeCompare(b[1]) : a[0].localeCompare(b[0])))
+    .map(([key, value]) => `${key}=${value}`)
+    .join("&");
+
+  const canonicalRequest = [
+    method,
+    canonicalPath(url.pathname),
+    query,
+    canonicalHeaders,
+    signedHeaders,
+    payload,
+  ].join("\n");
+  return { canonicalRequest, signedHeaders };
+}
+
+/**
+ * The signing-key chain (date -> region -> service -> request) both SigV4
+ * modes share, ending in the hex signature for a given canonical request.
+ */
+async function signatureOf(
+  canonicalRequest: string,
+  stamp: string,
+  day: string,
+  region: string,
+  service: string,
+  secretAccessKey: string,
+): Promise<string> {
+  const scope = `${day}/${region}/${service}/aws4_request`;
+  const toSign = [ALGORITHM, stamp, scope, await sha256(canonicalRequest)].join("\n");
+  const kDate = await hmac(new TextEncoder().encode(`AWS4${secretAccessKey}`), day);
+  const kRegion = await hmac(kDate, region);
+  const kService = await hmac(kRegion, service);
+  const kSigning = await hmac(kService, "aws4_request");
+  return hex(await hmac(kSigning, toSign));
+}
+
+/**
  * Sign a request the way Signature Version 4 requires, returning the headers
  * to send. Exported because it is the part that is worth testing against the
  * published test vectors rather than against a stub that would accept anything.
@@ -108,46 +171,16 @@ export async function signV4(input: SignInput): Promise<Record<string, string>> 
     headers["x-amz-security-token"] = input.credentials.sessionToken;
   }
 
-  // Header names lowercased and sorted, values trimmed: the canonical form both
-  // sides must agree on byte for byte.
-  const names = Object.keys(headers)
-    .map((name) => name.toLowerCase())
-    .sort();
-  const canonicalHeaders = names
-    .map((name) => {
-      const [, value] = Object.entries(headers).find(([key]) => key.toLowerCase() === name)!;
-      return `${name}:${value.trim().replace(/\s+/g, " ")}\n`;
-    })
-    .join("");
-  const signedHeaders = names.join(";");
-
-  // Query parameters sorted by name, each encoded, as the canonical form wants.
-  const query = [...url.searchParams.entries()]
-    .map(([key, value]) => [encodeRfc3986(key), encodeRfc3986(value)] as const)
-    .sort((a, b) => (a[0] === b[0] ? a[1].localeCompare(b[1]) : a[0].localeCompare(b[0])))
-    .map(([key, value]) => `${key}=${value}`)
-    .join("&");
-
-  const canonicalRequest = [
-    input.method,
-    canonicalPath(url.pathname),
-    query,
-    canonicalHeaders,
-    signedHeaders,
-    input.payload,
-  ].join("\n");
-
+  const { canonicalRequest, signedHeaders } = canonicalRequestOf(input.method, url, headers, input.payload);
   const scope = `${day}/${input.region}/${service}/aws4_request`;
-  const toSign = [ALGORITHM, stamp, scope, await sha256(canonicalRequest)].join("\n");
-
-  const kDate = await hmac(
-    new TextEncoder().encode(`AWS4${input.credentials.secretAccessKey}`),
+  const signature = await signatureOf(
+    canonicalRequest,
+    stamp,
     day,
+    input.region,
+    service,
+    input.credentials.secretAccessKey,
   );
-  const kRegion = await hmac(kDate, input.region);
-  const kService = await hmac(kRegion, service);
-  const kSigning = await hmac(kService, "aws4_request");
-  const signature = hex(await hmac(kSigning, toSign));
 
   return {
     ...headers,
@@ -155,6 +188,57 @@ export async function signV4(input: SignInput): Promise<Record<string, string>> 
       `${ALGORITHM} Credential=${input.credentials.accessKeyId}/${scope}, ` +
       `SignedHeaders=${signedHeaders}, Signature=${signature}`,
   };
+}
+
+export interface PresignInput {
+  method: string;
+  /** Absolute URL to the object, query included only if the caller wants it signed too. */
+  url: string;
+  credentials: Credentials;
+  region: string;
+  expiresInSeconds: number;
+  /** Overridable so the signature can be checked against a known vector. */
+  now?: Date;
+  service?: string;
+}
+
+/**
+ * A URL a caller may PUT or GET directly with a bare `fetch`, no header of its
+ * own needed, valid for `expiresInSeconds`. This is SigV4's query-string mode:
+ * the signature goes into `X-Amz-Signature` instead of an `Authorization`
+ * header, and only `host` is a signed header, so nothing about how the caller
+ * sends the request (its content-type, its client) can break the signature.
+ * Shares the canonical-request and signing-key logic with `signV4` rather than
+ * reimplementing the crypto.
+ */
+export async function presignV4(input: PresignInput): Promise<string> {
+  const url = new URL(input.url);
+  const service = input.service ?? "s3";
+  const at = input.now ?? new Date();
+  const stamp = at.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
+  const day = stamp.slice(0, 8);
+  const scope = `${day}/${input.region}/${service}/aws4_request`;
+
+  url.searchParams.set("X-Amz-Algorithm", ALGORITHM);
+  url.searchParams.set("X-Amz-Credential", `${input.credentials.accessKeyId}/${scope}`);
+  url.searchParams.set("X-Amz-Date", stamp);
+  url.searchParams.set("X-Amz-Expires", String(input.expiresInSeconds));
+  url.searchParams.set("X-Amz-SignedHeaders", "host");
+  if (input.credentials.sessionToken !== undefined) {
+    url.searchParams.set("X-Amz-Security-Token", input.credentials.sessionToken);
+  }
+
+  const { canonicalRequest } = canonicalRequestOf(input.method, url, { host: url.host }, UNSIGNED);
+  const signature = await signatureOf(
+    canonicalRequest,
+    stamp,
+    day,
+    input.region,
+    service,
+    input.credentials.secretAccessKey,
+  );
+  url.searchParams.set("X-Amz-Signature", signature);
+  return url.toString();
 }
 
 /**
@@ -344,5 +428,14 @@ export class S3Archive implements Archive {
     const response = await this.send("DELETE", this.url(name), EMPTY_SHA256);
     if (response.status === 404) return;
     if (!response.ok) await this.fail(`delete ${name}`, response);
+  }
+
+  /** The size of one object without downloading it, or null if it does not exist. */
+  async head(name: string): Promise<{ bytes: number } | null> {
+    const response = await this.send("HEAD", this.url(name), EMPTY_SHA256);
+    if (response.status === 404) return null;
+    if (!response.ok) await this.fail(`check ${name}`, response);
+    const length = response.headers.get("content-length");
+    return { bytes: length === null ? 0 : Number(length) };
   }
 }

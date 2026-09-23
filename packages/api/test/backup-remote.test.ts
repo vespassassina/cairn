@@ -1,10 +1,11 @@
+import { createHash, createHmac } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AzureBlobArchive } from "../src/backup/azure.js";
-import { S3Archive, signV4 } from "../src/backup/s3.js";
+import { S3Archive, presignV4, signV4 } from "../src/backup/s3.js";
 import { ArchiveError, openArchive } from "../src/backup/open.js";
 import { FolderArchive } from "../src/backup/archive.js";
 
@@ -122,13 +123,67 @@ describe("signing a request for S3", () => {
   });
 });
 
+/**
+ * An independent re-derivation of SigV4's query-string (presigned URL) mode,
+ * using node:crypto rather than the Web Crypto the implementation signs with,
+ * so a stub that accepts a presigned request is proof of something: it agrees
+ * with a second implementation of the same published algorithm, not just with
+ * itself.
+ */
+function verifyPresignedS3(url: URL, method: string, secretAccessKey: string, host: string): boolean {
+  const signature = url.searchParams.get("X-Amz-Signature");
+  if (signature === null) return false;
+  const credential = url.searchParams.get("X-Amz-Credential") ?? "";
+  const [, day = "", region = "", service = ""] = credential.split("/");
+  const stamp = url.searchParams.get("X-Amz-Date") ?? "";
+  const signedHeaders = url.searchParams.get("X-Amz-SignedHeaders") ?? "host";
+
+  const canonicalPath = url.pathname
+    .split("/")
+    .map((segment) => encodeURIComponent(segment))
+    .join("/");
+  const canonicalQuery = [...url.searchParams.entries()]
+    .filter(([key]) => key !== "X-Amz-Signature")
+    .map(([key, value]) => [encodeURIComponent(key), encodeURIComponent(value)] as const)
+    .sort((a, b) => (a[0] === b[0] ? a[1].localeCompare(b[1]) : a[0].localeCompare(b[0])))
+    .map(([key, value]) => `${key}=${value}`)
+    .join("&");
+  const canonicalHeaders = `host:${host}\n`;
+  const canonicalRequest = [
+    method,
+    canonicalPath,
+    canonicalQuery,
+    canonicalHeaders,
+    signedHeaders,
+    "UNSIGNED-PAYLOAD",
+  ].join("\n");
+
+  const scope = `${day}/${region}/${service}/aws4_request`;
+  const toSign = ["AWS4-HMAC-SHA256", stamp, scope, createHash("sha256").update(canonicalRequest).digest("hex")].join(
+    "\n",
+  );
+  const hmac = (key: Buffer, message: string) => createHmac("sha256", key).update(message).digest();
+  const kDate = hmac(Buffer.from(`AWS4${secretAccessKey}`), day);
+  const kRegion = hmac(kDate, region);
+  const kService = hmac(kRegion, service);
+  const kSigning = hmac(kService, "aws4_request");
+  const expected = hmac(kSigning, toSign).toString("hex");
+  return expected === signature;
+}
+
 describe("the S3 archive", () => {
   /** A stub holding objects in memory, strict about what S3 requires. */
-  async function stubS3(held: Map<string, Buffer>): Promise<string> {
+  async function stubS3(held: Map<string, Buffer>, secretAccessKey = "secret"): Promise<string> {
     return serve((request, response, body) => {
       const url = new URL(request.url!, "http://s3");
-      // Every request must be signed, whatever it is.
-      if (!(request.headers["authorization"] ?? "").startsWith("AWS4-HMAC-SHA256 ")) {
+      // Every request must be signed, either with an Authorization header or,
+      // for a presigned URL, a verified query-string signature. Neither is
+      // "was there something in the right field": both are checked for real.
+      const headerAuthed = (request.headers["authorization"] ?? "").startsWith("AWS4-HMAC-SHA256 ");
+      const queryAuthed =
+        url.searchParams.has("X-Amz-Signature") &&
+        verifyPresignedS3(url, request.method ?? "GET", secretAccessKey, request.headers.host ?? "");
+      if (!headerAuthed && !queryAuthed) {
         response.writeHead(403).end("<Error><Code>AccessDenied</Code></Error>");
         return;
       }
@@ -146,6 +201,10 @@ describe("the S3 archive", () => {
           .map(([name, value]) => `<Contents><Key>${name}</Key><Size>${value.length}</Size></Contents>`)
           .join("");
         response.writeHead(200).end(`<ListBucketResult>${contents}</ListBucketResult>`);
+      } else if (request.method === "HEAD") {
+        const held_ = held.get(key);
+        if (held_ === undefined) response.writeHead(404).end();
+        else response.writeHead(200, { "content-length": String(held_.length) }).end();
       } else {
         const held_ = held.get(key);
         if (held_ === undefined) response.writeHead(404).end("<Error/>");
@@ -216,7 +275,167 @@ describe("the S3 archive", () => {
     const store = archive(endpoint);
     await expect(store.list()).rejects.toThrow(/s3:ListBucket/);
   });
+
+  it("checks a name's size without downloading it, and returns null when it is missing", async () => {
+    const held = new Map<string, Buffer>();
+    const store = archive(await stubS3(held));
+    const source = join(dir, "s.sqlite");
+    await writeFile(source, "twelve bytes");
+    await store.put("cairn-2026-09-16T10-00-00Z.sqlite", source);
+
+    expect(await store.head("cairn-2026-09-16T10-00-00Z.sqlite")).toEqual({ bytes: 12 });
+    expect(await store.head("cairn-2026-09-17T10-00-00Z.sqlite")).toBeNull();
+  });
+
+  describe("presigned URLs", () => {
+    const credentials = { accessKeyId: "AKID", secretAccessKey: "secret" };
+
+    it("builds a URL with the five X-Amz-* parameters a presigned request needs", async () => {
+      const url = await presignV4({
+        method: "PUT",
+        url: "https://b.s3.eu-west-1.amazonaws.com/bucket/key",
+        credentials,
+        region: "eu-west-1",
+        expiresInSeconds: 900,
+        now: new Date("2026-09-23T10:00:00Z"),
+      });
+      const parsed = new URL(url);
+      expect(parsed.searchParams.get("X-Amz-Algorithm")).toBe("AWS4-HMAC-SHA256");
+      expect(parsed.searchParams.get("X-Amz-Credential")).toBe(
+        "AKID/20260923/eu-west-1/s3/aws4_request",
+      );
+      expect(parsed.searchParams.get("X-Amz-Date")).toBe("20260923T100000Z");
+      expect(parsed.searchParams.get("X-Amz-Expires")).toBe("900");
+      expect(parsed.searchParams.get("X-Amz-SignedHeaders")).toBe("host");
+      expect(parsed.searchParams.get("X-Amz-Signature")).toMatch(/^[0-9a-f]{64}$/);
+      // No Authorization header is needed; nothing else identifies the caller.
+      expect(parsed.searchParams.has("Authorization")).toBe(false);
+    });
+
+    it("lets a bare fetch, with no header of its own, PUT straight to it, and the stub verifies the signature independently", async () => {
+      const held = new Map<string, Buffer>();
+      const endpoint = await stubS3(held, credentials.secretAccessKey);
+      const url = await presignV4({
+        method: "PUT",
+        url: `${endpoint}/bucket/direct-upload.sqlite`,
+        credentials,
+        region: "eu-west-1",
+        expiresInSeconds: 900,
+      });
+
+      const response = await fetch(url, { method: "PUT", body: "uploaded straight to storage" });
+
+      expect(response.ok).toBe(true);
+      expect(held.get("direct-upload.sqlite")?.toString()).toBe("uploaded straight to storage");
+    });
+
+    it("lets a bare fetch GET straight from a presigned URL", async () => {
+      const held = new Map<string, Buffer>([["direct-download.sqlite", Buffer.from("stored bytes")]]);
+      const endpoint = await stubS3(held, credentials.secretAccessKey);
+      const url = await presignV4({
+        method: "GET",
+        url: `${endpoint}/bucket/direct-download.sqlite`,
+        credentials,
+        region: "eu-west-1",
+        expiresInSeconds: 900,
+      });
+
+      const response = await fetch(url);
+
+      expect(await response.text()).toBe("stored bytes");
+    });
+
+    it("is refused by the independent verifier when the signature is tampered with", async () => {
+      const held = new Map<string, Buffer>();
+      const endpoint = await stubS3(held, credentials.secretAccessKey);
+      const url = new URL(
+        await presignV4({
+          method: "PUT",
+          url: `${endpoint}/bucket/tampered.sqlite`,
+          credentials,
+          region: "eu-west-1",
+          expiresInSeconds: 900,
+        }),
+      );
+      url.searchParams.set("X-Amz-Signature", "0".repeat(64));
+
+      const response = await fetch(url, { method: "PUT", body: "should not land" });
+
+      expect(response.status).toBe(403);
+      expect(held.has("tampered.sqlite")).toBe(false);
+    });
+  });
 });
+
+/**
+ * A fixed, known user delegation key, the fixture the Azure stub hands back
+ * from a "Get User Delegation Key" call and that `verifySas` below signs
+ * against independently, so the round trip proves the real string-to-sign
+ * construction, not just that the stub accepted whatever it was given.
+ */
+const DELEGATION_KEY = {
+  signedOid: "11111111-1111-1111-1111-111111111111",
+  signedTid: "22222222-2222-2222-2222-222222222222",
+  signedStart: "2026-09-23T00:00:00Z",
+  signedExpiry: "2026-09-30T00:00:00Z",
+  signedService: "b",
+  signedVersion: "2021-08-06",
+  value: Buffer.from("test-delegation-key-material").toString("base64"),
+};
+
+const DELEGATION_KEY_XML =
+  '<?xml version="1.0" encoding="utf-8"?><UserDelegationKey>' +
+  `<SignedOid>${DELEGATION_KEY.signedOid}</SignedOid>` +
+  `<SignedTid>${DELEGATION_KEY.signedTid}</SignedTid>` +
+  `<SignedStart>${DELEGATION_KEY.signedStart}</SignedStart>` +
+  `<SignedExpiry>${DELEGATION_KEY.signedExpiry}</SignedExpiry>` +
+  `<SignedService>${DELEGATION_KEY.signedService}</SignedService>` +
+  `<SignedVersion>${DELEGATION_KEY.signedVersion}</SignedVersion>` +
+  `<Value>${DELEGATION_KEY.value}</Value>` +
+  "</UserDelegationKey>";
+
+/**
+ * An independent re-derivation of the user-delegation SAS string-to-sign
+ * Microsoft's docs specify, built from the same known `DELEGATION_KEY` fixture
+ * but without calling anything in `azure.ts`. Confirms the SAS query params
+ * actually verify against the published construction, not just that the stub
+ * let a request through.
+ */
+function verifySas(url: URL, account: string): boolean {
+  const sig = url.searchParams.get("sig");
+  if (sig === null) return false;
+  const resource = `/blob/${account}${decodeURIComponent(url.pathname)}`;
+  const stringToSign = [
+    url.searchParams.get("sp") ?? "",
+    url.searchParams.get("st") ?? "",
+    url.searchParams.get("se") ?? "",
+    resource,
+    url.searchParams.get("skoid") ?? "",
+    url.searchParams.get("sktid") ?? "",
+    url.searchParams.get("skt") ?? "",
+    url.searchParams.get("ske") ?? "",
+    url.searchParams.get("sks") ?? "",
+    url.searchParams.get("skv") ?? "",
+    "",
+    "",
+    "",
+    "",
+    "https",
+    url.searchParams.get("sv") ?? "",
+    "b",
+    "",
+    "",
+    "",
+    url.searchParams.get("rscd") ?? "",
+    "",
+    "",
+    url.searchParams.get("rsct") ?? "",
+  ].join("\n");
+  const expected = createHmac("sha256", Buffer.from(DELEGATION_KEY.value, "base64"))
+    .update(stringToSign)
+    .digest("base64");
+  return expected === sig;
+}
 
 describe("the Azure blob archive", () => {
   /** A stub holding blobs in memory, and refusing anything unauthenticated. */
@@ -224,22 +443,45 @@ describe("the Azure blob archive", () => {
     const blocks = new Map<string, Buffer[]>();
     return serve((request, response, body) => {
       const url = new URL(request.url!, "http://blob");
-      if (request.headers["authorization"] !== "Bearer test-token") {
+
+      if (url.searchParams.get("restype") === "service" && url.searchParams.get("comp") === "userdelegationkey") {
+        if (request.headers["authorization"] !== "Bearer test-token") {
+          response.writeHead(403).end("<Error/>");
+          return;
+        }
+        response.writeHead(200, { "content-type": "application/xml" }).end(DELEGATION_KEY_XML);
+        return;
+      }
+
+      const bearerAuthed = request.headers["authorization"] === "Bearer test-token";
+      // A SAS request carries no bearer token at all; it authorizes itself,
+      // and the stub checks that the same way a real account would: by
+      // re-deriving the signature, not by trusting the query string's shape.
+      const sasAuthed = url.searchParams.has("sig") && verifySas(url, "cairnstore");
+      if (!bearerAuthed && !sasAuthed) {
         response.writeHead(403).end("<Error/>");
         return;
       }
-      if (request.headers["x-ms-version"] === undefined) {
+      if (bearerAuthed && request.headers["x-ms-version"] === undefined) {
         response.writeHead(400).end("<Error>no version</Error>");
         return;
       }
       const name = decodeURIComponent(url.pathname.replace(/^\/cairn-backups\/?/, ""));
-      if (request.method === "PUT" && url.searchParams.has("blockid")) {
+      if (request.method === "HEAD") {
+        const found = held.get(name);
+        if (found === undefined) response.writeHead(404).end();
+        else response.writeHead(200, { "content-length": String(found.length) }).end();
+      } else if (request.method === "PUT" && url.searchParams.has("blockid")) {
         // Blocks are staged, and deliberately not visible as a blob yet.
         blocks.set(name, [...(blocks.get(name) ?? []), body]);
         response.writeHead(201).end();
       } else if (request.method === "PUT" && url.searchParams.get("comp") === "blocklist") {
         held.set(name, Buffer.concat(blocks.get(name) ?? []));
         blocks.delete(name);
+        response.writeHead(201).end();
+      } else if (request.method === "PUT") {
+        // A direct SAS upload: one whole object, no block list.
+        held.set(name, body);
         response.writeHead(201).end();
       } else if (request.method === "DELETE") {
         held.delete(name);
@@ -322,6 +564,97 @@ describe("the Azure blob archive", () => {
     await expect(store.put("cairn-2026-09-16T10-00-00Z.sqlite", source)).rejects.toThrow(
       /Storage Blob Data Contributor/,
     );
+  });
+
+  it("checks a name's size without downloading it, and returns null when it is missing", async () => {
+    const held = new Map<string, Buffer>();
+    const store = archive(await stubAzure(held));
+    const source = join(dir, "s.sqlite");
+    await writeFile(source, "twelve bytes");
+    await store.put("cairn-2026-09-16T10-00-00Z.sqlite", source);
+
+    expect(await store.head("cairn-2026-09-16T10-00-00Z.sqlite")).toEqual({ bytes: 12 });
+    expect(await store.head("cairn-2026-09-17T10-00-00Z.sqlite")).toBeNull();
+  });
+
+  describe("SAS URLs", () => {
+    it("mints a URL with the sv/st/se/sr/sp/sk*/sig parameters a SAS needs", async () => {
+      const held = new Map<string, Buffer>();
+      const store = archive(await stubAzure(held));
+
+      const url = new URL(await store.sasUrl("direct.sqlite", { permissions: "cw", expiresInSeconds: 900 }));
+
+      expect(url.searchParams.get("sv")).toBe("2021-08-06");
+      expect(url.searchParams.get("sr")).toBe("b");
+      expect(url.searchParams.get("sp")).toBe("cw");
+      expect(url.searchParams.get("skoid")).toBe(DELEGATION_KEY.signedOid);
+      expect(url.searchParams.get("sktid")).toBe(DELEGATION_KEY.signedTid);
+      expect(url.searchParams.get("skv")).toBe(DELEGATION_KEY.signedVersion);
+      expect(url.searchParams.get("st")).toBeTruthy();
+      expect(url.searchParams.get("se")).toBeTruthy();
+      expect(url.searchParams.get("sig")).toBeTruthy();
+      // No bearer token of any kind is in the URL; the sig alone authorizes it.
+      expect(url.toString()).not.toContain("test-token");
+    });
+
+    it("lets a bare fetch, with no bearer token at all, PUT straight to a SAS URL, verified independently by the stub", async () => {
+      const held = new Map<string, Buffer>();
+      const store = archive(await stubAzure(held));
+
+      const url = await store.sasUrl("direct-upload.sqlite", { permissions: "cw", expiresInSeconds: 900 });
+      const response = await fetch(url, { method: "PUT", body: "uploaded straight to blob storage" });
+
+      expect(response.ok).toBe(true);
+      expect(held.get("backups/direct-upload.sqlite")?.toString()).toBe("uploaded straight to blob storage");
+    });
+
+    it("lets a bare fetch GET straight from a SAS URL", async () => {
+      const held = new Map<string, Buffer>([["backups/direct-download.sqlite", Buffer.from("stored bytes")]]);
+      const store = archive(await stubAzure(held));
+
+      const url = await store.sasUrl("direct-download.sqlite", { permissions: "r", expiresInSeconds: 900 });
+      const response = await fetch(url);
+
+      expect(await response.text()).toBe("stored bytes");
+    });
+
+    it("is refused by the independent verifier when the signature is tampered with", async () => {
+      const held = new Map<string, Buffer>();
+      const store = archive(await stubAzure(held));
+      const url = new URL(await store.sasUrl("tampered.sqlite", { permissions: "cw", expiresInSeconds: 900 }));
+      url.searchParams.set("sig", Buffer.from("wrong-signature").toString("base64"));
+
+      const response = await fetch(url, { method: "PUT", body: "should not land" });
+
+      expect(response.status).toBe(403);
+      expect(held.has("backups/tampered.sqlite")).toBe(false);
+    });
+
+    it("reuses the cached delegation key across two SAS mints instead of fetching it twice", async () => {
+      const held = new Map<string, Buffer>();
+      let delegationKeyRequests = 0;
+      const origin = await serve((request, response, body) => {
+        const url = new URL(request.url!, "http://blob");
+        if (url.searchParams.get("comp") === "userdelegationkey") {
+          delegationKeyRequests += 1;
+          response.writeHead(200, { "content-type": "application/xml" }).end(DELEGATION_KEY_XML);
+          return;
+        }
+        if (request.method === "PUT") {
+          const name = decodeURIComponent(url.pathname.replace(/^\/cairn-backups\/?/, ""));
+          held.set(name, body);
+          response.writeHead(201).end();
+          return;
+        }
+        response.writeHead(404).end();
+      });
+      const store = archive(origin);
+
+      await store.sasUrl("one.sqlite", { permissions: "cw", expiresInSeconds: 900 });
+      await store.sasUrl("two.sqlite", { permissions: "cw", expiresInSeconds: 900 });
+
+      expect(delegationKeyRequests).toBe(1);
+    });
   });
 });
 

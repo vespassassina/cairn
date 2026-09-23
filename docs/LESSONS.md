@@ -11,6 +11,16 @@ Each entry answers four questions:
 3. **Fix.** What changed, with the commit or file.
 4. **Lesson.** What to do differently next time. This is the part worth reading.
 
+## 2026-09-23
+
+### The Azure SAS signing added for ADR-064 has no official test vector, and the first test of the S3 presign round trip failed on a subtle host mismatch
+
+1. **What happened.** Groundwork for ADR-064: `presignV4` in `packages/api/src/backup/s3.ts` (SigV4 query-string presigning) and `sasUrl`/`delegationKey` in `packages/api/src/backup/azure.ts` (user-delegation SAS). Writing the round-trip test for the S3 presign, where the test itself acts as "the client" and does a bare `fetch(presignedUrl, {method: 'PUT', ...})` against an extended `stubS3()`, the stub's independent signature re-derivation failed even though the structural checks (the five `X-Amz-*` params, their values) all passed.
+2. **Cause.** The stub rebuilds the request URL as `new URL(request.url!, "http://s3")`. `request.url` on the Node HTTP server is path-plus-query only, no host, so that reconstructed URL's `.host` became the literal string `"s3"` from the dummy base, not the real `127.0.0.1:<port>` the client actually signed against. The canonical request's `host:` header line therefore never matched, and every presigned request was rejected regardless of whether the signature was otherwise correct.
+3. **Fix.** `verifyPresignedS3` in `packages/api/test/backup-remote.test.ts` takes the real host as a parameter, read from `request.headers.host` (what the server actually received the request addressed to), instead of trusting `url.host` from a URL parsed against a placeholder base.
+4. **Lesson.** A URL built by `new URL(relativeUrl, someBase)` inherits its host from `someBase` whenever the relative URL carries no host of its own, which is always true of Node's `request.url`. Any code, test or otherwise, that needs the *actual* request host (for a Host header check, a signature, a redirect) must read it from the `Host` header or the socket, never from re-parsing `request.url` against an arbitrary placeholder origin, however convenient that placeholder is for getting `pathname`/`searchParams` out of it.
+5. **What was not, and could not be, verified.** Unlike S3's SigV4, which has published test vectors (already used for `signV4`'s header mode), Microsoft does not publish an official test vector for a user-delegation SAS. `AzureBlobArchive.sasUrl` (`packages/api/src/backup/azure.ts`) is checked here only against this test file's own independent re-derivation of the same published string-to-sign construction (a second implementation, using `node:crypto` against a fixed known delegation-key fixture, not just "the stub didn't error"), and against the construction as Microsoft's docs describe it in the function's own doc comment. It has never run against a real Azure storage account. Verify it against a real deployment before trusting it in production; if it is wrong, the fix belongs in `sasUrl()` or `delegationKey()` in `azure.ts`.
+
 ## 2026-09-18
 
 ### The ADR-062 Litestream mitigation corrupted a snapshot on its first restore and lost 13 pages, the exact loss it was meant to prevent
