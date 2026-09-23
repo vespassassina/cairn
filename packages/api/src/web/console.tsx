@@ -63,6 +63,10 @@ export interface ConsoleOptions {
   selfDescription?: SelfDescription | null;
   /** Epoch ms of the newest backup, read for the footer (ADR-056/057 fault 8). */
   backupStatus?: (() => number | null) | null;
+  /** The IndexNow key (ADR-074). Null: publishing never notifies IndexNow. */
+  indexNowKey?: string | null;
+  /** Overrides `fetch` for IndexNow submissions. Only ever set by tests. */
+  indexNowFetch?: typeof fetch;
 }
 
 const renderMarkdown = createMarkdownRenderer();
@@ -87,6 +91,11 @@ const SECURITY_HEADERS: Record<string, string> = {
 // Addresses that need no sign-in. The published wiki is here because that is
 // the whole point of it (ADR-032); it serves published pages and nothing else.
 const PUBLIC_PATHS = [/^\/health$/, /^\/mcp/, /^\/api(\/|$)/, /^\/assets\//, /^\/favicon\.ico$/, /^\/login$/, /^\/oauth\//, /^\/\.well-known\//, /^\/w(\/|$)/, /^\/sitemap\.xml$/, /^\/robots\.txt$/, /^\/webmention$/];
+
+/** Escapes a string for use inside a `RegExp`, such as the configured IndexNow key. */
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
 
 async function render(c: Context, element: Child, status: 200 | 400 | 404 | 409 = 200) {
   // `<Layout>` is an async component (it awaits the footer facts), so its
@@ -910,6 +919,23 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
   const publicOrigin = options.publicOrigin ?? null;
   const instanceName = options.selfDescription?.name ?? ws;
   const backupStatus = options.backupStatus ?? null;
+  const indexNowKey = options.indexNowKey ?? null;
+  // The IndexNow key file (ADR-074) needs no sign-in, same reasoning as the
+  // rest of PUBLIC_PATHS: it only ever proves what the owner already
+  // configured. Built here, not added to the module-level list, because the
+  // path depends on the configured key.
+  const publicPaths = indexNowKey
+    ? [...PUBLIC_PATHS, new RegExp(`^/${escapeRegExp(indexNowKey)}\\.txt$`)]
+    : PUBLIC_PATHS;
+  /** Same fallback `web/public.tsx`'s `origin(c)` uses: the configured public origin, or the request's own. */
+  const indexNowFor = (c: Context): { key: string; origin: string; fetchFn?: typeof fetch } | null =>
+    indexNowKey
+      ? {
+          key: indexNowKey,
+          origin: publicOrigin ?? new URL(c.req.url).origin,
+          ...(options.indexNowFetch ? { fetchFn: options.indexNowFetch } : {}),
+        }
+      : null;
   setFooterFactsProvider(async () => ({
     instance: instanceName,
     pageCount: (await allPages(context)).length,
@@ -961,7 +987,7 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
     if (/^\/(mcp|health)/.test(path) || /^\/(api|oauth|\.well-known)(\/|$)/.test(path)) return next();
 
     let renewedCookie: string | null = null;
-    if (!PUBLIC_PATHS.some((pattern) => pattern.test(path))) {
+    if (!publicPaths.some((pattern) => pattern.test(path))) {
       const cookie = getCookie(c, SESSION_COOKIE) ?? "";
       const session = await expectedSession;
       const person = oauth && cookie.includes(".") ? await oauth.verifySession(cookie) : null;
@@ -2161,6 +2187,7 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
         wanted,
         text(form, "version"),
         by(c, wanted ? "Published" : "Made private"),
+        indexNowFor(c),
       );
     } catch (error) {
       if (!(error instanceof VersionConflictError)) throw error;

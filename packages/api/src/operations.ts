@@ -21,6 +21,7 @@ import {
   type SearchMode,
 } from "@cairn/core";
 import type { AppContext } from "./context.js";
+import { notifyIndexNow } from "./indexnow.js";
 import { createPublishToken, listPublishTokens, revokePublishToken, type PublishTokenSummary } from "./publish-tokens.js";
 import {
   confirmAttachmentUpload,
@@ -522,9 +523,28 @@ export function describeError(error: unknown, wording: ErrorWording): DescribedE
  * caller read, like any other write.
  */
 /**
+ * Where to notify IndexNow, when `CAIRN_INDEXNOW_KEY` is configured
+ * (ADR-074). `origin` is the address this Cairn is reachable at, the same
+ * one the key file and the published pages themselves are served from.
+ * `fetchFn` is only ever overridden by tests.
+ */
+export interface IndexNowTarget {
+  key: string;
+  origin: string;
+  fetchFn?: typeof fetch;
+}
+
+/**
  * Publish a page, or take it down (ADR-032). The console and the CLI both do
  * this, so the rule lives here: only a page can be published, and publishing
  * it publishes everything under it.
+ *
+ * When `indexNow` is given, every page in `id`'s subtree is submitted to
+ * IndexNow after the write, so a participating search engine can recrawl
+ * sooner (ADR-074). This runs after `publishPage` has already decided its
+ * return value, fire-and-forget: a slow or unreachable IndexNow must never
+ * delay or fail the publish itself, so the notification is neither awaited
+ * by the caller nor allowed to throw into this function.
  */
 export async function publishPage(
   context: AppContext,
@@ -532,6 +552,7 @@ export async function publishPage(
   isPublic: boolean,
   version: string,
   by: WriteContext,
+  indexNow?: IndexNowTarget | null,
 ): Promise<{ id: string; public: boolean; version: string }> {
   const ws = context.workspaceId;
   const page = await context.store.getPage(ws, id);
@@ -543,7 +564,56 @@ export async function publishPage(
     version,
     by,
   );
-  return { id, public: written.public, version: written.version };
+  const result = { id, public: written.public, version: written.version };
+
+  if (indexNow) {
+    // Not awaited: the publish response must not wait on a third party.
+    // Errors are caught inside notifyIndexNow itself and only logged, but
+    // this catch is a backstop against a rejection escaping the walk below.
+    void notifySubtreeViaIndexNow(context, id, indexNow).catch((error) =>
+      console.error(
+        `indexnow: could not walk the subtree of page ${id}: ${error instanceof Error ? error.message : String(error)}`,
+      ),
+    );
+  }
+
+  return result;
+}
+
+/**
+ * Every page in `rootId`'s subtree (itself included), as full public URLs,
+ * submitted to IndexNow. Unpublish resubmits the same URLs IndexNow already
+ * had: IndexNow has no "remove" semantics, only "recrawl", so this is how a
+ * search engine finds the page gone on its own next fetch (ADR-074
+ * consequence 3).
+ *
+ * Walks the page tree the same way `listStalePages` does: a bounded cursor
+ * walk over `DocumentStore.listPages`, no new store method.
+ */
+async function notifySubtreeViaIndexNow(context: AppContext, rootId: string, indexNow: IndexNowTarget): Promise<void> {
+  const pages = await allPagesForStaleness(context);
+  const childrenOf = new Map<string, Page[]>();
+  for (const page of pages) {
+    if (page.parentId === null) continue;
+    const list = childrenOf.get(page.parentId) ?? [];
+    list.push(page);
+    childrenOf.set(page.parentId, list);
+  }
+  const byId = new Map(pages.map((page) => [page.id, page]));
+
+  const subtreeIds: string[] = [];
+  const stack = [rootId];
+  const seen = new Set<string>();
+  while (stack.length > 0) {
+    const current = stack.pop()!;
+    if (seen.has(current)) continue;
+    seen.add(current);
+    if (byId.has(current)) subtreeIds.push(current);
+    for (const child of childrenOf.get(current) ?? []) stack.push(child.id);
+  }
+
+  const urls = subtreeIds.map((pageId) => `${indexNow.origin}/w/${encodeURIComponent(pageId)}`);
+  await notifyIndexNow(indexNow.key, indexNow.origin, urls, indexNow.fetchFn);
 }
 
 /**

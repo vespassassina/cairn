@@ -82,6 +82,7 @@ async function main(): Promise<void> {
     publicOrigin: config.oauth ? new URL(config.oauth.publicUrl).origin : null,
     contentLicence: config.contentLicence,
     selfDescription: config.selfDescription,
+    indexNowKey: config.indexNowKey,
     backupStatus: () => backups?.lastBackupAt() ?? null,
     ...(backups ? { onWrite: () => backups.afterWrite() } : {}),
   });

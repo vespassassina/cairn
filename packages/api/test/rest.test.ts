@@ -487,6 +487,89 @@ describe("publishing (ADR-032)", () => {
   });
 });
 
+describe("IndexNow notifications on publish (ADR-074)", () => {
+  const KEY = "test-indexnow-key";
+  const ORIGIN = "https://cairn.example.com";
+
+  it("notifies IndexNow for every page in the published subtree, without delaying the response", async () => {
+    const calls: { url: string; body: Record<string, unknown> }[] = [];
+    const fetchMock = async (input: string | URL | Request, init?: RequestInit) => {
+      calls.push({ url: String(input), body: JSON.parse(String(init?.body)) as Record<string, unknown> });
+      return new Response(null, { status: 200 });
+    };
+    app = createApp({
+      context,
+      token: TOKEN,
+      publicOrigin: ORIGIN,
+      indexNowKey: KEY,
+      indexNowFetch: fetchMock,
+    });
+
+    const root = await createBuildLog();
+    const rootId = String(root.json["id"]);
+    const child = await call("/pages", {
+      method: "POST",
+      body: { title: "Firmware notes", body: "Details.", parent_id: rootId, change_note: "Split out firmware notes" },
+    });
+    const childId = String(child.json["id"]);
+
+    const published = await call("/publish", {
+      method: "POST",
+      body: { id: rootId, public: true, version: root.json["version"], change_note: "Published" },
+    });
+    expect(published.status).toBe(200);
+
+    await eventually(async () => expect(calls).toHaveLength(1));
+    const [submission] = calls;
+    expect(submission!.url).toBe("https://api.indexnow.org/indexnow");
+    expect(submission!.body["host"]).toBe("cairn.example.com");
+    expect(submission!.body["key"]).toBe(KEY);
+    expect(submission!.body["keyLocation"]).toBe(`${ORIGIN}/${KEY}.txt`);
+    expect(submission!.body["urlList"]).toEqual(
+      expect.arrayContaining([`${ORIGIN}/w/${rootId}`, `${ORIGIN}/w/${childId}`]),
+    );
+  });
+
+  it("serves the key file at /<key>.txt", async () => {
+    app = createApp({ context, token: TOKEN, publicOrigin: ORIGIN, indexNowKey: KEY });
+    const response = await app.fetch(new Request(`${ORIGIN}/${KEY}.txt`));
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toContain("text/plain");
+    expect(await response.text()).toBe(KEY);
+  });
+
+  it("never calls out and serves no key file when CAIRN_INDEXNOW_KEY is unset", async () => {
+    let called = false;
+    const fetchMock = async () => {
+      called = true;
+      return new Response(null, { status: 200 });
+    };
+    app = createApp({
+      context,
+      token: TOKEN,
+      trust: { enabled: true, hosts: ["localhost"] },
+      publicOrigin: ORIGIN,
+      indexNowFetch: fetchMock,
+    });
+
+    const created = await createBuildLog();
+    const id = String(created.json["id"]);
+    const published = await call("/publish", {
+      method: "POST",
+      body: { id, public: true, version: created.json["version"], change_note: "Published" },
+    });
+    expect(published.status).toBe(200);
+
+    // Nothing to await here: with the feature off, publishPage never starts
+    // a notification, so there is no async call whose completion to poll for.
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(called).toBe(false);
+
+    const keyFile = await app.fetch(new Request(`http://localhost/${KEY}.txt`));
+    expect(keyFile.status).toBe(404);
+  });
+});
+
 describe("publish tokens (ADR-066)", () => {
   it("issues a token once, lists it without the token value, and revokes it", async () => {
     const created = await createBuildLog();

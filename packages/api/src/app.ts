@@ -36,6 +36,10 @@ export interface AppOptions {
   contentLicence?: string | null;
   /** How this Cairn describes itself at /.well-known/cairn.json (ADR-034). */
   selfDescription?: SelfDescription;
+  /** The IndexNow key (ADR-074). Null or absent: publishing never notifies IndexNow. */
+  indexNowKey?: string | null;
+  /** Overrides `fetch` for IndexNow submissions. Only ever set by tests. */
+  indexNowFetch?: typeof fetch;
   /**
    * Told about every request that changed something, so it can back up when
    * the last backup is more than three hours old (ADR-049). Absent in tests
@@ -233,7 +237,14 @@ export function createApp(options: AppOptions): Hono {
   }
 
   app.all("/mcp", (c) => handleMcpRequest(c.req.raw, options.context, callerOf(c.req.raw, "mcp").actor));
-  app.route("/api/v1", restRoutes(options.context, (request) => callerOf(request, "api")));
+  app.route(
+    "/api/v1",
+    restRoutes(options.context, (request) => callerOf(request, "api"), {
+      publicOrigin: options.publicOrigin ?? null,
+      indexNowKey: options.indexNowKey ?? null,
+      ...(options.indexNowFetch ? { indexNowFetch: options.indexNowFetch } : {}),
+    }),
+  );
 
   // The review console (ADR-009). Registered after MCP so its sign-in never
   // stands in front of the MCP bearer check.
@@ -245,6 +256,8 @@ export function createApp(options: AppOptions): Hono {
     publicOrigin: options.publicOrigin ?? null,
     selfDescription: options.selfDescription ?? null,
     backupStatus: options.backupStatus ?? null,
+    indexNowKey: options.indexNowKey ?? null,
+    ...(options.indexNowFetch ? { indexNowFetch: options.indexNowFetch } : {}),
   });
 
   // The published wiki (ADR-032). Registered after the console so the console's
@@ -255,6 +268,7 @@ export function createApp(options: AppOptions): Hono {
     publicOrigin: options.publicOrigin ?? null,
     contentLicence: options.contentLicence ?? null,
     selfDescription: options.selfDescription ?? null,
+    indexNowKey: options.indexNowKey ?? null,
   });
 
   return app;

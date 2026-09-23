@@ -332,13 +332,33 @@ function pageMarkdown(page: Page): string {
   ].join("\n");
 }
 
-export function restRoutes(context: AppContext, callerFor: CallerFor): Hono {
+export interface RestOptions {
+  /** The origin people use, such as https://cairn.example.com, when it differs from the request's own. */
+  publicOrigin?: string | null;
+  /** The IndexNow key (ADR-074). Null: publishing never notifies IndexNow. */
+  indexNowKey?: string | null;
+  /** Overrides `fetch` for IndexNow submissions. Only ever set by tests. */
+  indexNowFetch?: typeof fetch;
+}
+
+export function restRoutes(context: AppContext, callerFor: CallerFor, options: RestOptions = {}): Hono {
   const api = new Hono();
   const ws = context.workspaceId;
+  const publicOrigin = options.publicOrigin ?? null;
+  const indexNowKey = options.indexNowKey ?? null;
   const by = (c: Context, note: string | undefined) => ({
     actor: callerFor(c.req.raw).actor,
     note: note ?? null,
   });
+  /** Same fallback `web/public.tsx`'s `origin(c)` uses: the configured public origin, or the request's own. */
+  const indexNowFor = (c: Context): { key: string; origin: string; fetchFn?: typeof fetch } | null =>
+    indexNowKey
+      ? {
+          key: indexNowKey,
+          origin: publicOrigin ?? new URL(c.req.url).origin,
+          ...(options.indexNowFetch ? { fetchFn: options.indexNowFetch } : {}),
+        }
+      : null;
 
   api.onError((error, c) => fail(c, error));
 
@@ -753,7 +773,9 @@ export function restRoutes(context: AppContext, callerFor: CallerFor): Hono {
   // write, so nothing publishes a page by accident (ADR-032).
   api.post("/publish", async (c) => {
     const input = await parseBody(c, schemas.publish);
-    return c.json(await publishPage(context, input.id, input.public, input.version, by(c, input.change_note)));
+    return c.json(
+      await publishPage(context, input.id, input.public, input.version, by(c, input.change_note), indexNowFor(c)),
+    );
   });
 
   // Publish tokens (ADR-066): gate a published subtree behind a named,

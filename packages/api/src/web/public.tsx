@@ -43,6 +43,12 @@ export interface PublicWikiOptions {
   contentLicence?: string | null;
   /** How this Cairn describes itself at /.well-known/cairn.json (ADR-034). */
   selfDescription?: SelfDescription | null;
+  /**
+   * The IndexNow key (ADR-074). Null or absent: the feature is off, no key
+   * file is served, and `publishPage` never notifies IndexNow. When set,
+   * `GET /<key>.txt` serves the key itself, the proof IndexNow requires.
+   */
+  indexNowKey?: string | null;
 }
 
 /** The owner's settings for /.well-known/cairn.json (ADR-034). None are secret. */
@@ -505,6 +511,15 @@ export function registerPublicWiki(app: Hono, options: PublicWikiOptions): void 
       { "content-type": "application/xml; charset=utf-8" },
     );
   });
+
+  // IndexNow ownership proof (ADR-074): served only when CAIRN_INDEXNOW_KEY
+  // is set, at the exact path IndexNow checks before accepting a submission.
+  // No auth: the file is only ever useful to prove what the owner already
+  // configured, the same reasoning as the rest of this public surface.
+  if (options.indexNowKey) {
+    const key = options.indexNowKey;
+    app.get(`/${key}.txt`, (c) => c.body(key, 200, { "content-type": "text/plain; charset=utf-8" }));
+  }
 
   // Crawlers get the published wiki and nothing else. The rest needs sign-in
   // regardless; saying so keeps well-behaved crawlers out of the sign-in page.

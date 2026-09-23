@@ -59,6 +59,12 @@ export interface Config {
   backups: BackupConfig;
   /** Where attachment blobs are kept (ADR-064). Off unless configured. */
   attachments: AttachmentsConfig;
+  /**
+   * The IndexNow key (ADR-074): proves ownership so `api.indexnow.org`
+   * accepts submissions. Unset means the feature is off entirely: no key
+   * file is served and no publish or unpublish ever notifies IndexNow.
+   */
+  indexNowKey: string | null;
 }
 
 export interface BackupConfig {
@@ -375,6 +381,7 @@ export function loadConfig(
     shutdownSeconds,
     backups,
     attachments: loadAttachments(env, file, backups),
+    indexNowKey: (env["CAIRN_INDEXNOW_KEY"] ?? "").trim() || null,
   };
 }
 
