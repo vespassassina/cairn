@@ -2,6 +2,7 @@ import { TableService, PageService } from "@cairn/core";
 import type { Actor, AuthStore, DocumentStore, SearchIndex } from "@cairn/core";
 import { SqliteAuthStore, SqliteDocumentStore, SqliteSearchIndex } from "@cairn/adapter-sqlite";
 import { LocalEmbedder } from "@cairn/adapter-embeddings-local";
+import { openAttachmentsStore, type AttachmentBlobStore } from "./attachments-blob.js";
 import type { Config } from "./config.js";
 
 /**
@@ -19,6 +20,8 @@ export interface AppContext {
   /** OAuth clients, codes and refresh tokens, apart from content (ADR-017). */
   auth: AuthStore;
   workspaceId: string;
+  /** Where attachment blobs are signed against (ADR-064). Null when off. */
+  attachmentsStore: AttachmentBlobStore | null;
 }
 
 /**
@@ -33,7 +36,7 @@ export function ownerVia(tool: string): Actor {
 }
 
 export async function createContext(
-  config: Pick<Config, "database" | "workspaceId"> & Partial<Pick<Config, "embeddings">>,
+  config: Pick<Config, "database" | "workspaceId"> & Partial<Pick<Config, "embeddings" | "attachments">>,
 ): Promise<AppContext> {
   // Both adapters open the same file. WAL mode lets them share it.
   const store = new SqliteDocumentStore({ location: config.database });
@@ -82,6 +85,9 @@ export async function createContext(
     tables,
     auth,
     workspaceId: config.workspaceId,
+    // Absent in tests and short-lived commands, which never touch attachments
+    // (ADR-064), the same pattern `embeddings` above uses.
+    attachmentsStore: config.attachments ? openAttachmentsStore(config.attachments) : null,
   };
 }
 

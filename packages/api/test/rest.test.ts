@@ -531,6 +531,114 @@ describe("publish tokens (ADR-066)", () => {
   });
 });
 
+describe("attachments (ADR-064)", () => {
+  const SHA = "c".repeat(64);
+
+  function fakeStore() {
+    const sizes = new Map<string, number>();
+    return {
+      async head(key: string) {
+        const bytes = sizes.get(key);
+        return bytes === undefined ? null : { bytes };
+      },
+      async uploadUrl(key: string) {
+        return `https://blob.example/${key}?upload`;
+      },
+      async downloadUrl(key: string, _expires: number, filename: string) {
+        return `https://blob.example/${key}?download&filename=${encodeURIComponent(filename)}`;
+      },
+      land(key: string, bytes: number) {
+        sizes.set(key, bytes);
+      },
+    };
+  }
+
+  it("has no attachment storage in this suite's default context: create answers a clear 422, not a 500", async () => {
+    const created = await createBuildLog();
+    const attempt = await call("/attachments", {
+      method: "POST",
+      body: { page_id: created.json["id"], filename: "a.png", sha256: SHA, content_type: "image/png", bytes: 5 },
+    });
+    expect(attempt.status).toBe(422);
+    expect(JSON.stringify(attempt.json)).toContain("CAIRN_ATTACHMENTS_TO");
+  });
+
+  it("creates, confirms, reads, lists and deletes an attachment with a realistic payload", async () => {
+    const store = fakeStore();
+    context.attachmentsStore = store;
+    const page = await createBuildLog();
+    const pageId = String(page.json["id"]);
+
+    const created = await call("/attachments", {
+      method: "POST",
+      body: {
+        page_id: pageId,
+        filename: "esc-wiring.png",
+        alt_text: "the ESC wiring diagram",
+        sha256: SHA,
+        content_type: "image/png",
+        bytes: 12,
+        change_note: "Added the wiring photo",
+      },
+    });
+    expect(created.status).toBe(201);
+    expect(created.json["status"]).toBe("pending");
+    expect(created.json["upload_url"]).toContain(`sha256/${SHA}`);
+    const id = String(created.json["id"]);
+
+    store.land(`sha256/${SHA}`, 12);
+    const confirmed = await call(`/attachments/${id}/confirm`, { method: "POST", body: {} });
+    expect(confirmed.status).toBe(200);
+    expect(confirmed.json["status"]).toBe("committed");
+
+    const fetched = await call(`/attachments/${id}`);
+    expect(fetched.status).toBe(200);
+    expect(fetched.json["download_url"]).toContain("esc-wiring.png");
+
+    const listed = await call(`/attachments?page=${pageId}`);
+    expect(listed.status).toBe(200);
+    const attachments = listed.json["attachments"] as Record<string, unknown>[];
+    expect(attachments).toHaveLength(1);
+    expect(attachments[0]?.["filename"]).toBe("esc-wiring.png");
+
+    const deleted = await call(`/attachments/${id}`, { method: "DELETE", headers: { "if-match": String(confirmed.json["version"]) } });
+    expect(deleted.status).toBe(204);
+    expect((await call(`/attachments?page=${pageId}`)).json["attachments"]).toEqual([]);
+  });
+
+  it("confirm answers a clear 422 when nothing was uploaded yet", async () => {
+    context.attachmentsStore = fakeStore();
+    const page = await createBuildLog();
+    const created = await call("/attachments", {
+      method: "POST",
+      body: { page_id: page.json["id"], filename: "a.png", sha256: SHA, content_type: "image/png", bytes: 12 },
+    });
+    const attempt = await call(`/attachments/${String(created.json["id"])}/confirm`, { method: "POST", body: {} });
+    expect(attempt.status).toBe(422);
+  });
+
+  it("refuses text/html and image/svg+xml", async () => {
+    context.attachmentsStore = fakeStore();
+    const page = await createBuildLog();
+    const attempt = await call("/attachments", {
+      method: "POST",
+      body: { page_id: page.json["id"], filename: "a.svg", sha256: SHA, content_type: "image/svg+xml", bytes: 12 },
+    });
+    expect(attempt.status).toBe(422);
+  });
+
+  it("delete requires If-Match", async () => {
+    context.attachmentsStore = fakeStore();
+    const page = await createBuildLog();
+    const created = await call("/attachments", {
+      method: "POST",
+      body: { page_id: page.json["id"], filename: "a.png", sha256: SHA, content_type: "image/png", bytes: 12 },
+    });
+    const attempt = await call(`/attachments/${String(created.json["id"])}`, { method: "DELETE" });
+    expect(attempt.status).toBe(428);
+  });
+});
+
 describe("tables in the tree and rows as links (ADR-024)", () => {
   it("creates a table under a page, moves it, and reports links from rows", async () => {
     const home = await call("/pages", { method: "POST", body: { title: "Peptides", body: "Hub.", change_note: "A home for the peptide tables" } });

@@ -22,6 +22,14 @@ import {
 } from "@cairn/core";
 import type { AppContext } from "./context.js";
 import { createPublishToken, listPublishTokens, revokePublishToken, type PublishTokenSummary } from "./publish-tokens.js";
+import {
+  confirmAttachmentUpload,
+  createAttachment,
+  deleteAttachment,
+  getAttachment,
+  listAttachmentsForPage,
+  type AttachmentSummary,
+} from "./attachments.js";
 
 /**
  * What the MCP tools and the REST API share (ADR-013 rule 1).
@@ -574,6 +582,55 @@ export async function listPublishTokensOp(context: AppContext, pageId: string): 
 
 export async function revokePublishTokenOp(context: AppContext, id: string, by: WriteContext): Promise<Record<string, unknown>> {
   return publishTokenJson(await revokePublishToken(context, id, by));
+}
+
+/**
+ * Attachments (ADR-064): binary files, uploaded direct to blob storage. Same
+ * shape as publish tokens above, wired to all three surfaces this time
+ * (unlike publish tokens, an attachment is content an agent legitimately
+ * uploads and reads, not an access grant). Never carries blob bytes or a
+ * credential, only the row's fields and a short-lived URL.
+ */
+export function attachmentJson(row: AttachmentSummary): Record<string, unknown> {
+  return {
+    id: row.id,
+    page: row.page,
+    filename: row.filename,
+    alt_text: row.altText,
+    blob_key: row.blobKey,
+    sha256: row.sha256,
+    content_type: row.contentType,
+    bytes: row.bytes,
+    status: row.status,
+    version: row.version,
+    created_at: row.createdAt,
+  };
+}
+
+export async function createAttachmentOp(
+  context: AppContext,
+  params: { pageId: string; filename: string; altText: string | null | undefined; sha256: string; contentType: string; bytes: number },
+  by: WriteContext,
+): Promise<Record<string, unknown>> {
+  const { row, uploadUrl } = await createAttachment(context, params, by);
+  return { ...attachmentJson(row), upload_url: uploadUrl };
+}
+
+export async function confirmAttachmentUploadOp(context: AppContext, id: string, by: WriteContext): Promise<Record<string, unknown>> {
+  return attachmentJson(await confirmAttachmentUpload(context, id, by));
+}
+
+export async function getAttachmentOp(context: AppContext, id: string): Promise<Record<string, unknown>> {
+  const { row, downloadUrl } = await getAttachment(context, id);
+  return { ...attachmentJson(row), download_url: downloadUrl };
+}
+
+export async function listAttachmentsOp(context: AppContext, pageId: string): Promise<Record<string, unknown>[]> {
+  return (await listAttachmentsForPage(context, pageId)).map(attachmentJson);
+}
+
+export async function deleteAttachmentOp(context: AppContext, id: string, expectedVersion: string, by: WriteContext): Promise<void> {
+  await deleteAttachment(context, id, expectedVersion, by);
 }
 
 export async function moveRecord(

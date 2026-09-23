@@ -245,7 +245,7 @@ Status 2026-09-12: Azure uses Container Apps and Blob Storage instead of Functio
 1. **Web editor** with BlockNote, page tree, backlinks panel, table view.
 2. **Embeddings** with hybrid search and fallback as described in section 7. Done 2026-09-13 with a model inside the container (ADR-022).
 3. **AWS:** the same container on an AWS container service, with a deploy script. DynamoDB and S3 adapters only on an ADR-020 trigger.
-4. **Attachments** up to 25 MB per file, stored via the blob adapter.
+4. **Attachments** up to 25 MB per file, stored via the blob adapter. Status 2026-09-23: done (ADR-064), `Attachments` table, direct-to-blob signed upload/download over REST, MCP and CLI, `attachment:<id>` rendered on the console and published wiki. Decision 6's thumbnails, and export/import carrying attachments per P0.7 above, are not built yet.
 5. **Local MCP server** packaged as a Claude Desktop extension (`.mcpb`), pointing at the remote API.
 6. **Eval runner** that executes `eval/queries.yaml` and reports recall@5 per search mode.
 

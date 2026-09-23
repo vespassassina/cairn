@@ -135,6 +135,11 @@ describe("transport and auth", () => {
         "update_table",
         "upsert_row",
         "vacuum_page",
+        "create_attachment",
+        "confirm_attachment_upload",
+        "get_attachment",
+        "list_attachments",
+        "delete_attachment",
       ].sort(),
     );
     // No tool publishes a page, on purpose: publishing is the owner's action,
@@ -980,5 +985,93 @@ describe("agent navigation (ADR-058)", () => {
 
     const since = await callTool("get_changes", { since: a.data["updated_at"] as string });
     expect(since.isError).toBe(false);
+  });
+});
+
+describe("attachments (ADR-064)", () => {
+  const SHA = "d".repeat(64);
+
+  function fakeStore() {
+    const sizes = new Map<string, number>();
+    return {
+      async head(key: string) {
+        const bytes = sizes.get(key);
+        return bytes === undefined ? null : { bytes };
+      },
+      async uploadUrl(key: string) {
+        return `https://blob.example/${key}?upload`;
+      },
+      async downloadUrl(key: string, _expires: number, filename: string) {
+        return `https://blob.example/${key}?download&filename=${encodeURIComponent(filename)}`;
+      },
+      land(key: string, bytes: number) {
+        sizes.set(key, bytes);
+      },
+    };
+  }
+
+  it("is refused with a clear error when this Cairn has no attachment storage configured", async () => {
+    const created = await callTool("create_page", { title: "Print log", body: "x" });
+    const attempt = await callTool("create_attachment", {
+      page_id: created.data["id"],
+      filename: "a.png",
+      sha256: SHA,
+      content_type: "image/png",
+      bytes: 5,
+    });
+    expect(attempt.isError).toBe(true);
+    expect(JSON.stringify(attempt.data)).toContain("CAIRN_ATTACHMENTS_TO");
+  });
+
+  it("starts, confirms, reads, lists and deletes an attachment with a realistic payload", async () => {
+    const store = fakeStore();
+    context.attachmentsStore = store;
+    const page = await callTool("create_page", { title: "Wiring notes", body: "x" });
+    const pageId = page.data["id"] as string;
+
+    const created = await callTool("create_attachment", {
+      page_id: pageId,
+      filename: "esc-wiring.png",
+      alt_text: "the ESC wiring diagram",
+      sha256: SHA,
+      content_type: "image/png",
+      bytes: 12,
+    });
+    expect(created.isError).toBe(false);
+    expect(created.data["status"]).toBe("pending");
+    expect(created.data["upload_url"]).toContain(`sha256/${SHA}`);
+    const id = created.data["id"] as string;
+
+    store.land(`sha256/${SHA}`, 12);
+    const confirmed = await callTool("confirm_attachment_upload", { attachment_id: id });
+    expect(confirmed.isError).toBe(false);
+    expect(confirmed.data["status"]).toBe("committed");
+
+    const fetched = await callTool("get_attachment", { attachment_id: id });
+    expect(fetched.data["download_url"]).toContain("esc-wiring.png");
+
+    const listed = await callTool("list_attachments", { page_id: pageId });
+    const attachments = listed.data["attachments"] as Array<Record<string, unknown>>;
+    expect(attachments).toHaveLength(1);
+    expect(attachments[0]!["filename"]).toBe("esc-wiring.png");
+
+    const deleted = await callTool("delete_attachment", { attachment_id: id, version: confirmed.data["version"] as string });
+    expect(deleted.isError).toBe(false);
+    const afterDelete = await callTool("list_attachments", { page_id: pageId });
+    expect(afterDelete.data["attachments"]).toEqual([]);
+  });
+
+  it("confirm reports a clear error when nothing was uploaded yet", async () => {
+    context.attachmentsStore = fakeStore();
+    const page = await callTool("create_page", { title: "Wiring notes", body: "x" });
+    const created = await callTool("create_attachment", {
+      page_id: page.data["id"],
+      filename: "a.png",
+      sha256: SHA,
+      content_type: "image/png",
+      bytes: 12,
+    });
+    const attempt = await callTool("confirm_attachment_upload", { attachment_id: created.data["id"] });
+    expect(attempt.isError).toBe(true);
   });
 });

@@ -29,6 +29,11 @@ import {
   verifiedTimes,
   toFieldDefs,
   writeRow,
+  createAttachmentOp,
+  confirmAttachmentUploadOp,
+  getAttachmentOp,
+  listAttachmentsOp,
+  deleteAttachmentOp,
 } from "../operations.js";
 
 export { replaceSection } from "../operations.js";
@@ -818,6 +823,124 @@ export function registerTools(server: McpServer, context: AppContext, actor: Act
           message: "Pass page_id, or table_id with row_id.",
           fields: [{ field: "page_id", message: "or table_id and row_id" }],
         });
+      } catch (error) {
+        return toolError(error);
+      }
+    },
+  );
+
+  // Attachments (ADR-064): binary files, uploaded direct to blob storage.
+  // No tool here ever sees or returns the bytes themselves (hard rule 6):
+  // create_attachment hands back a short-lived URL, and the caller's own
+  // HTTP client PUTs the file straight to it.
+
+  server.registerTool(
+    "create_attachment",
+    {
+      title: "Start uploading an attachment",
+      description:
+        "Registers a file's metadata and returns a short-lived upload_url. Bytes are never sent through this tool or through Cairn's process at all: PUT the file's exact bytes straight to upload_url yourself (a bare HTTP PUT, no extra headers needed), then call confirm_attachment_upload with the returned id. " +
+        "You must compute sha256 (the file's SHA-256, lower-case hex) and bytes (its exact size) yourself before calling this. Refused for content_type text/html or image/svg+xml (they can carry a script a browser would run), and for anything over 25 MB. " +
+        "Refused entirely if this Cairn has no attachment storage configured; the error names the setting to fix that. " +
+        "Reference the result from a page body once confirmed: ![alt text](attachment:<id>) for an image, [label](attachment:<id>) for anything else.",
+      inputSchema: {
+        page_id: z.string().describe("The page this attachment belongs to."),
+        filename: z.string().min(1),
+        alt_text: z.string().optional().describe("For an image. Always worth giving; never required."),
+        sha256: z.string().describe("64 lower-case hex characters, the file's SHA-256."),
+        content_type: z.string().describe("The file's MIME type, such as image/png."),
+        bytes: z.number().int().positive().describe("The file's exact size. Checked again against what actually lands."),
+        change_note: CHANGE_NOTE,
+      },
+    },
+    async ({ page_id, filename, alt_text, sha256, content_type, bytes, change_note }): Promise<ToolResult> => {
+      try {
+        const created = await createAttachmentOp(
+          context,
+          { pageId: page_id, filename, altText: alt_text, sha256, contentType: content_type, bytes },
+          by(change_note),
+        );
+        return json(created);
+      } catch (error) {
+        return toolError(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "confirm_attachment_upload",
+    {
+      title: "Confirm an attachment's upload finished",
+      description:
+        "Call once you have PUT the file's bytes to the upload_url from create_attachment. Checks the blob actually landed and that its size matches what you declared, then marks the attachment ready to reference and read. " +
+        "Fails clearly if nothing was uploaded yet (PUT the bytes first) or if the size does not match (re-upload the exact file, or create a new attachment with the right size).",
+      inputSchema: {
+        attachment_id: z.string(),
+        change_note: CHANGE_NOTE,
+      },
+    },
+    async ({ attachment_id, change_note }): Promise<ToolResult> => {
+      try {
+        return json(await confirmAttachmentUploadOp(context, attachment_id, by(change_note)));
+      } catch (error) {
+        return toolError(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "get_attachment",
+    {
+      title: "Read an attachment's metadata",
+      description:
+        "The attachment's row, plus a short-lived download_url once its upload is confirmed. download_url is null while it is still pending: call confirm_attachment_upload first, or wait for whoever is uploading it to.",
+      inputSchema: {
+        attachment_id: z.string(),
+      },
+    },
+    async ({ attachment_id }): Promise<ToolResult> => {
+      try {
+        return json(await getAttachmentOp(context, attachment_id));
+      } catch (error) {
+        return toolError(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "list_attachments",
+    {
+      title: "List a page's attachments",
+      description: "Every committed attachment on a page. A pending, not-yet-confirmed upload does not appear.",
+      inputSchema: {
+        page_id: z.string(),
+      },
+    },
+    async ({ page_id }): Promise<ToolResult> => {
+      try {
+        return json({ attachments: await listAttachmentsOp(context, page_id) });
+      } catch (error) {
+        return toolError(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "delete_attachment",
+    {
+      title: "Delete an attachment",
+      description:
+        "Deletes the attachment's row, so it no longer appears on the page or in list_attachments. The underlying blob is left in place (attachments are content-addressed and may be shared by another attachment with the same bytes); it is reclaimed by a separate maintenance pass, not by this call. Needs its current version, from get_attachment.",
+      inputSchema: {
+        attachment_id: z.string(),
+        version: z.string().describe("From get_attachment. Not optional."),
+        change_note: CHANGE_NOTE,
+      },
+    },
+    async ({ attachment_id, version, change_note }): Promise<ToolResult> => {
+      try {
+        await deleteAttachmentOp(context, attachment_id, version, by(change_note));
+        return json({ deleted: attachment_id });
       } catch (error) {
         return toolError(error);
       }

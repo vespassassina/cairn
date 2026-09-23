@@ -57,6 +57,8 @@ export interface Config {
   shutdownSeconds: number;
   /** Where backups are kept, and how long (ADR-049). */
   backups: BackupConfig;
+  /** Where attachment blobs are kept (ADR-064). Off unless configured. */
+  attachments: AttachmentsConfig;
 }
 
 export interface BackupConfig {
@@ -76,6 +78,20 @@ export interface BackupConfig {
   keepDays: number;
   /** However old they are, never leave fewer than this many. */
   keepAtLeast: number;
+}
+
+export interface AttachmentsConfig {
+  /**
+   * `abs://account@container/prefix` or `s3://bucket/prefix` (ADR-064). Null
+   * (or "off") disables attachments entirely: no upload URL is ever issued.
+   * Unlike backups, a plain folder is not valid here, since a folder cannot
+   * hand out a signed URL for a browser or an agent to upload straight to.
+   */
+  to: string | null;
+  /** Reused from CAIRN_BACKUP_REGION: attachments and backups are assumed to live in the same account unless that changes. Only for s3. */
+  region: string | null;
+  /** Reused from CAIRN_BACKUP_ENDPOINT. Only for s3. */
+  endpoint: string | null;
 }
 
 export interface SelfDescriptionConfig {
@@ -140,6 +156,11 @@ export interface ConfigFile {
     afterHours?: number;
     keepDays?: number;
     keepAtLeast?: number;
+  };
+  /** Where attachment blobs go (ADR-064). Default: off. */
+  attachments?: {
+    /** `abs://account@container/prefix` or `s3://bucket/prefix`. No default: unset means off. */
+    to?: string;
   };
   embeddings?: {
     provider?: "local" | "off";
@@ -336,6 +357,7 @@ export function loadConfig(
   const base = configPath ? dirname(configPath) : process.cwd();
   const database = env["CAIRN_DB"] ?? resolve(base, file.database ?? "cairn.sqlite");
   const embeddings = loadEmbeddings(env, file, base);
+  const backups = loadBackups(env, file, database);
 
   return {
     database,
@@ -351,7 +373,8 @@ export function loadConfig(
     contentLicence: (env["CAIRN_CONTENT_LICENCE"] ?? file.contentLicence ?? "").trim() || null,
     selfDescription: loadSelfDescription(env, file),
     shutdownSeconds,
-    backups: loadBackups(env, file, database),
+    backups,
+    attachments: loadAttachments(env, file, backups),
   };
 }
 
@@ -391,6 +414,32 @@ function loadBackups(env: NodeJS.ProcessEnv, file: ConfigFile, database: string)
     keepDays: number("CAIRN_BACKUP_KEEP_DAYS", env["CAIRN_BACKUP_KEEP_DAYS"] ?? file.backups?.keepDays, 2, 3650),
     keepAtLeast: number("CAIRN_BACKUP_KEEP_AT_LEAST", env["CAIRN_BACKUP_KEEP_AT_LEAST"] ?? file.backups?.keepAtLeast, 3, 1000),
   };
+}
+
+/**
+ * Attachments (ADR-064) default to off: unlike backups, there is no safe
+ * default destination, since a plain folder cannot issue a signed URL. The
+ * region and endpoint are shared with backups' settings rather than given
+ * their own, on the assumption attachments live in the same account; if that
+ * stops being true, CAIRN_ATTACHMENTS_REGION and CAIRN_ATTACHMENTS_ENDPOINT
+ * can be added the same way CAIRN_BACKUP_REGION and CAIRN_BACKUP_ENDPOINT
+ * work today.
+ */
+function loadAttachments(env: NodeJS.ProcessEnv, file: ConfigFile, backups: BackupConfig): AttachmentsConfig {
+  const asked = (env["CAIRN_ATTACHMENTS_TO"] ?? file.attachments?.to ?? "").trim();
+  if (asked === "" || asked.toLowerCase() === "off") {
+    return { to: null, region: backups.region, endpoint: backups.endpoint };
+  }
+  if (!asked.startsWith("abs://") && !asked.startsWith("s3://")) {
+    throw new ConfigError(
+      `CAIRN_ATTACHMENTS_TO is "${asked}", and Cairn does not know that kind of address. ` +
+        "Use abs://<account>@<container>/<prefix> for Azure Blob Storage, s3://<bucket>/<prefix> " +
+        "for S3 or anything that speaks S3, or off for no attachments. A plain folder is not valid " +
+        "here: an attachment needs a signed URL an agent or a browser can upload straight to, and a " +
+        "local folder cannot issue one.",
+    );
+  }
+  return { to: asked, region: backups.region, endpoint: backups.endpoint };
 }
 
 function loadSelfDescription(env: NodeJS.ProcessEnv, file: ConfigFile): SelfDescriptionConfig {

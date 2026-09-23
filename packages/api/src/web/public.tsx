@@ -6,9 +6,10 @@ import { gateRootOf, gatedIds, isCairnPageAddress, publishedIds, sourceHref, typ
 import type { AppContext } from "../context.js";
 import { citedByOf, receiveCitation, WebmentionError } from "../citations.js";
 import { activeTokenPageIds, verifyPublishToken } from "../publish-tokens.js";
+import { getAttachment } from "../attachments.js";
 import { ASSET_VERSION, documentTitle, HEAD_TAGS } from "./assets.js";
 import { When } from "./layout.js";
-import { createMarkdownRenderer, type LinkResolver } from "./markdown.js";
+import { createMarkdownRenderer, type AttachmentResolver, type LinkResolver } from "./markdown.js";
 
 /**
  * The published wiki (ADR-032): the pages an owner has marked public, served
@@ -103,6 +104,38 @@ function resolverFor(pages: readonly Page[], gated: ReadonlySet<string>, token: 
     href: (id) => (titles.has(id) ? wikiHref(id, gated.has(id) ? token : null) : null),
     plainWhenUnknown: true,
   };
+}
+
+/** `attachment:<id>` references in a page body, the same targets the renderer resolves. */
+const ATTACHMENT_REF = /\]\(attachment:([A-Za-z0-9_-]+)\)/g;
+
+/**
+ * Signed download URLs for every attachment a page body references, resolved
+ * before the (synchronous) render so it can look them up by id (ADR-064
+ * decision 4). A reference to a missing, not-yet-committed or deleted
+ * attachment is simply absent from the map; the renderer shows those as
+ * visible broken-but-safe text rather than erroring.
+ *
+ * Only an attachment whose own `page` is the page being rendered resolves.
+ * Without this check, a published page could embed `attachment:<any-id>` and
+ * mint a working signed URL for a file that belongs to an unpublished or
+ * gated page — the publish check on the page body says nothing about which
+ * attachment rows it is allowed to point at.
+ */
+async function attachmentResolverFor(context: AppContext, page: Page): Promise<AttachmentResolver> {
+  const ids = new Set([...page.body.matchAll(ATTACHMENT_REF)].map((match) => match[1]!));
+  const found = new Map<string, { url: string; altText: string | null; filename: string }>();
+  for (const id of ids) {
+    try {
+      const { row, downloadUrl } = await getAttachment(context, id);
+      if (downloadUrl && row.page === page.id) found.set(id, { url: downloadUrl, altText: row.altText, filename: row.filename });
+    } catch {
+      // Not found, or attachments are off entirely: left out of the map, so
+      // the renderer shows it as missing rather than throwing into the page.
+      continue;
+    }
+  }
+  return { resolve: (id) => found.get(id) ?? null };
 }
 
 /** The top of each published subtree: everything else hangs below one of these. */
@@ -334,6 +367,7 @@ export function registerPublicWiki(app: Hono, options: PublicWikiOptions): void 
 
     const gated = gatedIds(pages, tokenPageIds);
     const links = resolverFor(pages, gated, presented);
+    const attachments = await attachmentResolverFor(context, page);
     const children = pages.filter((child) => child.parentId === page.id);
     const trail = ancestorsOf(page, byId);
     const citedBy = await citedByOf(context, page.id);
@@ -371,7 +405,7 @@ export function registerPublicWiki(app: Hono, options: PublicWikiOptions): void 
             {page.body.trim() === "" ? (
               <p class="ak-soft">This page is empty.</p>
             ) : (
-              raw(renderMarkdown(page.body, links))
+              raw(renderMarkdown(page.body, links, attachments))
             )}
           </div>
           {page.sources.length === 0 ? null : (

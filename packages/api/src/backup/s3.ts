@@ -197,6 +197,12 @@ export interface PresignInput {
   credentials: Credentials;
   region: string;
   expiresInSeconds: number;
+  /**
+   * Extra query parameters to sign along with the rest, such as
+   * `response-content-disposition` on a GET so the object downloads under
+   * the name the uploader gave it (ADR-064 decision 5).
+   */
+  extraQuery?: Record<string, string>;
   /** Overridable so the signature can be checked against a known vector. */
   now?: Date;
   service?: string;
@@ -227,6 +233,7 @@ export async function presignV4(input: PresignInput): Promise<string> {
   if (input.credentials.sessionToken !== undefined) {
     url.searchParams.set("X-Amz-Security-Token", input.credentials.sessionToken);
   }
+  for (const [key, value] of Object.entries(input.extraQuery ?? {})) url.searchParams.set(key, value);
 
   const { canonicalRequest } = canonicalRequestOf(input.method, url, { host: url.host }, UNSIGNED);
   const signature = await signatureOf(
@@ -437,5 +444,27 @@ export class S3Archive implements Archive {
     if (!response.ok) await this.fail(`check ${name}`, response);
     const length = response.headers.get("content-length");
     return { bytes: length === null ? 0 : Number(length) };
+  }
+
+  /**
+   * A URL a caller may PUT or GET directly with a bare `fetch`, no header of
+   * its own needed (ADR-064 decision 3). Thin wrapper over `presignV4`: this
+   * class already knows the bucket's URL shape and its credentials, so a
+   * caller minting a URL for one object need not rebuild either.
+   */
+  async presignedUrl(
+    name: string,
+    opts: { method: string; expiresInSeconds: number; responseContentDisposition?: string },
+  ): Promise<string> {
+    return presignV4({
+      method: opts.method,
+      url: this.url(name),
+      credentials: await this.getCredentials(),
+      region: this.options.region,
+      expiresInSeconds: opts.expiresInSeconds,
+      ...(opts.responseContentDisposition === undefined
+        ? {}
+        : { extraQuery: { "response-content-disposition": opts.responseContentDisposition } }),
+    });
   }
 }

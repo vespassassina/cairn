@@ -19,6 +19,11 @@ import {
   createPublishTokenOp,
   listPublishTokensOp,
   revokePublishTokenOp,
+  createAttachmentOp,
+  confirmAttachmentUploadOp,
+  getAttachmentOp,
+  listAttachmentsOp,
+  deleteAttachmentOp,
   toFieldDefs,
   undeletePage,
   vacuumPage,
@@ -161,6 +166,15 @@ const schemas = {
     page_id: z.string().min(1),
     name: z.string().min(1),
     description: z.string().nullable().optional(),
+    change_note: CHANGE_NOTE,
+  }),
+  createAttachment: z.object({
+    page_id: z.string().min(1),
+    filename: z.string().min(1),
+    alt_text: z.string().nullable().optional(),
+    sha256: z.string().regex(/^[0-9a-f]{64}$/i, "must be 64 hex characters"),
+    content_type: z.string().min(1),
+    bytes: z.number().int().positive(),
     change_note: CHANGE_NOTE,
   }),
   move: z.object({
@@ -746,6 +760,42 @@ export function restRoutes(context: AppContext, callerFor: CallerFor): Hono {
   api.post("/publish-tokens/:id/revoke", async (c) => {
     const input = await parseBody(c, schemas.deleteBody);
     return c.json(await revokePublishTokenOp(context, c.req.param("id"), by(c, input.change_note)));
+  });
+
+  // Attachments (ADR-064): binary files, uploaded direct to blob storage.
+  // Bytes never pass through this server; these routes only issue and check
+  // signed URLs and the row that tracks them.
+
+  api.post("/attachments", async (c) => {
+    const input = await parseBody(c, schemas.createAttachment);
+    const row = await createAttachmentOp(
+      context,
+      { pageId: input.page_id, filename: input.filename, altText: input.alt_text, sha256: input.sha256, contentType: input.content_type, bytes: input.bytes },
+      by(c, input.change_note),
+    );
+    return c.json(row, 201);
+  });
+
+  api.post("/attachments/:id/confirm", async (c) => {
+    const input = await parseBody(c, schemas.deleteBody);
+    return c.json(await confirmAttachmentUploadOp(context, c.req.param("id"), by(c, input.change_note)));
+  });
+
+  api.get("/attachments/:id", async (c) => {
+    return c.json(await getAttachmentOp(context, c.req.param("id")));
+  });
+
+  api.get("/attachments", async (c) => {
+    const pageId = c.req.query("page");
+    if (!pageId) throw new BadRequest("Pass the page to list attachments for as page.", [{ field: "page", message: "required" }]);
+    return c.json({ attachments: await listAttachmentsOp(context, pageId) });
+  });
+
+  api.delete("/attachments/:id", async (c) => {
+    const version = requireIfMatch(c);
+    const input = await parseBody(c, schemas.deleteBody);
+    await deleteAttachmentOp(context, c.req.param("id"), version, by(c, input.change_note));
+    return c.body(null, 204);
   });
 
   api.post("/move", async (c) => {

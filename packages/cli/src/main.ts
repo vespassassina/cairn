@@ -1,6 +1,6 @@
 import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname, join, relative, sep } from "node:path";
+import { basename, dirname, join, relative, sep } from "node:path";
 import { parseArgs } from "node:util";
 import { ApiError, CairnClient, type Fetch } from "./client.js";
 import {
@@ -130,6 +130,11 @@ Write (every write is a revision the owner can review and undo)
       token issued means no auth, same as plain publish
   cairn publish-token list <page-id>      tokens issued for that subtree, revoked or not
   cairn publish-token revoke <token-id>   take one token back; the rest keep working
+  cairn attachment create <page-id> --file PATH [--alt "..."]
+      uploads PATH direct to blob storage (ADR-064; needs CAIRN_ATTACHMENTS_TO set on the
+      server) and confirms it; prints the id and the attachment: link to paste into the page
+  cairn attachment list <page-id>         committed attachments on that page
+  cairn attachment get <attachment-id>    a short-lived download URL, or its pending status
   All writes take --note "why", shown to the owner, and --source S (repeatable):
   a URL or short citation for where the facts came from, added to the page's or row's sources.
   append, replace-section and write take --verified: you re-checked the page's facts and they
@@ -232,6 +237,7 @@ const OPTIONS = {
   set: { type: "string", multiple: true },
   field: { type: "string", multiple: true },
   description: { type: "string" },
+  alt: { type: "string" },
   name: { type: "string" },
   id: { type: "string" },
   since: { type: "string" },
@@ -297,6 +303,34 @@ function need<T>(value: T | undefined, what: string): T {
 }
 
 /** A value from the command line: JSON when it parses, otherwise text. */
+/**
+ * A small, built-in guess by extension, per hard rule 16: no library for
+ * this (ADR-064). Good enough for the common file kinds an attachment is;
+ * anything else falls back to a type that never runs and always downloads.
+ */
+const CONTENT_TYPES: Record<string, string> = {
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+  ".pdf": "application/pdf",
+  ".txt": "text/plain",
+  ".md": "text/markdown",
+  ".csv": "text/csv",
+  ".json": "application/json",
+  ".zip": "application/zip",
+};
+
+function contentTypeFor(path: string): string {
+  const ext = path.slice(path.lastIndexOf(".")).toLowerCase();
+  return CONTENT_TYPES[ext] ?? "application/octet-stream";
+}
+
+function hex(buffer: ArrayBuffer): string {
+  return [...new Uint8Array(buffer)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
 function literal(raw: string): unknown {
   try {
     return JSON.parse(raw);
@@ -1252,6 +1286,70 @@ export async function run(argv: string[], io: Io): Promise<number> {
           return 0;
         }
         throw new UsageError(`cairn publish-token needs a subcommand: create <page> --name NAME, list <page>, or revoke <id>. Got "${sub ?? ""}".`);
+      }
+
+      case "attachment": {
+        const sub = args[0];
+        if (sub === "create") {
+          const pageId = need(args[1], "the page this attachment belongs to");
+          const path = need(flags.file, "--file PATH, the file to upload");
+          const bytes = await readFile(path);
+          const sha256 = hex(await crypto.subtle.digest("SHA-256", bytes));
+          const filename = basename(path);
+          warnIfNoNote();
+          const created = await client.request("POST", "/attachments", {
+            body: {
+              page_id: pageId,
+              filename,
+              ...(flags.alt ? { alt_text: flags.alt } : {}),
+              sha256,
+              content_type: contentTypeFor(path),
+              bytes: bytes.byteLength,
+              ...(note ? { change_note: note } : {}),
+            },
+          });
+          const uploadUrl = String(created.json?.["upload_url"]);
+          const id = String(created.json?.["id"]);
+          const uploaded = await io.fetch(new Request(uploadUrl, { method: "PUT", body: bytes }));
+          if (!uploaded.ok) {
+            throw new Error(
+              `${filename} uploaded to blob storage as HTTP ${uploaded.status}. The attachment row (${id}) was created but is still pending; ` +
+                `fix the problem and retry the upload to the same URL, or re-run cairn attachment create.`,
+            );
+          }
+          const { json } = await client.request("POST", `/attachments/${encodeURIComponent(id)}/confirm`, {
+            body: note ? { change_note: note } : {},
+          });
+          out(json, () =>
+            `ok uploaded ${filename} (${bytes.byteLength} bytes) to ${pageId}: attachment id ${id}\n` +
+            `   reference it from the page body as [${flags.alt ?? filename}](attachment:${id})` +
+            `${contentTypeFor(path).startsWith("image/") ? ` or, to show it inline, ![${flags.alt ?? filename}](attachment:${id})` : ""}\n`,
+          );
+          return 0;
+        }
+        if (sub === "list") {
+          const pageId = need(args[1], "the page to list attachments for");
+          const { json } = await client.request("GET", `/attachments?page=${encodeURIComponent(pageId)}`);
+          out(json, () => {
+            const rows = list(json?.["attachments"]);
+            if (rows.length === 0) return `no attachments on ${pageId}\n`;
+            return rows
+              .map((r) => `${String(r["id"])}  ${String(r["filename"])}  ${String(r["bytes"])} bytes  ${String(r["content_type"])}\n`)
+              .join("");
+          });
+          return 0;
+        }
+        if (sub === "get") {
+          const id = need(args[1], "the attachment id, from cairn attachment list <page>");
+          const { json } = await client.request("GET", `/attachments/${encodeURIComponent(id)}`);
+          out(json, () =>
+            json?.["download_url"]
+              ? `${String(json["download_url"])}\n`
+              : `${String(json?.["filename"])} is not uploaded yet (status: ${String(json?.["status"])}). Run cairn attachment create again, or wait for the upload to be confirmed.\n`,
+          );
+          return 0;
+        }
+        throw new UsageError(`cairn attachment needs a subcommand: create <page> --file PATH, list <page>, or get <id>. Got "${sub ?? ""}".`);
       }
 
       case "move": {

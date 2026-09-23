@@ -30,7 +30,9 @@ const NOT_PUBLISHED = "a page that is not published";
 
 /** A page or collection id, or a row as `collection-id/row-id` (ADR-024). */
 const TARGET_ID = /^[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)?$/;
-const SAFE_LINK = /^(https?:|mailto:|#|\/p\/|cairn:)/i;
+const SAFE_LINK = /^(https?:|mailto:|#|\/p\/|cairn:|attachment:)/i;
+const ATTACHMENT_ID = /^[A-Za-z0-9_-]+$/;
+const MISSING_ATTACHMENT_TITLE = "This attachment is missing, not yet uploaded, or was deleted";
 
 export function pageHref(pageId: string): string {
   return `/p/${encodeURIComponent(pageId)}`;
@@ -45,9 +47,23 @@ function cairnTarget(href: string): string | null {
   return match ? decodeURIComponent(match[1]!) : null;
 }
 
-/** What the renderer carries from token to token: the resolver, and one flag. */
+/**
+ * Resolves `attachment:<row-id>` at render time (ADR-064 decision 4). The
+ * render itself is synchronous (`md.render()`), so this is a plain lookup a
+ * caller precomputes, the same way `links` is precomputed in `public.tsx`,
+ * not an async call the renderer would have to await.
+ */
+export interface AttachmentResolver {
+  /** The signed URL, alt text and filename for a committed attachment, or null if it cannot be shown. */
+  resolve(id: string): { url: string; altText: string | null; filename: string } | null;
+}
+
+const NO_ATTACHMENTS: AttachmentResolver = { resolve: () => null };
+
+/** What the renderer carries from token to token: the resolvers, and one flag. */
 interface RenderEnv {
   links: LinkResolver;
+  attachments: AttachmentResolver;
   /** True between a link that is being written as plain text and its close. */
   plain: boolean;
 }
@@ -55,7 +71,15 @@ interface RenderEnv {
 /** markdown-it types its env as its own empty interface, so read it through this. */
 const envOf = (env: unknown): RenderEnv => env as RenderEnv;
 
-export function createMarkdownRenderer(): (body: string, links: LinkResolver) => string {
+/** `attachment:<id>`, the one target `cairnTarget`-style hrefs do not cover. */
+function attachmentTarget(href: string): string | null {
+  const match = /^attachment:([A-Za-z0-9_-]+)$/.exec(href);
+  if (match === null) return null;
+  const id = match[1]!;
+  return ATTACHMENT_ID.test(id) ? id : null;
+}
+
+export function createMarkdownRenderer(): (body: string, links: LinkResolver, attachments?: AttachmentResolver) => string {
   const md = new MarkdownIt({ html: false, linkify: true, typographer: false });
   md.validateLink = (url: string) => SAFE_LINK.test(url.trim());
 
@@ -98,6 +122,21 @@ export function createMarkdownRenderer(): (body: string, links: LinkResolver) =>
     const token = tokens[idx]!;
     const links = envOf(env).links;
     const href = String(token.attrGet("href") ?? "");
+    const attachmentId = attachmentTarget(href);
+    if (attachmentId !== null) {
+      const resolved = envOf(env).attachments.resolve(attachmentId);
+      if (resolved) {
+        token.attrSet("href", resolved.url);
+      } else {
+        // Visible, not hidden: a broken attachment reference is something an
+        // owner needs to notice, the same convention as a link to a page id
+        // that does not exist, just below.
+        token.attrSet("href", "#");
+        token.attrJoin("class", "cairn-missing");
+        token.attrSet("title", MISSING_ATTACHMENT_TITLE);
+      }
+      return defaultLinkOpen(tokens, idx, options, env, self);
+    }
     const target = cairnTarget(href);
     if (target !== null) {
       if (links.plainWhenUnknown && links.title(target) === null) {
@@ -128,6 +167,25 @@ export function createMarkdownRenderer(): (body: string, links: LinkResolver) =>
     return defaultLinkClose(tokens, idx, options, env, self);
   };
 
+  // markdown-it's built-in image rule renders whatever `src` normalizeLink
+  // left it with; this swaps an `attachment:<id>` src for the signed URL
+  // first, or, unresolved, drops the `<img>` for visible text rather than a
+  // broken image (ADR-064 decisions 4 and 5).
+  const defaultImage = md.renderer.rules.image!;
+  md.renderer.rules.image = (tokens, idx, options, env, self) => {
+    const token = tokens[idx]!;
+    const attachmentId = attachmentTarget(String(token.attrGet("src") ?? ""));
+    if (attachmentId !== null) {
+      const resolved = envOf(env).attachments.resolve(attachmentId);
+      if (!resolved) {
+        const alt = self.renderInlineAsText(token.children ?? [], options, env);
+        return `<span class="cairn-missing" title="${MISSING_ATTACHMENT_TITLE}">[image: ${md.utils.escapeHtml(alt || attachmentId)}]</span>`;
+      }
+      token.attrSet("src", resolved.url);
+    }
+    return defaultImage(tokens, idx, options, env, self);
+  };
+
   md.renderer.rules.text = (tokens, idx, options, env, self) => {
     const token = tokens[idx]!;
     const titleFor = (token.meta as { wikiTitleFor?: string | null } | null)?.wikiTitleFor;
@@ -139,5 +197,6 @@ export function createMarkdownRenderer(): (body: string, links: LinkResolver) =>
     return defaultText(tokens, idx, options, env, self);
   };
 
-  return (body, links) => md.render(body, { links, plain: false } satisfies RenderEnv);
+  return (body, links, attachments = NO_ATTACHMENTS) =>
+    md.render(body, { links, attachments, plain: false } satisfies RenderEnv);
 }

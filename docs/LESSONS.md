@@ -13,6 +13,20 @@ Each entry answers four questions:
 
 ## 2026-09-23
 
+### The first `attachment:<id>` resolver would mint a signed download URL for any row id, not just ones on the page being rendered
+
+1. **What happened.** Reviewing the ADR-064 build before commit: `attachmentResolverFor` in `packages/api/src/web/public.tsx` scanned a published page's body for `attachment:<id>` references and called `getAttachment` on each one with no check on which page that attachment actually belonged to.
+2. **Cause.** `getAttachment` only checks that the row exists and is `committed`, because that is the right check for the REST/MCP/CLI surfaces, where the caller is already authenticated. The public wiki has no such gate: anyone can view a published page, so anyone could edit that page's body to embed `attachment:<row-id>` for an attachment on a private or gated page and get a working signed URL to it, days before its own page was ever published, if ever.
+3. **Fix.** `attachmentResolverFor` now takes the `Page` being rendered, not just its body, and only adds an id to the resolved map when the attachment row's own `page` field equals `page.id`. An attachment resolves only from the page it was uploaded to.
+4. **Lesson.** A new reference scheme in the Markdown renderer needs its own access check at the point it is resolved for public rendering; reusing an operation written for an authenticated surface (REST/MCP/CLI) is not enough; that operation's own checks do not know a stranger is reading the result.
+
+### A test against `S3Archive` with no explicit credentials hung for 5 seconds and timed out, trying to reach AWS's metadata service
+
+1. **What happened.** Writing `attachments-blob.test.ts` for ADR-064's blob-store dispatcher: the first version of the S3 round-trip test (a real PUT and GET against a local `node:http` stub through `openAttachmentsStore`) timed out at Vitest's default 5000ms, with no assertion failure, just a hang.
+2. **Cause.** `S3Archive` falls back to `platformCredentials()` when no `credentials` option is given, the same chain a real EC2 or ECS deployment relies on. With no AWS environment variables set, that chain tries the IMDS endpoint (`169.254.169.254`), which is unreachable from the sandboxed test environment and has no fast failure, it just hangs until something times it out.
+3. **Fix.** Set `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` in the test's `beforeEach`, cleared in `afterEach`. `platformCredentials()` checks the environment before IMDS, so this short-circuits the chain with no network call, the same way a real deployment's own environment variables would.
+4. **Lesson.** Any code that falls back to a cloud platform's own credential chain will try a real network call in a test that gives it no explicit credentials, and that call can hang rather than fail fast. Set fake environment credentials before exercising such a path in a test, don't wait to discover the hang from a timeout with no other clue.
+
 ### The Azure SAS signing added for ADR-064 has no official test vector, and the first test of the S3 presign round trip failed on a subtle host mismatch
 
 1. **What happened.** Groundwork for ADR-064: `presignV4` in `packages/api/src/backup/s3.ts` (SigV4 query-string presigning) and `sasUrl`/`delegationKey` in `packages/api/src/backup/azure.ts` (user-delegation SAS). Writing the round-trip test for the S3 presign, where the test itself acts as "the client" and does a bare `fetch(presignedUrl, {method: 'PUT', ...})` against an extended `stubS3()`, the stub's independent signature re-derivation failed even though the structural checks (the five `X-Amz-*` params, their values) all passed.

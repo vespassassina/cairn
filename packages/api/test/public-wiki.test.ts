@@ -3,6 +3,8 @@ import type { Hono } from "hono";
 import { createApp } from "../src/app.js";
 import { createContext, OWNER, type AppContext } from "../src/context.js";
 import { createPublishToken, revokePublishToken } from "../src/publish-tokens.js";
+import { createAttachment, confirmAttachmentUpload } from "../src/attachments.js";
+import type { AttachmentBlobStore } from "../src/attachments-blob.js";
 
 // The webmention route's SSRF guard resolves the sender's address for real
 // (citations.test.ts covers that resolution directly); here it only needs to
@@ -518,5 +520,71 @@ describe("receiving a citation notice (ADR-040)", () => {
     const response = await webmention("https://stranger.example.com/post", `${ORIGIN}/w/${secret.id}`);
     expect(response.status).toBe(400);
     expect(await response.text()).toContain("not a page this Cairn currently publishes");
+  });
+});
+
+describe("attachments on a published page (ADR-064)", () => {
+  const SHA = "e".repeat(64);
+
+  function fakeStore(): AttachmentBlobStore {
+    const sizes = new Map<string, number>();
+    return {
+      async head(key) {
+        const bytes = sizes.get(key);
+        return bytes === undefined ? null : { bytes };
+      },
+      async uploadUrl(key) {
+        return `https://blob.example/${key}?upload`;
+      },
+      async downloadUrl(key, _expires, filename) {
+        return `https://blob.example/${key}?download&filename=${encodeURIComponent(filename)}`;
+      },
+      // Test-only: stands in for the PUT a real caller would make.
+      _land(key: string, bytes: number) {
+        sizes.set(key, bytes);
+      },
+    } as AttachmentBlobStore & { _land(key: string, bytes: number): void };
+  }
+
+  it("renders a confirmed attachment as an image with a signed URL, for a stranger with no session", async () => {
+    const store = fakeStore() as AttachmentBlobStore & { _land(key: string, bytes: number): void };
+    context.attachmentsStore = store;
+
+    const parent = await context.pages.create(context.workspaceId, { title: "Build log", body: "placeholder" }, { actor: OWNER });
+    const { row } = await createAttachment(
+      context,
+      { pageId: parent.id, filename: "wiring.png", altText: "the ESC wiring", sha256: SHA, contentType: "image/png", bytes: 5 },
+      { actor: OWNER },
+    );
+    store._land(row.blobKey, 5);
+    await confirmAttachmentUpload(context, row.id, { actor: OWNER });
+
+    const withBody = await context.pages.update(
+      context.workspaceId,
+      parent.id,
+      { title: parent.title, body: `See the diagram.\n\n![the ESC wiring](attachment:${row.id})` },
+      parent.version,
+      { actor: OWNER },
+    );
+    await publish(parent.id, withBody.version);
+
+    const page = await stranger(`/w/${parent.id}`);
+    expect(page.status).toBe(200);
+    expect(page.body).toContain(`src="https://blob.example/${row.blobKey}?download`);
+    expect(page.body).toContain("wiring.png");
+  });
+
+  it("marks a reference to a missing or unconfirmed attachment as broken, without leaking anything", async () => {
+    const parent = await context.pages.create(
+      context.workspaceId,
+      { title: "Build log", body: "See ![missing](attachment:att_does_not_exist)." },
+      { actor: OWNER },
+    );
+    await publish(parent.id, parent.version);
+
+    const page = await stranger(`/w/${parent.id}`);
+    expect(page.status).toBe(200);
+    expect(page.body).toContain("cairn-missing");
+    expect(page.body).not.toContain("blob.example");
   });
 });
