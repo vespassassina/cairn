@@ -36,6 +36,8 @@ import {
   getAttachmentOp,
   listAttachmentsOp,
   deleteAttachmentOp,
+  createPageFromTemplate,
+  getTodayNoteOp,
 } from "../operations.js";
 
 export { replaceSection } from "../operations.js";
@@ -404,6 +406,52 @@ export function registerTools(server: McpServer, context: AppContext, actor: Act
           by(change_note),
         );
         return json(pageSummary(page));
+      } catch (error) {
+        return toolError(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "create_page_from_template",
+    {
+      title: "Create a page from a template",
+      description:
+        "Create a page from a template page's body (a page under the \"Templates\" collection, or any other page id). " +
+        "{{date}} (today, YYYY-MM-DD) and {{title}} (this page's own title) are substituted into the copied body; anything else in {{...}} form is left as-is, there is no templating language beyond those two. " +
+        "parent_id defaults to the template's own parent, so the new page starts out alongside it.",
+      inputSchema: {
+        template_id: z.string().describe("The template page's id."),
+        title: z.string().min(1),
+        parent_id: z.string().optional().describe("Defaults to the template's own parent."),
+      },
+    },
+    async ({ template_id, title, parent_id }): Promise<ToolResult> => {
+      try {
+        const page = await createPageFromTemplate(
+          context,
+          { templateId: template_id, title, ...(parent_id === undefined ? {} : { parentId: parent_id }) },
+          by(undefined),
+        );
+        return json(pageSummary(page));
+      } catch (error) {
+        return toolError(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "get_today_note",
+    {
+      title: "Open or start today's daily note",
+      description:
+        "Today's daily note (UTC day), under the \"Daily notes\" collection: returns it if it already exists, otherwise creates it, from the \"Daily note\" template under \"Templates\" if one exists, empty otherwise. " +
+        "created is true the first time today, false on every later call the same day, which returns the same page rather than a duplicate.",
+      inputSchema: {},
+    },
+    async (): Promise<ToolResult> => {
+      try {
+        return json(await getTodayNoteOp(context, by(undefined)));
       } catch (error) {
         return toolError(error);
       }

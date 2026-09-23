@@ -31,6 +31,7 @@ import {
   listAttachmentsForPage,
   type AttachmentSummary,
 } from "./attachments.js";
+import { getOrCreateDailyNote, substitutePlaceholders, todayDateOnly, type DailyNoteResult } from "./templates.js";
 
 /**
  * What the MCP tools and the REST API share (ADR-013 rule 1).
@@ -451,6 +452,39 @@ export function replaceSection(body: string, heading: string, content: string): 
     .join("\n")
     .replace(/\n{3,}/g, "\n\n")
     .trimEnd();
+}
+
+// Templates and daily notes (ADR-075): both are ordinary pages under a
+// well-known root collection (`templates.ts`). New cross-surface logic, not
+// a thin wrapper on an existing one, so it lives here from the start, same
+// reasoning as every other shared write in this file (hard rule 14).
+
+/**
+ * Create a page from a template page's body, with `{{date}}` (today,
+ * date-only) and `{{title}}` (the new page's own title) substituted in.
+ * `parentId` defaults to the template's own parent, i.e. the new page starts
+ * out alongside the template it was made from, when the caller does not say
+ * otherwise.
+ */
+export async function createPageFromTemplate(
+  context: AppContext,
+  params: { templateId: string; title: string; parentId?: string | null },
+  by: WriteContext,
+): Promise<Page> {
+  const ws = context.workspaceId;
+  // Reuses the page-not-found error every other lookup already throws: a
+  // template is an ordinary page (ADR-075), so "no such template" and "no
+  // such page" are the same failure, worded the same way.
+  const template = await context.pages.get(ws, params.templateId);
+  const body = substitutePlaceholders(template.body, { date: todayDateOnly(), title: params.title });
+  const parentId = params.parentId === undefined ? template.parentId : params.parentId;
+  return context.pages.create(ws, { title: params.title, body, parentId, tags: [], sources: [] }, by);
+}
+
+/** Today's daily note, found or created (ADR-075 decision 4), as every surface reports it. */
+export async function getTodayNoteOp(context: AppContext, by: WriteContext): Promise<Record<string, unknown>> {
+  const result: DailyNoteResult = await getOrCreateDailyNote(context, by);
+  return { ...pageSummary(result.page), created: result.created };
 }
 
 // Errors.

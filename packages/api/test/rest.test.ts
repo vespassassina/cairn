@@ -986,6 +986,94 @@ describe("freshness (ADR-028)", () => {
     const secondPage = await call(`/pages/stale?limit=1&cursor=${encodeURIComponent(String(firstPage.json["cursor"]))}`);
     expect((secondPage.json["pages"] as Array<Record<string, unknown>>)[0]!["id"]).toBe(String(olderVerified.json["id"]));
   });
+
+  it("creates a page from a template, substituting {{date}} and {{title}} (ADR-075)", async () => {
+    const template = await call("/pages", {
+      method: "POST",
+      body: { title: "Meeting notes", body: "# {{title}}\n\nDate: {{date}}\n\n## Attendees\n" },
+    });
+    const templateId = String(template.json["id"]);
+
+    const created = await call("/pages/from-template", {
+      method: "POST",
+      body: { template_id: templateId, title: "Standup with Sam" },
+    });
+    expect(created.status).toBe(201);
+    expect(created.json["title"]).toBe("Standup with Sam");
+    const today = new Date().toISOString().slice(0, 10);
+    const createdRead = await call(`/pages/${String(created.json["id"])}`);
+    expect(createdRead.json["body"]).toBe(`# Standup with Sam\n\nDate: ${today}\n\n## Attendees\n`);
+    // Defaults to the template's own parent (null here), per ADR-075 decision 3.
+    expect(created.json["parent_id"]).toBe(template.json["parent_id"]);
+
+    const nested = await call("/pages/from-template", {
+      method: "POST",
+      body: { template_id: templateId, title: "Nested", parent_id: templateId },
+    });
+    expect(nested.json["parent_id"]).toBe(templateId);
+
+    const missing = await call("/pages/from-template", {
+      method: "POST",
+      body: { template_id: "pg_nope", title: "X" },
+    });
+    expect(missing.status).toBe(404);
+  });
+
+  it("finds or creates today's daily note, from the Daily note template if there is one, and never duplicates it (ADR-075)", async () => {
+    const today = new Date().toISOString().slice(0, 10);
+
+    // No "Daily note" template yet: the note is created empty.
+    const empty = await call("/pages/daily-note", { method: "POST" });
+    expect(empty.status).toBe(201);
+    expect(empty.json["created"]).toBe(true);
+    expect(empty.json["title"]).toBe(today);
+    const emptyRead = await call(`/pages/${String(empty.json["id"])}`);
+    expect(emptyRead.json["body"]).toBe("");
+
+    const secondSameDay = await call("/pages/daily-note", { method: "POST" });
+    expect(secondSameDay.status).toBe(200);
+    expect(secondSameDay.json["created"]).toBe(false);
+    expect(secondSameDay.json["id"]).toBe(empty.json["id"]);
+
+    // A fresh workspace, this time with a "Daily note" template filed under
+    // "Templates" before the first call of the day: the note is created
+    // from it, with {{date}} and {{title}} substituted.
+    const withTemplate = await createContext({ database: ":memory:", workspaceId: "ws_templated" });
+    const templatedApp = createApp({ context: withTemplate, token: TOKEN });
+    const callTemplated = async (path: string, opts: Call = {}) => {
+      const response = await templatedApp.fetch(
+        new Request(`http://localhost/api/v1${path}`, {
+          method: opts.method ?? "GET",
+          headers: {
+            "user-agent": AGENT,
+            ...(opts.body === undefined ? {} : { "content-type": "application/json" }),
+            authorization: `Bearer ${TOKEN}`,
+            ...opts.headers,
+          },
+          ...(opts.body === undefined ? {} : { body: JSON.stringify(opts.body) }),
+        }),
+      );
+      const text = await response.text();
+      return { status: response.status, json: text ? (JSON.parse(text) as Record<string, unknown>) : {} };
+    };
+
+    const templates = await callTemplated("/pages", { method: "POST", body: { title: "Templates" } });
+    await callTemplated("/pages", {
+      method: "POST",
+      body: {
+        title: "Daily note",
+        body: "# {{title}}\n\nplanned for {{date}}",
+        parent_id: templates.json["id"],
+      },
+    });
+
+    const fromTemplate = await callTemplated("/pages/daily-note", { method: "POST" });
+    expect(fromTemplate.status).toBe(201);
+    expect(fromTemplate.json["created"]).toBe(true);
+    expect(fromTemplate.json["title"]).toBe(today);
+    const fromTemplateRead = await callTemplated(`/pages/${String(fromTemplate.json["id"])}`);
+    expect(fromTemplateRead.json["body"]).toBe(`# ${today}\n\nplanned for ${today}`);
+  });
 });
 
 describe("edit times (ADR-030)", () => {

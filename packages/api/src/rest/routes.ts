@@ -25,6 +25,8 @@ import {
   getAttachmentOp,
   listAttachmentsOp,
   deleteAttachmentOp,
+  createPageFromTemplate,
+  getTodayNoteOp,
   toFieldDefs,
   undeletePage,
   vacuumPage,
@@ -124,6 +126,14 @@ const schemas = {
     change_note: CHANGE_NOTE,
   }),
   deleteBody: z.object({ change_note: CHANGE_NOTE }).default({}),
+  createPageFromTemplate: z.object({
+    template_id: z.string().min(1),
+    title: z.string().min(1),
+    // Defaults to the template's own parent (ADR-075 decision 3).
+    parent_id: z.string().min(1).optional(),
+    change_note: CHANGE_NOTE,
+  }),
+  dailyNote: z.object({ change_note: CHANGE_NOTE }).default({}),
   putPage: z.object({
     title: z.string().min(1),
     body: z.string().default(""),
@@ -479,6 +489,29 @@ export function restRoutes(context: AppContext, callerFor: CallerFor, options: R
     c.header("ETag", etag(page.version));
     c.header("Location", `/api/v1/pages/${encodeURIComponent(page.id)}`);
     return c.json(restPage(page), 201);
+  });
+
+  // Templates and daily notes (ADR-075): both are ordinary pages under a
+  // well-known collection (packages/api/src/templates.ts).
+
+  api.post("/pages/from-template", async (c) => {
+    const input = await parseBody(c, schemas.createPageFromTemplate);
+    const page = await createPageFromTemplate(
+      context,
+      { templateId: input.template_id, title: input.title, ...(input.parent_id === undefined ? {} : { parentId: input.parent_id }) },
+      by(c, input.change_note),
+    );
+    c.header("ETag", etag(page.version));
+    c.header("Location", `/api/v1/pages/${encodeURIComponent(page.id)}`);
+    return c.json(restPage(page), 201);
+  });
+
+  // POST, not GET: the first call of the day writes today's note into
+  // existence (ADR-075 decision 4).
+  api.post("/pages/daily-note", async (c) => {
+    const input = await parseBody(c, schemas.dailyNote);
+    const result = await getTodayNoteOp(context, by(c, input.change_note));
+    return c.json(result, result["created"] ? 201 : 200);
   });
 
   api.get("/pages/:id", async (c) => {

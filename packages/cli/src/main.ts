@@ -112,6 +112,13 @@ Read
 
 Write (every write is a revision the owner can review and undo)
   cairn create --title T [--parent ID] [--tag X]...     body from --text, --file or stdin
+  cairn new --template ID --title T [--parent ID]       create a page from a template page's
+                                          body, {{date}} and {{title}} substituted in; parent
+                                          defaults to the template's own parent
+  cairn today                             open today's daily note, creating it from the
+                                          "Daily note" template under "Templates" if there is
+                                          one (empty otherwise); the same note every later
+                                          call the same day, never a duplicate
   cairn append <page-id> [--version V]                  add to the end; safe without a version
   cairn replace-section <page-id> --section H --version V
   cairn write <page-id> --version V                     replace the whole body
@@ -226,6 +233,7 @@ const OPTIONS = {
   cursor: { type: "string" },
   title: { type: "string" },
   parent: { type: "string" },
+  template: { type: "string" },
   tag: { type: "string", multiple: true },
   source: { type: "string", multiple: true },
   verified: { type: "boolean" },
@@ -1172,6 +1180,28 @@ export async function run(argv: string[], io: Io): Promise<number> {
           },
         });
         out(json, () => written(json));
+        return 0;
+      }
+
+      case "new": {
+        warnIfNoNote();
+        const { json } = await client.request("POST", "/pages/from-template", {
+          body: {
+            template_id: need(flags.template, "--template ID, the page to copy"),
+            title: need(flags.title, "--title"),
+            ...(flags.parent ? { parent_id: flags.parent } : {}),
+            ...(note ? { change_note: note } : {}),
+          },
+        });
+        out(json, () => written(json));
+        return 0;
+      }
+
+      case "today": {
+        const { json } = await client.request("POST", "/pages/daily-note", {
+          body: note ? { change_note: note } : {},
+        });
+        out(json, () => `${json?.["created"] ? "ok created" : "ok"} today's note ${String(json?.["id"])} version ${String(json?.["version"])}\n`);
         return 0;
       }
 

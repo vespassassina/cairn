@@ -119,7 +119,9 @@ describe("transport and auth", () => {
       [
         "create_table",
         "create_page",
+        "create_page_from_template",
         "delete_page",
+        "get_today_note",
         "get_backlinks",
         "get_changes",
         "get_history",
@@ -384,6 +386,42 @@ describe("page tools", () => {
       offset: first.data["next_offset"],
     });
     expect((second.data["body"] as string).length).toBeGreaterThan(0);
+  });
+});
+
+describe("templates and daily notes (ADR-075)", () => {
+  it("creates a page from a template with create_page_from_template, substituting {{date}} and {{title}}", async () => {
+    const template = await callTool("create_page", {
+      title: "Meeting notes",
+      body: "# {{title}}\n\nDate: {{date}}\n\n## Attendees\n",
+    });
+    const templateId = template.data["id"] as string;
+
+    const created = await callTool("create_page_from_template", {
+      template_id: templateId,
+      title: "Standup with Sam",
+    });
+    expect(created.isError).toBe(false);
+    expect(created.data["title"]).toBe("Standup with Sam");
+
+    const today = new Date().toISOString().slice(0, 10);
+    const read = await callTool("get_page", { page_id: created.data["id"] as string });
+    expect(read.data["body"]).toBe(`# Standup with Sam\n\nDate: ${today}\n\n## Attendees\n`);
+
+    const missing = await callTool("create_page_from_template", { template_id: "pg_nope", title: "X" });
+    expect(missing.isError).toBe(true);
+  });
+
+  it("finds or creates today's daily note with get_today_note, never duplicating it the same day", async () => {
+    const first = await callTool("get_today_note");
+    expect(first.isError).toBe(false);
+    expect(first.data["created"]).toBe(true);
+    const today = new Date().toISOString().slice(0, 10);
+    expect(first.data["title"]).toBe(today);
+
+    const second = await callTool("get_today_note");
+    expect(second.data["created"]).toBe(false);
+    expect(second.data["id"]).toBe(first.data["id"]);
   });
 });
 

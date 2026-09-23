@@ -13,6 +13,13 @@ Each entry answers four questions:
 
 ## 2026-09-23
 
+### `createPageFromTemplate`'s optional `parentId` failed `pnpm build` under `exactOptionalPropertyTypes`
+
+1. **What happened.** Building ADR-075: `pnpm build` failed in `@cairn/api` with `TS2379` at both call sites of `createPageFromTemplate` (`packages/api/src/mcp/tools.ts` and `packages/api/src/rest/routes.ts`), each passing `{ ..., parentId: parent_id }` where `parent_id`/`input.parent_id` is `string | undefined`, against `createPageFromTemplate`'s own `{ ..., parentId?: string | null }`.
+2. **Cause.** This project's `tsconfig` sets `exactOptionalPropertyTypes: true`, so an optional property's declared type governs only when the key is present at all; an explicit `parentId: undefined` is a different thing from the key being absent, and `undefined` is not assignable to `string | null` even though the property is optional. Every neighboring call in `routes.ts` already avoids this with a conditional spread (`...(input.parent_id === undefined ? {} : { parentId: input.parent_id })`), a pattern this new code did not follow at first.
+3. **Fix.** Both call sites now use the same conditional-spread shape as the rest of `routes.ts`, so the key is omitted entirely when the caller did not send one, rather than present and set to `undefined`. `pnpm build` passes clean.
+4. **Lesson.** Under `exactOptionalPropertyTypes`, never pass `field: maybeUndefined` for an optional field typed without `| undefined`; spread it in conditionally instead. Grep for the existing `... === undefined ? {} : { ... }` idiom in the surrounding file before writing a new optional-field pass-through, this codebase already has the convention.
+
 ### ADR-068 names `@jsquash/gif`, but no such package exists on npm
 
 1. **What happened.** Building ADR-064 decision 6's thumbnails, per ADR-068's choice of jSquash: `@jsquash/png`, `@jsquash/jpeg` and `@jsquash/webp` installed and worked as described, but `pnpm add @jsquash/gif` failed with a 404 from the npm registry.

@@ -87,6 +87,29 @@ describe("cairn", () => {
     expect(stdout).toContain("synonym");
   });
 
+  it("starts a page from a template with cairn new, and opens today's note with cairn today (ADR-075)", async () => {
+    stdin = "# {{title}}\n\nDate: {{date}}\n\n## Attendees\n";
+    expect(await cairn("create", "--title", "Meeting notes", "--note", "template")).toBe(0);
+    stdin = null;
+    const templateId = /^ok (\S+) version/.exec(stdout.trim())![1]!;
+
+    expect(await cairn("new", "--template", templateId, "--title", "Standup", "--note", "from template")).toBe(0);
+    expect(stdout).toMatch(/^ok pg_\S+ version \S+/);
+    const newId = /^ok (\S+) version/.exec(stdout.trim())![1]!;
+
+    expect(await cairn("read", newId)).toBe(0);
+    const today = new Date().toISOString().slice(0, 10);
+    expect(stdout).toContain(`# Standup\n\nDate: ${today}\n\n## Attendees`);
+
+    expect(await cairn("today")).toBe(0);
+    expect(stdout).toMatch(/^ok created today's note pg_\S+ version \S+/);
+    const noteId = /today's note (\S+) version/.exec(stdout.trim())![1]!;
+
+    expect(await cairn("today")).toBe(0);
+    expect(stdout).toMatch(/^ok today's note pg_\S+ version \S+/);
+    expect(stdout).toContain(`today's note ${noteId} version`);
+  });
+
   it("shows a page once, with a count of the passages it did not print (ADR-057, criteria 8, 9)", async () => {
     stdin = [
       "## First",

@@ -49,6 +49,11 @@ once only if it would have mattered. If it says to sign in, ask the user to run
 7. Link pages with `[[page-id]]` in the body. A link to another Cairn's
    published page, an ordinary Markdown link ending `/w/<page-id>`, joins the
    link graph the same way.
+8. `cairn new --template <page-id> --title T [--parent ID]` starts a page from
+   a template page's body, with `{{date}}` and `{{title}}` filled in.
+   `cairn today` opens today's daily note, creating it (from the "Daily note"
+   template under "Templates" if there is one) the first time, and returning
+   the same page on every later call the same day.
 
 ```
 cairn create --title "Title" --tag topic --note "why" --source <url> --text "Markdown body"
