@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { createApp, createContext, type AppContext } from "@cairn/api";
+import { createApp, createContext, OWNER, setApproval, type AppContext } from "@cairn/api";
+import { eventually } from "@cairn/core/testing";
 import { run, type Io } from "../src/main.js";
 
 /**
@@ -92,5 +93,30 @@ describe("approve, disapprove, unmark", () => {
     const json = JSON.parse(stdout) as Record<string, unknown>;
     expect(json["approval"]).toBe("approved");
     expect(json["approval_version"]).toBe(page.version);
+  });
+});
+
+describe("search and the mark", () => {
+  it("orders approved first, hides disapproved unless --include-disapproved, and shows the mark", async () => {
+    const body = "Zinc carnosine supports the gut lining after antibiotics.";
+    const neutral = await context.pages.create(context.workspaceId, { title: "B", body, tags: [] }, { actor: OWNER }, "pg_n");
+    const approved = await context.pages.create(context.workspaceId, { title: "A", body, tags: [] }, { actor: OWNER }, "pg_a");
+    const bad = await context.pages.create(context.workspaceId, { title: "C", body, tags: [] }, { actor: OWNER }, "pg_d");
+    await setApproval(context, approved.id, "approved", approved.version, { actor: OWNER });
+    await setApproval(context, bad.id, "disapproved", bad.version, { actor: OWNER });
+
+    await eventually(async () => {
+      expect(await cairn({}, "search", "zinc", "carnosine", "gut", "--json")).toBe(0);
+      const json = JSON.parse(stdout) as { pages: { page_id: string; approval: string }[] };
+      expect(json.pages.map((p) => p.page_id)).toEqual([approved.id, neutral.id]);
+      expect(json.pages[0]?.approval).toBe("approved");
+    });
+
+    expect(await cairn({}, "search", "zinc", "carnosine", "gut")).toBe(0);
+    expect(stdout).toContain(`${approved.id}  [approved]`);
+    expect(stdout).not.toContain(bad.id);
+
+    expect(await cairn({}, "search", "zinc", "carnosine", "gut", "--include-disapproved")).toBe(0);
+    expect(stdout).toContain(`${bad.id}  [disapproved]`);
   });
 });

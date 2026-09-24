@@ -42,6 +42,8 @@ function cliCommands(src: string): Set<string> {
   return new Set([...src.matchAll(/^\s*case "([a-z-]+)":/gm)].map((m) => m[1]!));
 }
 
+const consoleSrc = readFileSync(fileURLToPath(new URL("../src/web/console.tsx", import.meta.url)), "utf8");
+
 const tools = mcpTools(mcpToolsSrc);
 const routes = restRoutes(restRoutesSrc);
 const commands = cliCommands(cliMainSrc);
@@ -154,5 +156,12 @@ describe("cross-surface parity (ADR-058)", () => {
     missingCommand.commands.delete("delete");
     const del = CAPABILITIES.find((c) => c.name === "delete_page")!;
     expect(() => checkCapability(del, missingCommand)).toThrow('no CLI command "delete"');
+  });
+});
+
+describe("the console searches the way the other surfaces do (ADR-078 criterion 5)", () => {
+  it("goes through searchPages and never the index itself, so the approval ranking and filter apply", () => {
+    expect(consoleSrc).toMatch(/searchPages\(context,/);
+    expect(consoleSrc).not.toMatch(/context\.search\.search\(/);
   });
 });

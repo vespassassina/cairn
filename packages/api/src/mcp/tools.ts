@@ -151,14 +151,21 @@ export function registerTools(server: McpServer, context: AppContext, actor: Act
         query: z.string().min(1).describe("Words to search for."),
         limit: z.number().int().min(1).max(50).optional().describe("Pages to return, not passages."),
         cursor: z.string().optional().describe("From a previous truncated result."),
+        include_disapproved: z
+          .boolean()
+          .optional()
+          .describe(
+            "Also return pages the owner marked disapproved, each marked as such. Off by default: they are wrong by the owner's judgement, never something to build on.",
+          ),
       },
     },
-    async ({ query, limit, cursor }): Promise<ToolResult> => {
+    async ({ query, limit, cursor, include_disapproved }): Promise<ToolResult> => {
       try {
         const result = await searchPages(context, {
           query,
           limit: limit ?? 10,
           cursor: cursor ?? null,
+          includeDisapproved: include_disapproved ?? false,
         });
         // The budget is spent on distinct pages first, then on a page's
         // further passages, so truncation drops a page's depth before it
@@ -172,6 +179,9 @@ export function registerTools(server: McpServer, context: AppContext, actor: Act
           pages: budgeted.pages.map((page) => ({
             page_id: page.pageId,
             score: Number(page.score.toFixed(4)),
+            // The owner's judgement (ADR-078): approved is ranked higher and
+            // worth preferring; disapproved appears only when asked for.
+            approval: page.approval,
             passages: page.passages.map((passage) => ({
               heading_path: passage.headingPath,
               snippet: passage.snippet,

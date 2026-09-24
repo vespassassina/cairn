@@ -412,10 +412,12 @@ export function restRoutes(context: AppContext, callerFor: CallerFor, options: R
   api.get("/search", async (c) => {
     const query = c.req.query("q")?.trim();
     if (!query) throw new BadRequest("Pass the words to search for as q.", [{ field: "q", message: "required" }]);
+    const includeDisapproved = ["1", "true"].includes(c.req.query("include_disapproved") ?? "");
     const result = await searchPages(context, {
       query,
       limit: limitParam(c, 10),
       cursor: c.req.query("cursor") ?? null,
+      includeDisapproved,
     });
     const verified = await verifiedTimes(context, result.pages.map((page) => page.pageId));
     return c.json({
@@ -426,6 +428,7 @@ export function restRoutes(context: AppContext, callerFor: CallerFor, options: R
       pages: result.pages.map((page) => ({
         page_id: page.pageId,
         score: Number(page.score.toFixed(4)),
+        approval: page.approval,
         passages: page.passages.map((passage) => ({
           heading_path: passage.headingPath,
           snippet: passage.snippet,

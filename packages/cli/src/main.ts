@@ -98,7 +98,8 @@ const HELP = `cairn ${VERSION}: a wiki and tables your agents can write to, with
 
 Read
   cairn overview                          what Cairn holds: collections, tables, tags
-  cairn search <words...>                 search by keyword, and by meaning for English text
+  cairn search <words...>                 search by keyword, and by meaning for English text;
+                                          --include-disapproved shows pages the owner marked wrong
   cairn read <page-id>                    a page as Markdown, with its version, and its children
   cairn ls [page-id]                      that page's immediate children, one per line; omit
                                           page-id for the top-level pages (also cairn collections)
@@ -283,6 +284,7 @@ const OPTIONS = {
   depth: { type: "string" },
   brief: { type: "boolean" },
   yes: { type: "boolean" },
+  "include-disapproved": { type: "boolean" },
 } as const;
 
 /** Commands that choose their own servers, so never probe for one. */
@@ -1032,7 +1034,12 @@ export async function run(argv: string[], io: Io): Promise<number> {
         const words = need(args.join(" ").trim() || undefined, "search words");
         const { json } = await client.request(
           "GET",
-          `/search${query({ q: words, limit: flags.limit, cursor: flags.cursor })}`,
+          `/search${query({
+            q: words,
+            limit: flags.limit,
+            cursor: flags.cursor,
+            ...(flags["include-disapproved"] ? { include_disapproved: "1" } : {}),
+          })}`,
         );
         out(json, () => {
           const pages = list(json?.["pages"]);
@@ -1044,7 +1051,8 @@ export async function run(argv: string[], io: Io): Promise<number> {
               .join("\n");
             const more = Number(page["more_passages"] ?? 0);
             const moreLine = more > 0 ? `\n    (${more} more passage${more === 1 ? "" : "s"} on this page)` : "";
-            return `${String(page["page_id"])}\n${shown}${moreLine}`;
+            const mark = page["approval"] === "neutral" || page["approval"] === undefined ? "" : `  [${String(page["approval"])}]`;
+            return `${String(page["page_id"])}${mark}\n${shown}${moreLine}`;
           });
           const more = json?.["cursor"] ? `\nmore: --cursor ${String(json["cursor"])}` : "";
           return `${lines.join("\n")}${more}\n`;

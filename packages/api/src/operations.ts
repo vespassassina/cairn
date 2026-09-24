@@ -172,8 +172,10 @@ export interface PagePassage {
 
 export interface PageHit {
   pageId: string;
-  /** The best passage's score, since that is what ranked the page. */
+  /** The best passage's score, since that is what ranked the page, times the approval boost when approved. */
   score: number;
+  /** The owner's judgement of the page (ADR-078). Neutral until a person marks it. */
+  approval: Approval;
   passages: PagePassage[];
   /** Passages that matched but were not attached, beyond the cap of 3. */
   morePassages: number;
@@ -209,6 +211,7 @@ export function groupIntoPages(hits: readonly SearchHit[]): PageHit[] {
     return {
       pageId,
       score: chunks[0]!.score,
+      approval: "neutral",
       passages: chunks.slice(0, MAX_PASSAGES_PER_PAGE).map((chunk) => ({
         headingPath: chunk.headingPath,
         snippet: chunk.snippet,
@@ -288,13 +291,59 @@ async function resolveSynonyms(context: AppContext, query: string): Promise<Reco
   return expansion;
 }
 
+/**
+ * How much an approved page's score is multiplied by (ADR-078 decision 4).
+ * A starting guess, to change once from evidence. `pnpm eval` measures the
+ * raw index underneath this layer (ADR-057 consequence 3), so it cannot see
+ * the boost; what it guards is that the layer above did not lose pages.
+ * Recorded on 2026-09-24, before and after: keyword 0.88, hybrid 0.97.
+ */
+export const APPROVED_BOOST = 1.25;
+
+/**
+ * The mark applied to grouped hits: disapproved pages dropped unless asked
+ * for, approved ones boosted, then re-ranked by score. A page deleted since
+ * it was indexed keeps its hit and counts as neutral. One point read per
+ * distinct page, cached across the rounds of one search.
+ */
+async function rankByApproval(
+  context: AppContext,
+  pages: PageHit[],
+  includeDisapproved: boolean,
+  cache: Map<string, Approval>,
+): Promise<PageHit[]> {
+  for (const hit of pages) {
+    if (!cache.has(hit.pageId)) {
+      const page = await context.store.getPage(context.workspaceId, hit.pageId);
+      cache.set(hit.pageId, page?.approval ?? "neutral");
+    }
+  }
+  const ranked = pages
+    .map((hit) => {
+      const approval = cache.get(hit.pageId) ?? "neutral";
+      return { ...hit, approval, score: approval === "approved" ? hit.score * APPROVED_BOOST : hit.score };
+    })
+    .filter((hit) => includeDisapproved || hit.approval !== "disapproved");
+  // Stable, so equal scores keep the index's own order.
+  return ranked.map((hit, i) => ({ hit, i })).sort((a, b) => b.hit.score - a.hit.score || a.i - b.i).map((x) => x.hit);
+}
+
 export async function searchPages(
   context: AppContext,
-  options: { query: string; limit?: number; cursor?: string | null; mode?: SearchMode },
+  options: {
+    query: string;
+    limit?: number;
+    cursor?: string | null;
+    mode?: SearchMode;
+    /** Return disapproved pages too, marked. Off by default on every surface (ADR-078). */
+    includeDisapproved?: boolean;
+  },
 ): Promise<PagedSearchResult> {
   const limit = options.limit ?? 10;
   const skip = options.cursor ? decodePageCursor(options.cursor) : 0;
   const needed = skip + limit;
+  const includeDisapproved = options.includeDisapproved ?? false;
+  const approvals = new Map<string, Approval>();
 
   let hits: SearchHit[] = [];
   let pages = groupIntoPages(hits);
@@ -313,7 +362,7 @@ export async function searchPages(
     });
     mode = result.mode;
     hits = [...hits, ...result.hits];
-    pages = groupIntoPages(hits);
+    pages = await rankByApproval(context, groupIntoPages(hits), includeDisapproved, approvals);
     round += 1;
     if (!result.truncated) break;
     chunkCursor = result.cursor;
