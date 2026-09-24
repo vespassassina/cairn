@@ -142,6 +142,13 @@ export interface PageInput {
   approvalAt?: string | null;
   approvalVersion?: Version | null;
   approvalPrevious?: Exclude<Approval, "neutral"> | null;
+  /**
+   * True: `approvalVersion` becomes the version this write produces. For a
+   * copy from another Cairn (sync, import), whose approved version is a
+   * revision this server never had: the content being written is the marked
+   * content, so the diff since approval starts here (ADR-078 decision 7).
+   */
+  approvalOfThisWrite?: boolean;
 }
 
 export type EdgeType = "link" | "mention" | "relation" | "parent" | "tag" | "cairn_link";

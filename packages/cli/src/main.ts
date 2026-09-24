@@ -1978,6 +1978,11 @@ export async function run(argv: string[], io: Io): Promise<number> {
             tags: page.tags,
             sources: page.sources ?? [],
             verified_at: page.verified_at ?? null,
+            // An export that names the mark sets it (ADR-078 decision 7).
+            // One from before the mark existed leaves it alone.
+            ...(page.approval === undefined
+              ? {}
+              : { approval: page.approval, approval_at: page.approval_at ?? null, approval_previous: page.approval_previous ?? null }),
           };
           const path = `/pages/${encodeURIComponent(page.id)}`;
           const current = await maybe(client, path);
@@ -1993,7 +1998,11 @@ export async function run(argv: string[], io: Io): Promise<number> {
             (now["parent_id"] ?? null) === desired.parent_id &&
             stable(now["tags"]) === stable(desired.tags) &&
             stable(now["sources"] ?? []) === stable(desired.sources) &&
-            (now["verified_at"] ?? null) === desired.verified_at;
+            (now["verified_at"] ?? null) === desired.verified_at &&
+            (desired.approval === undefined ||
+              (now["approval"] === desired.approval &&
+                (now["approval_at"] ?? null) === desired.approval_at &&
+                (now["approval_previous"] ?? null) === desired.approval_previous));
           if (same) {
             pageTally.unchanged += 1;
             continue;

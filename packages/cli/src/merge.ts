@@ -181,10 +181,35 @@ function mergeVerified(base: unknown, a: unknown, b: unknown): unknown {
   return time(a) >= time(b) ? a : b;
 }
 
+/** The approval mark and its companions as one value (ADR-078), so a side that changed any of them wins whole. */
+function approvalOf(content: Json): Json {
+  return {
+    approval: content["approval"] ?? "neutral",
+    approval_at: content["approval_at"] ?? null,
+    approval_previous: content["approval_previous"] ?? null,
+  };
+}
+
+/** The mark one side set, or the later one when both sides set one. */
+function mergeApproval(base: Json, a: Json, b: Json): Json {
+  const picked = mergeValue(approvalOf(base), approvalOf(a), approvalOf(b), "a");
+  if (picked.conflicts === 0) return picked.value as Json;
+  const time = (content: Json) => (typeof content["approval_at"] === "string" ? Date.parse(content["approval_at"]) : Number.NEGATIVE_INFINITY);
+  return time(a) >= time(b) ? approvalOf(a) : approvalOf(b);
+}
+
+/** The mark in the shape sync hashes: nothing when neutral with no trace. */
+function approvalFields(mark: Json): Json {
+  if (mark["approval"] === "neutral") {
+    return typeof mark["approval_previous"] === "string" ? { approval_previous: mark["approval_previous"] } : {};
+  }
+  return { approval: mark["approval"], ...(typeof mark["approval_at"] === "string" ? { approval_at: mark["approval_at"] } : {}) };
+}
+
 /**
  * A page's content in the shape sync hashes: title, parent_id, tags, body,
- * and sources and verified_at when set. Null when the body is too large to
- * merge.
+ * and sources, verified_at and the approval mark when set. Null when the
+ * body is too large to merge.
  */
 export function mergePage(base: Json, a: Json, b: Json, prefer: Prefer): Merged<Json> | null {
   const body = mergeText(String(base["body"] ?? ""), String(a["body"] ?? ""), String(b["body"] ?? ""), prefer);
@@ -202,6 +227,7 @@ export function mergePage(base: Json, a: Json, b: Json, prefer: Prefer): Merged<
       body: body.value,
       ...(sources.length > 0 ? { sources } : {}),
       ...(typeof verified === "string" && verified !== "" ? { verified_at: verified } : {}),
+      ...approvalFields(mergeApproval(base, a, b)),
     },
     conflicts: body.conflicts + title.conflicts + parent.conflicts,
   };

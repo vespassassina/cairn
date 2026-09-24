@@ -1,5 +1,5 @@
 import { NotFoundError, PageNotDeletedError, VersionConflictError } from "../errors.js";
-import { newPageId } from "../ids.js";
+import { newPageId, newVersion } from "../ids.js";
 import { diffLines, type Diff } from "../history/diff.js";
 import { readHistory, sweepOrphans, writeWithRevision } from "../history/revisions.js";
 import { chunkPage, DEFAULT_CHUNK_OPTIONS, type ChunkOptions } from "../indexer/chunk.js";
@@ -356,7 +356,10 @@ export class PageService {
     const at = new Date().toISOString();
     // A new page has nothing to keep; the check against it comes in putPage.
     const current = expectedVersion === null ? null : await this.store.getPage(workspaceId, id);
-    const { verified, verifiedAt, editedAt, ...rest } = input;
+    const { verified, verifiedAt, editedAt, approvalOfThisWrite, ...rest } = input;
+    // Minted here rather than in writeWithRevision when the mark must point
+    // at this very write (a copy of a marked page, ADR-078 decision 7).
+    const version = newVersion();
     // Publication is kept unless this write says otherwise, so an ordinary
     // edit can neither publish a page nor take it down (ADR-032).
     const published = input.public ?? current?.public ?? false;
@@ -375,8 +378,11 @@ export class PageService {
       // snapshot records it as it stands after the write (ADR-078).
       approval: carried?.approval ?? input.approval ?? current?.approval ?? "neutral",
       approvalAt: input.approvalAt !== undefined ? input.approvalAt : (current?.approvalAt ?? null),
-      approvalVersion:
-        input.approvalVersion !== undefined ? input.approvalVersion : (current?.approvalVersion ?? null),
+      approvalVersion: approvalOfThisWrite
+        ? version
+        : input.approvalVersion !== undefined
+          ? input.approvalVersion
+          : (current?.approvalVersion ?? null),
       approvalPrevious:
         carried?.approvalPrevious !== undefined
           ? carried.approvalPrevious
@@ -404,6 +410,7 @@ export class PageService {
         expectedVersion,
         snapshot: snapshotOf(input),
         at,
+        version,
         ...(parentVersion !== undefined ? { parentVersion } : {}),
       },
       context,

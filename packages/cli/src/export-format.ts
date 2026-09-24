@@ -44,6 +44,14 @@ export interface ExportPage {
   sources?: string[];
   /** When its facts were last confirmed (ADR-028). Absent or null when never. */
   verified_at?: string | null;
+  /**
+   * The owner's mark (ADR-078). Absent when neutral. `approval_version` is
+   * not carried: it names a revision of the exporting server, and an import
+   * points the mark at the page it writes.
+   */
+  approval?: "approved" | "neutral" | "disapproved";
+  approval_at?: string | null;
+  approval_previous?: "approved" | "disapproved" | null;
   updated_at?: string;
   updated_by?: { kind: string; name: string };
   version?: string;
@@ -138,6 +146,12 @@ export function pageFile(page: ExportPage): string {
   ];
   if (page.sources && page.sources.length > 0) header.push(["sources", page.sources]);
   if (page.verified_at) header.push(["verified", page.verified_at]);
+  if (page.approval && page.approval !== "neutral") {
+    header.push(["approval", page.approval]);
+    if (page.approval_at) header.push(["approval_at", page.approval_at]);
+  } else if (page.approval_previous) {
+    header.push(["approval_previous", page.approval_previous]);
+  }
   if (page.updated_at) header.push(["updated", page.updated_at]);
   if (page.updated_by) header.push(["updated_by", `${page.updated_by.kind}: ${page.updated_by.name}`]);
   if (page.version) header.push(["version", page.version]);
@@ -173,6 +187,15 @@ export function parsePageFile(text: string, file: string): ExportPage {
   const tags = fields.get("tags");
   const sources = fields.get("sources");
   const verified = fields.get("verified");
+  const approval = fields.get("approval");
+  const approvalAt = fields.get("approval_at");
+  const approvalPrevious = fields.get("approval_previous");
+  if (approval !== undefined && approval !== "approved" && approval !== "neutral" && approval !== "disapproved") {
+    throw new Error(`${file}: approval is "${String(approval)}"; it must be approved, neutral or disapproved`);
+  }
+  if (approvalPrevious !== undefined && approvalPrevious !== "approved" && approvalPrevious !== "disapproved") {
+    throw new Error(`${file}: approval_previous is "${String(approvalPrevious)}"; it must be approved or disapproved`);
+  }
   const body = match[2]!;
 
   return {
@@ -182,6 +205,11 @@ export function parsePageFile(text: string, file: string): ExportPage {
     tags: Array.isArray(tags) ? tags.map(String) : [],
     ...(Array.isArray(sources) && sources.length > 0 ? { sources: sources.map(String) } : {}),
     ...(typeof verified === "string" && verified !== "" ? { verified_at: verified } : {}),
+    ...(approval === "approved" || approval === "disapproved"
+      ? { approval, approval_at: typeof approvalAt === "string" && approvalAt !== "" ? approvalAt : null }
+      : approvalPrevious !== undefined
+        ? { approval: "neutral" as const, approval_previous: approvalPrevious }
+        : {}),
     // pageFile ends every body with one newline; give back what was stored.
     body: body.endsWith("\n") ? body.slice(0, -1) : body,
   };

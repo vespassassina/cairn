@@ -157,6 +157,13 @@ const schemas = {
     // as checked if it has sources.
     verified_at: VERIFIED_AT,
     edited_at: EDITED_AT,
+    // The approval mark as another Cairn holds it (ADR-078 decision 7). Left
+    // out, the page keeps its mark, or loses it by the size of the edit as
+    // any write does. `approval_version` is not taken: a version from
+    // another server means nothing here, so the mark points at this write.
+    approval: z.enum(["approved", "neutral", "disapproved"]).optional(),
+    approval_at: z.string().nullable().optional(),
+    approval_previous: z.enum(["approved", "disapproved"]).nullable().optional(),
     change_note: CHANGE_NOTE,
   }),
   createTable: z.object({
@@ -595,6 +602,16 @@ export function restRoutes(context: AppContext, callerFor: CallerFor, options: R
         ...(input.sources === undefined ? {} : { sources: input.sources }),
         ...(input.verified_at === undefined ? {} : { verifiedAt: input.verified_at }),
         ...(input.edited_at === undefined ? {} : { editedAt: input.edited_at }),
+        ...(input.approval === undefined
+          ? {}
+          : {
+              approval: input.approval,
+              approvalAt: input.approval === "neutral" ? null : (input.approval_at ?? null),
+              approvalPrevious: input.approval === "neutral" ? (input.approval_previous ?? null) : null,
+              // A mark points at the copy written here; a reset keeps the
+              // baseline this server already had, if any.
+              ...(input.approval === "neutral" ? {} : { approvalOfThisWrite: true }),
+            }),
       },
       version,
       by(c, input.change_note),

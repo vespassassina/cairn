@@ -123,11 +123,27 @@ function withVerified(verifiedAt: unknown): { verified_at?: string } {
 }
 
 /**
+ * The approval mark (ADR-078 decision 7), on the same terms: only when there
+ * is one, or the trace of one. Not `approval_version`: a version is one
+ * server's, and the server writing the copy points the mark at that copy.
+ */
+function withApproval(page: Json): { approval?: string; approval_at?: string; approval_previous?: string } {
+  const approval = page["approval"];
+  const previous = page["approval_previous"];
+  if (typeof approval !== "string" || approval === "neutral") {
+    return typeof previous === "string" && previous !== "" ? { approval_previous: previous } : {};
+  }
+  const at = page["approval_at"];
+  return { approval, ...(typeof at === "string" && at !== "" ? { approval_at: at } : {}) };
+}
+
+/**
  * A page's content in the shape sync compares, from a page or a revision of one.
  *
  * Only these fields travel. `public` is deliberately not one of them: being
  * published belongs to a server, not to the content, so a sync can never
- * publish anything anywhere (ADR-032 decision 6).
+ * publish anything anywhere (ADR-032 decision 6). The approval mark does
+ * travel: it is knowledge about the content (ADR-078 decision 7).
  */
 function pageContent(page: Json): Json {
   return {
@@ -137,6 +153,7 @@ function pageContent(page: Json): Json {
     body: page["body"],
     ...withSources(page["sources"]),
     ...withVerified(page["verified_at"]),
+    ...withApproval(page),
   };
 }
 
@@ -537,9 +554,19 @@ export async function apply(
         }
         await write(action, () =>
           client.request("PUT", `/pages/${encodeURIComponent(source.id)}`, {
-            // Always send the list and the time, empty too, so a removal
-            // reaches the other side.
-            body: { sources: [], verified_at: null, ...source.content, parent_id: parent, edited_at: source.editedAt, change_note: note(action) },
+            // Always send the list, the time and the mark, empty too, so a
+            // removal reaches the other side.
+            body: {
+              sources: [],
+              verified_at: null,
+              approval: "neutral",
+              approval_at: null,
+              approval_previous: null,
+              ...source.content,
+              parent_id: parent,
+              edited_at: source.editedAt,
+              change_note: note(action),
+            },
             ifMatch,
           }),
         );

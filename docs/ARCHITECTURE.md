@@ -89,7 +89,7 @@ With several Cairns registered by name in `instances.json` (ADR-029), the CLI se
 
 Three kinds of record, and the difference between them is the most important thing in this file.
 
-1. **Source of truth: pages and rows.** Written with optimistic concurrency. Never derived from anything. Each carries its sources, the URLs or citations its facts came from, as part of its content: they are in its revisions, its export and its sync hash (ADR-027). A page also carries `verified_at`, when its facts were last confirmed, in the same places (ADR-028).
+1. **Source of truth: pages and rows.** Written with optimistic concurrency. Never derived from anything. Each carries its sources, the URLs or citations its facts came from, as part of its content: they are in its revisions, its export and its sync hash (ADR-027). A page also carries `verified_at`, when its facts were last confirmed, in the same places (ADR-028), and the owner's approval mark (ADR-078), which sync and export carry too, pointing it at the copy's own version.
 2. **History: revisions.** One immutable snapshot per write of a page or row, linked into a chain by the version each one replaced. Also source of truth: history cannot be rebuilt from anything else (ADR-008).
 3. **Derived: edges and chunks.** Computed from pages, and edges also from rows, by pure functions, written with an idempotent replace per record, and rebuildable from scratch at any time (ADR-005).
 

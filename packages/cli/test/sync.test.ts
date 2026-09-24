@@ -320,6 +320,59 @@ describe("cairn sync between two servers", () => {
     expect(stdout).toContain(`to ${B_URL}: nothing to change`);
   });
 
+  it("copies the approval mark made on one side, and its removal (ADR-078)", async () => {
+    await seed(a);
+    await sync();
+    const page = await a.pages.get(a.workspaceId, "pg_bpc-157");
+    const marked = await a.pages.update(
+      a.workspaceId,
+      page.id,
+      { ...page, approval: "approved", approvalAt: "2026-09-24T10:00:00.000Z", approvalVersion: page.version },
+      page.version,
+      BY,
+    );
+    expect(await sync()).toBe(0);
+    const onB = await b.pages.get(b.workspaceId, "pg_bpc-157");
+    expect(onB.approval).toBe("approved");
+    expect(onB.approvalAt).toBe("2026-09-24T10:00:00.000Z");
+    // The approved version on A means nothing on B: the mark points at the
+    // copy B just wrote, so the diff since approval works there too.
+    expect(onB.approvalVersion).toBe(onB.version);
+    expect(onB.approvalVersion).not.toBe(marked.approvalVersion);
+    expect((await b.pages.revision(b.workspaceId, onB.id, onB.approvalVersion!)).snapshot.body).toBe(page.body);
+    expect((await b.pages.get(b.workspaceId, "pg_cat_healing")).approval).toBe("neutral");
+    expect(await sync()).toBe(0);
+    expect(stdout).toContain(`to ${A_URL}: nothing to change`);
+    expect(stdout).toContain(`to ${B_URL}: nothing to change`);
+
+    // A large edit on A resets the mark; the copy on B keeps the trace.
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    const edited = await a.pages.update(
+      a.workspaceId,
+      page.id,
+      { title: marked.title, parentId: marked.parentId, tags: marked.tags, body: "Rewritten from scratch, at length, so the mark cannot stay." },
+      marked.version,
+      BY,
+    );
+    expect(edited.approval).toBe("neutral");
+    expect(await sync()).toBe(0);
+    const reset = await b.pages.get(b.workspaceId, "pg_bpc-157");
+    expect(reset.approval).toBe("neutral");
+    expect(reset.approvalPrevious).toBe("approved");
+    expect(reset.approvalVersion).toBe(onB.version);
+
+    // An unmark on A clears B.
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    await a.pages.update(a.workspaceId, page.id, { ...edited, approval: "neutral", approvalAt: null, approvalPrevious: null }, edited.version, BY);
+    expect(await sync()).toBe(0);
+    const cleared = await b.pages.get(b.workspaceId, "pg_bpc-157");
+    expect(cleared.approval).toBe("neutral");
+    expect(cleared.approvalPrevious).toBeNull();
+    expect(cleared.approvalAt).toBeNull();
+    expect(await sync()).toBe(0);
+    expect(stdout).toContain(`to ${B_URL}: nothing to change`);
+  });
+
   it("copies a verification made on one side (ADR-028)", async () => {
     await seed(a);
     await sync();

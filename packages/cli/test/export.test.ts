@@ -232,6 +232,34 @@ describe("cairn export and import", () => {
     expect(stdout).toContain("pages        0 created, 0 updated, 4 unchanged");
   });
 
+  it("carries the approval mark through export and import (ADR-078)", async () => {
+    const ws = source.workspaceId;
+    const page = await source.pages.get(ws, "pg_bpc-157");
+    await source.pages.update(
+      ws,
+      page.id,
+      { ...page, approval: "disapproved", approvalAt: "2026-09-24T10:00:00.000Z", approvalVersion: page.version },
+      page.version,
+      BY,
+    );
+    await cairn(source, "export", folder);
+    const file = (await readdir(join(folder, "pages"), { recursive: true })).find((name) => name.endsWith("bpc-157.md"))!;
+    const text = await readFile(join(folder, "pages", file), "utf8");
+    expect(text).toContain('approval: "disapproved"');
+    expect(text).toContain('approval_at: "2026-09-24T10:00:00.000Z"');
+    expect(text).not.toContain("approval_version");
+    expect(await readFile(join(folder, "pages", "longevity.md"), "utf8")).not.toContain("approval");
+
+    expect(await cairn(target, "import", folder)).toBe(0);
+    const imported = await target.pages.get(target.workspaceId, "pg_bpc-157");
+    expect(imported.approval).toBe("disapproved");
+    expect(imported.approvalAt).toBe("2026-09-24T10:00:00.000Z");
+    expect(imported.approvalVersion).toBe(imported.version);
+    expect((await target.pages.get(target.workspaceId, "pg_cat_longevity")).approval).toBe("neutral");
+    expect(await cairn(target, "import", folder)).toBe(0);
+    expect(stdout).toContain("pages        0 created, 0 updated, 4 unchanged");
+  });
+
   it("shows the plan without writing anything on a dry run", async () => {
     await cairn(source, "export", folder);
     expect(await cairn(target, "import", folder, "--dry-run")).toBe(0);

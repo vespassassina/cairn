@@ -107,6 +107,19 @@ describe("merging whole records", () => {
     expect(mergePage(base, a, b, "b")!.value["verified_at"]).toBe("2026-09-02T00:00:00.000Z");
   });
 
+  it("carries the approval mark set on one side, and the later one when both sides set it (ADR-078)", () => {
+    const a = { ...base, approval: "approved", approval_at: "2026-09-02T00:00:00.000Z" };
+    const b = { ...base, tags: ["peptide", "healing"] };
+    expect(mergePage(base, a, b, "b")).toEqual({
+      value: { ...base, tags: ["peptide", "healing"], approval: "approved", approval_at: "2026-09-02T00:00:00.000Z" },
+      conflicts: 0,
+    });
+    const c = { ...base, approval: "disapproved", approval_at: "2026-09-03T00:00:00.000Z" };
+    expect(mergePage(base, a, c, "a")!.value).toEqual({ ...base, approval: "disapproved", approval_at: "2026-09-03T00:00:00.000Z" });
+    const reset = { ...base, approval_previous: "approved" };
+    expect(mergePage(a, a, reset, "a")!.value).toEqual({ ...base, approval_previous: "approved" });
+  });
+
   it("merges a row field by field, with a removed field staying removed", () => {
     const rowBase = { values: { name: "BPC-157", grams: 5, note: "old" } };
     const a = { values: { name: "BPC-157", grams: 10, note: "old" } };

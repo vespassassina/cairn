@@ -47,12 +47,14 @@ export async function writeWithRevision<T>(
      * deletion revision rather than start over. Defaults to `expectedVersion`.
      */
     parentVersion?: Version | null;
+    /** The version to write under, when the caller had to know it first. Defaults to a new one. */
+    version?: Version;
   },
   context: WriteContext,
   write: (meta: WriteMeta) => Promise<T>,
 ): Promise<T> {
   const meta: WriteMeta = {
-    version: newVersion(),
+    version: target.version ?? newVersion(),
     actor: context.actor,
     at: target.at ?? new Date().toISOString(),
   };
