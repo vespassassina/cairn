@@ -154,6 +154,46 @@ export function runDocumentStoreConformance(
         expect(plain.editedAt).toBe(plain.updatedAt);
       });
 
+      it("stores the approval mark exactly, and keeps it when a write says nothing (ADR-078)", async () => {
+        const fresh = await makePage("pg_approval");
+        expect(fresh.approval).toBe("neutral");
+        expect(fresh.approvalAt).toBeNull();
+        expect(fresh.approvalVersion).toBeNull();
+        expect(fresh.approvalPrevious).toBeNull();
+
+        const approved = await store.putPage(
+          WS,
+          fresh.id,
+          {
+            title: fresh.title, body: fresh.body, parentId: null, tags: [],
+            approval: "approved", approvalAt: "2026-09-24T10:00:00.000Z", approvalVersion: fresh.version,
+          },
+          fresh.version, meta(),
+        );
+        expect(approved.approval).toBe("approved");
+        expect(approved.approvalAt).toBe("2026-09-24T10:00:00.000Z");
+        expect(approved.approvalVersion).toBe(fresh.version);
+
+        // An ordinary write that says nothing about approval keeps it whole.
+        const kept = await store.putPage(
+          WS, fresh.id, { title: "Edited", body: "edited", parentId: null, tags: [] }, approved.version, meta(),
+        );
+        expect(kept.approval).toBe("approved");
+        expect(kept.approvalAt).toBe("2026-09-24T10:00:00.000Z");
+        expect(kept.approvalVersion).toBe(fresh.version);
+
+        // A reset writes neutral and remembers what it was, keeping the baseline.
+        const reset = await store.putPage(
+          WS, fresh.id,
+          { title: "Edited", body: "rewritten", parentId: null, tags: [], approval: "neutral", approvalPrevious: "approved" },
+          kept.version, meta(),
+        );
+        expect(reset.approval).toBe("neutral");
+        expect(reset.approvalPrevious).toBe("approved");
+        expect(reset.approvalVersion).toBe(fresh.version);
+        expect((await store.getPage(WS, fresh.id))?.approvalPrevious).toBe("approved");
+      });
+
       it("rejects a create when the page already exists", async () => {
         const page = await makePage("pg_create_twice");
         await expect(makePage("pg_create_twice")).rejects.toBeInstanceOf(

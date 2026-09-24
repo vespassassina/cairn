@@ -4,6 +4,7 @@ import {
   VersionConflictError,
   type SnapshotResult,
   type Actor,
+  type Approval,
   type Table,
   type TableInput,
   type DocumentStore,
@@ -59,6 +60,10 @@ CREATE TABLE IF NOT EXISTS pages (
   verified_at  TEXT,
   edited_at    TEXT,
   public       INTEGER NOT NULL DEFAULT 0,
+  approval     TEXT NOT NULL DEFAULT 'neutral',
+  approval_at  TEXT,
+  approval_version TEXT,
+  approval_previous TEXT,
   created_at   TEXT NOT NULL,
   updated_at   TEXT NOT NULL,
   updated_by   TEXT NOT NULL DEFAULT '${LEGACY_ACTOR}',
@@ -141,6 +146,10 @@ interface PageRecord {
   verified_at: string | null;
   edited_at: string | null;
   public: number | null;
+  approval: string | null;
+  approval_at: string | null;
+  approval_version: string | null;
+  approval_previous: string | null;
   created_at: string;
   updated_at: string;
   updated_by: string;
@@ -252,6 +261,10 @@ function toPage(record: PageRecord): Page {
     verifiedAt: record.verified_at,
     editedAt: record.edited_at ?? record.updated_at,
     public: record.public === 1,
+    approval: (record.approval ?? "neutral") as Approval,
+    approvalAt: record.approval_at,
+    approvalVersion: record.approval_version,
+    approvalPrevious: (record.approval_previous ?? null) as Page["approvalPrevious"],
     createdAt: record.created_at,
     updatedAt: record.updated_at,
     updatedBy: JSON.parse(record.updated_by) as Actor,
@@ -367,6 +380,14 @@ export class SqliteDocumentStore implements DocumentStore {
       if (table === "pages" && !columns.some((column) => column.name === "public")) {
         this.db.exec("ALTER TABLE pages ADD COLUMN public INTEGER NOT NULL DEFAULT 0");
       }
+      // Pages gained the owner's approval mark (ADR-078). Every page that
+      // existed before it is neutral: nobody has said.
+      if (table === "pages" && !columns.some((column) => column.name === "approval")) {
+        this.db.exec("ALTER TABLE pages ADD COLUMN approval TEXT NOT NULL DEFAULT 'neutral'");
+        this.db.exec("ALTER TABLE pages ADD COLUMN approval_at TEXT");
+        this.db.exec("ALTER TABLE pages ADD COLUMN approval_version TEXT");
+        this.db.exec("ALTER TABLE pages ADD COLUMN approval_previous TEXT");
+      }
     }
     this.db.exec(SCHEMA);
   }
@@ -476,6 +497,14 @@ export class SqliteDocumentStore implements DocumentStore {
       verifiedAt: input.verifiedAt ?? null,
       editedAt: input.editedAt ?? meta.at,
       public: input.public ?? existing?.public ?? false,
+      // The mark and its companions travel together: a write that says
+      // nothing keeps all four (ADR-078).
+      approval: input.approval ?? existing?.approval ?? "neutral",
+      approvalAt: input.approvalAt !== undefined ? input.approvalAt : (existing?.approvalAt ?? null),
+      approvalVersion:
+        input.approvalVersion !== undefined ? input.approvalVersion : (existing?.approvalVersion ?? null),
+      approvalPrevious:
+        input.approvalPrevious !== undefined ? input.approvalPrevious : (existing?.approvalPrevious ?? null),
       createdAt: existing?.createdAt ?? meta.at,
       updatedAt: meta.at,
       updatedBy: meta.actor,
@@ -488,7 +517,8 @@ export class SqliteDocumentStore implements DocumentStore {
       ? this.db
           .prepare(
             `UPDATE pages SET title = ?, parent_id = ?, tags = ?, body = ?, sources = ?, verified_at = ?,
-             edited_at = ?, public = ?, updated_at = ?, updated_by = ?, version = ?
+             edited_at = ?, public = ?, approval = ?, approval_at = ?, approval_version = ?, approval_previous = ?,
+             updated_at = ?, updated_by = ?, version = ?
              WHERE workspace_id = ? AND id = ? AND version = ?`,
           )
           .run(
@@ -500,6 +530,10 @@ export class SqliteDocumentStore implements DocumentStore {
             page.verifiedAt,
             page.editedAt,
             page.public ? 1 : 0,
+            page.approval,
+            page.approvalAt,
+            page.approvalVersion,
+            page.approvalPrevious,
             page.updatedAt,
             JSON.stringify(page.updatedBy),
             page.version,
@@ -510,8 +544,9 @@ export class SqliteDocumentStore implements DocumentStore {
       : this.db
           .prepare(
             `INSERT OR IGNORE INTO pages
-             (workspace_id, id, title, parent_id, tags, body, sources, verified_at, edited_at, public, created_at, updated_at, updated_by, version)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             (workspace_id, id, title, parent_id, tags, body, sources, verified_at, edited_at, public,
+              approval, approval_at, approval_version, approval_previous, created_at, updated_at, updated_by, version)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           )
           .run(
             workspaceId,
@@ -524,6 +559,10 @@ export class SqliteDocumentStore implements DocumentStore {
             page.verifiedAt,
             page.editedAt,
             page.public ? 1 : 0,
+            page.approval,
+            page.approvalAt,
+            page.approvalVersion,
+            page.approvalPrevious,
             page.createdAt,
             page.updatedAt,
             JSON.stringify(page.updatedBy),

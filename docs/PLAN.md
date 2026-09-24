@@ -26,7 +26,7 @@ Order: E1 before E2 so drops enter a workspace that already tells approved from 
 
 Increment: the owner can approve, disapprove and review; agents rank and hide accordingly.
 
-1. Core model: three columns, migration, types, conformance test. Test: criterion 1.
+1. [x] Core model: four columns, migration, types, conformance test. Test: criterion 1.
 2. `setApproval` operation, person-only, revision note. Test: criteria 2 and 3.
 3. Carry-over rule in `updatePage`, table-driven thresholds. Test: criterion 4.
 4. `searchPages`: boost and disapproved filter, `include_disapproved` on MCP, REST, CLI; parity test extended to the console. Test: criterion 5.

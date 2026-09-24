@@ -75,12 +75,30 @@ export interface Page {
    * with sync, export or import.
    */
   public: boolean;
+  /**
+   * The owner's judgement of the page (ADR-078): approved, neutral (the
+   * default: nobody has said) or disapproved. Set only by a person. Kept
+   * across a small edit, reset to neutral by a large one.
+   */
+  approval: Approval;
+  /** When a person last set the mark. Null when never. */
+  approvalAt: string | null;
+  /**
+   * The version the person looked at when they set it. Kept after a reset,
+   * so the change since approval can still be shown.
+   */
+  approvalVersion: Version | null;
+  /** What the mark was before an edit reset it to neutral. Null otherwise. */
+  approvalPrevious: Exclude<Approval, "neutral"> | null;
   createdAt: string;
   updatedAt: string;
   /** Who made the latest write, so a page view needs no history read. */
   updatedBy: Actor;
   version: Version;
 }
+
+export type Approval = "approved" | "neutral" | "disapproved";
+export const APPROVALS: readonly Approval[] = ["approved", "neutral", "disapproved"];
 
 export interface PageInput {
   title: string;
@@ -114,6 +132,16 @@ export interface PageInput {
    * anything. A create with nothing said is private.
    */
   public?: boolean;
+  /**
+   * The approval mark and its companions, exact values (ADR-078): for the
+   * service that sets or resets it, and for sync, import and restore.
+   * Omitted: the page keeps what it has. A create with nothing said is
+   * neutral.
+   */
+  approval?: Approval;
+  approvalAt?: string | null;
+  approvalVersion?: Version | null;
+  approvalPrevious?: Exclude<Approval, "neutral"> | null;
 }
 
 export type EdgeType = "link" | "mention" | "relation" | "parent" | "tag" | "cairn_link";
@@ -240,6 +268,11 @@ export interface PageSnapshot {
   sources?: string[];
   /** Missing in revisions written before ADR-028. */
   verifiedAt?: string | null;
+  /** The mark as it stood after this write. Missing before ADR-078. */
+  approval?: Approval;
+  approvalAt?: string | null;
+  approvalVersion?: Version | null;
+  approvalPrevious?: Exclude<Approval, "neutral"> | null;
 }
 
 export interface RowSnapshot {

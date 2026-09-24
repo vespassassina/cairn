@@ -51,6 +51,10 @@ function snapshotOf(input: PageInput): PageSnapshot {
     body: input.body,
     sources: input.sources ?? [],
     verifiedAt: input.verifiedAt ?? null,
+    approval: input.approval ?? "neutral",
+    approvalAt: input.approvalAt ?? null,
+    approvalVersion: input.approvalVersion ?? null,
+    approvalPrevious: input.approvalPrevious ?? null,
   };
 }
 
@@ -270,6 +274,10 @@ export class PageService {
         body: snapshot.body,
         ...(snapshot.sources === undefined ? {} : { sources: snapshot.sources }),
         ...(snapshot.verifiedAt === undefined ? {} : { verifiedAt: snapshot.verifiedAt }),
+        ...(snapshot.approval === undefined ? {} : { approval: snapshot.approval }),
+        ...(snapshot.approvalAt === undefined ? {} : { approvalAt: snapshot.approvalAt }),
+        ...(snapshot.approvalVersion === undefined ? {} : { approvalVersion: snapshot.approvalVersion }),
+        ...(snapshot.approvalPrevious === undefined ? {} : { approvalPrevious: snapshot.approvalPrevious }),
       },
       null,
       {
@@ -356,6 +364,14 @@ export class PageService {
       sources,
       editedAt: editTime(current?.editedAt, editedAt),
       public: published,
+      // The mark is kept unless this write says otherwise, so the revision
+      // snapshot records it as it stands after the write (ADR-078).
+      approval: input.approval ?? current?.approval ?? "neutral",
+      approvalAt: input.approvalAt !== undefined ? input.approvalAt : (current?.approvalAt ?? null),
+      approvalVersion:
+        input.approvalVersion !== undefined ? input.approvalVersion : (current?.approvalVersion ?? null),
+      approvalPrevious:
+        input.approvalPrevious !== undefined ? input.approvalPrevious : (current?.approvalPrevious ?? null),
       verifiedAt: verified
         ? at
         : verifiedAt !== undefined
