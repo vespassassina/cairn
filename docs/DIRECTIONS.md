@@ -19,7 +19,11 @@ The owner asked to ship the FTS5 NEAR / synonyms work (previous entry) to npm. P
 
 ### "cairn -v or --version shoudl return the version"
 
-Both `-v` and a bare `--version` were previously unrecognised or failing: only the documented `-V` worked, because `--version` was already claimed elsewhere as the per-command page-version option, and `parseArgs`'s `short` field only takes one letter, never both cases. Landed in `packages/cli/src/main.ts` (a pre-`parseArgs` check for the exact whole-command-line invocations `-v` and `--version`, leaving `--version <value>` on a subcommand untouched), `docs/CLI.md`, `docs/LESSONS.md`, and two new tests in `packages/cli/test/cli.test.ts`.
+Both `-v` and a bare `--version` were previously unrecognised or failing: only the documented `-V` worked, because `--version` was already claimed elsewhere as the per-command page-version option, and `parseArgs`'s `short` field only takes one letter, never both cases. Landed in `packages/cli/src/main.ts` (a pre-`parseArgs` check for the exact whole-command-line invocations `-v` and `--version`, leaving `--version <value>` on a subcommand untouched), `docs/CLI.md`, `docs/LESSONS.md`, and two new tests in `packages/cli/test/cli.test.ts`. Asked whether to release right away; the owner chose commit only, so this landed on `main` at `0.1.8` without a tag.
+
+### "release v0.1.8"
+
+The owner asked to ship the `-v`/`--version` fix above, now that it has sat on `main`. Landed as `v0.1.8`: a changelog entry, tag pushed, CI's `release` job published `@vespassassina/cairncli@0.1.8` to npm and cut the GitHub release.
 
 ### "let's do FTS5 NEAR and a small synonims table for domain term, each collection has his own, each collection is a domain, make the synonims table visible in cairn and editable by humans (add and remove synonims) and add to the MCP/skill/cli/api integration to list/add/remove synonims and a hint to agents to store them per domain when possible."
 
