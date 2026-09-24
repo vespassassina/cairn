@@ -27,12 +27,16 @@ import {
 import { OWNER, type AppContext } from "../context.js";
 import {
   addSynonym,
+  approvalNotice,
   listStalePages,
   listSynonyms,
   moveRecord,
   publishPage,
   removeSynonym,
+  reviewQueue,
   searchPages,
+  setApproval,
+  type ReviewItem,
   type StalePageSummary,
 } from "../operations.js";
 import { ASSET_VERSION, CONSOLE_CSS, CONSOLE_JS, documentTitle, FAVICON_SVG, HEAD_TAGS, ICON_180_PNG, ICON_512_PNG, MANIFEST } from "./assets.js";
@@ -41,7 +45,7 @@ import { createMarkdownRenderer, pageHref, type LinkResolver } from "./markdown.
 import { wikiHref, type SelfDescription } from "./public.js";
 import { isSameOrigin, SESSION_COOKIE, sessionValue, timingSafeEqual } from "./session.js";
 import type { OAuthServer } from "../oauth/server.js";
-import type { Actor } from "@cairn/core";
+import type { Actor, Approval } from "@cairn/core";
 import { NO_LOCAL_TRUST, trustedForConsole, type LocalTrust } from "../trust.js";
 
 /**
@@ -496,6 +500,71 @@ const PublishControl: FC<{ page: Page; publishedVia: Page | null }> = ({ page, p
 );
 
 /**
+ * The owner's mark on a page (ADR-078): where it stands, in words, with who
+ * set it and when. Neutral pages that were marked before say so, because
+ * that is the case the review queue exists for.
+ */
+const ApprovalStatus: FC<{ page: Page }> = ({ page }) => {
+  if (page.approval === "approved" || page.approval === "disapproved") {
+    return (
+      <span>
+        <span class={`ak-pill ${page.approval === "approved" ? "ak-pill-ok" : "ak-pill-risk"}`}>{page.approval}</span>{" "}
+        {page.approval === "approved" ? "Approved" : "Disapproved"} by Owner{page.approvalAt ? <> <When at={page.approvalAt} /></> : null}
+      </span>
+    );
+  }
+  if (page.approvalPrevious) {
+    return (
+      <span>
+        <span class="ak-pill ak-pill-warn">changed</span> Was {page.approvalPrevious}, changed since; not re-reviewed
+      </span>
+    );
+  }
+  return <span class="ak-soft">Not reviewed</span>;
+};
+
+const APPROVAL_LABEL: Record<Approval, string> = { approved: "Approve", disapproved: "Disapprove", neutral: "Unmark" };
+
+/**
+ * One plain form per state the page is not in (ADR-078). Forms, not links,
+ * so the mark is a POST with the version the person looked at, and so the
+ * buttons work with scripts off. `next` sends the person back to where they
+ * pressed the button, the review queue mostly; without it, to the page.
+ */
+const ApprovalButtons: FC<{ page: Page; next?: string | undefined }> = ({ page, next }) => (
+  <>
+    {(["approved", "disapproved", "neutral"] as const)
+      .filter((state) => state !== page.approval)
+      .map((state) => (
+        <form method="post" action={`${pageHref(page.id)}/approval`} class="cairn-inline">
+          <input type="hidden" name="version" value={page.version} />
+          <input type="hidden" name="approval" value={state} />
+          {next ? <input type="hidden" name="next" value={next} /> : null}
+          <button class="ak-btn" type="submit">
+            {APPROVAL_LABEL[state]}
+          </button>
+        </form>
+      ))}
+  </>
+);
+
+/** Why a page is in the review queue, in words. */
+const ReviewReasonText: FC<{ item: ReviewItem }> = ({ item }) =>
+  item.reason === "changed" ? (
+    <span>
+      <span class="ak-pill ak-pill-warn">changed</span> was {item.page.approvalPrevious}, changed since approval
+    </span>
+  ) : item.reason === "agent" ? (
+    <span>
+      <span class="ak-pill ak-pill-info">agent</span> written by an agent, not yet reviewed
+    </span>
+  ) : (
+    <span class="ak-soft">
+      never reviewed · {item.inbound} link{item.inbound === 1 ? "" : "s"} in
+    </span>
+  );
+
+/**
  * Connecting a coding agent to this Cairn, either through its MCP server or
  * through the CLI, so it can read and write here directly instead of being
  * told the address by hand. Shown once, on the collections home page, not on
@@ -603,6 +672,8 @@ const PageEditor: FC<{
   preview?: string | undefined;
   /** On an existing page: the box to mark it verified, and when it last was (ADR-028). */
   verify?: { checked: boolean; at: string | null } | undefined;
+  /** On a marked page: the box to keep the mark through a large edit (ADR-078). */
+  keepApproval?: { checked: boolean; state: Approval } | undefined;
   cancel: string;
 }> = (props) => (
   <form method="post" action={props.action} class="cairn-editor" data-dirty-guard>
@@ -642,6 +713,15 @@ const PageEditor: FC<{
         <span class="ak-small">
           (<Verified at={props.verify.at} />)
         </span>
+      </p>
+    ) : null}
+    {props.keepApproval && props.keepApproval.state !== "neutral" ? (
+      <p class="cairn-verify">
+        <label>
+          <input type="checkbox" name="keep_approval" value="1" checked={props.keepApproval.checked} /> Keep the{" "}
+          {props.keepApproval.state} mark even if this is a large change
+        </label>{" "}
+        <span class="ak-small">(a small change keeps it anyway)</span>
       </p>
     ) : null}
     <label for="note">What changed, and why (optional)</label>
@@ -1131,6 +1211,8 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
       else loose.push(table);
     }
     const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
+    const { counts } = await reviewQueue(context);
+    const toReview = counts.changed + counts.unchecked;
     return render(
       c,
       <Layout title="Cairn" section="collections">
@@ -1138,6 +1220,17 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
           <div>
             <h1>Collections</h1>
             <p class="ak-lede">Each collection is a wiki: a front page, the pages under it, and its tables.</p>
+            <p class="ak-small">
+              {toReview === 0 ? (
+                <>Nothing waiting for review.</>
+              ) : (
+                <>
+                  <a href="/review">{plural(toReview, "page")} to review</a>: {counts.changed} changed since approval,{" "}
+                  {counts.unchecked} written by agents and unchecked.
+                </>
+              )}{" "}
+              {counts.approved} approved, {counts.disapproved} disapproved.
+            </p>
           </div>
         </header>
         {roots.length === 0 ? (
@@ -1355,7 +1448,14 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
             ? "Published. It is readable by anyone, on this Cairn only."
             : c.req.query("unpublished")
               ? "Made private. It is off the published wiki now."
-              : null;
+              : c.req.query("approved")
+                ? "Approved. Agents will prefer this page in search."
+                : c.req.query("disapproved")
+                  ? "Disapproved. Agents are told not to build on it, and search hides it."
+                  : c.req.query("unmarked")
+                    ? "Mark removed."
+                    : null;
+    const notice = approvalNotice(page);
 
     return render(
       c,
@@ -1364,6 +1464,7 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
           <Tree pages={pages} tables={tables} currentId={page.id} rootId={ancestorsOf(page.id, byId)[0]?.id ?? page.id} />
           <div>
             {flash ? <Banner kind="ok">{flash}</Banner> : null}
+            {notice ? <Banner kind={page.approval === "disapproved" ? "bad" : "warn"}>{notice}</Banner> : null}
             <ol class="ak-breadcrumb">
               {ancestorsOf(page.id, byId).map((ancestor) => (
                 <li>
@@ -1377,13 +1478,14 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
                 <h1>{page.title}</h1>
                 <p class="ak-small">
                   Updated <When at={page.updatedAt} /> by <ActorPill actor={page.updatedBy} /> ·{" "}
-                  <Verified at={page.verifiedAt} />
+                  <Verified at={page.verifiedAt} /> · <ApprovalStatus page={page} />
                 </p>
               </div>
               <div class="ak-row">
                 <a class="ak-btn ak-btn-primary" href={`${pageHref(page.id)}/edit`}>
                   Edit
                 </a>
+                <ApprovalButtons page={page} />
                 <a class="ak-btn" href={`/new?parent=${encodeURIComponent(page.id)}`}>
                   Add child
                 </a>
@@ -1617,6 +1719,7 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
           note=""
           version={page.version}
           verify={{ checked: false, at: page.verifiedAt }}
+          keepApproval={{ checked: false, state: page.approval }}
           cancel={pageHref(page.id)}
         />
       </Layout>,
@@ -1634,8 +1737,12 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
       tags: parseTags(text(form, "tags")),
       sources: parseSources(form) ?? page.sources,
       verified: Boolean(form["verified"]),
+      // Naming the mark in the write skips the carry-over rule (ADR-078
+      // decision 3): the owner chose to keep it.
+      ...(form["keep_approval"] && page.approval !== "neutral" ? { approval: page.approval } : {}),
     };
-    const note = text(form, "note");
+    const keptApproval = "approval" in input;
+    const note = [text(form, "note").trim(), keptApproval ? "(approval kept by the owner)" : ""].filter(Boolean).join(" ");
     const version = text(form, "version");
 
     const editor = (props: { version: string; preview?: string; banner?: Child; status?: 200 | 400 | 409 }) =>
@@ -1655,6 +1762,7 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
             version={props.version}
             preview={props.preview}
             verify={{ checked: input.verified, at: page.verifiedAt }}
+            keepApproval={{ checked: keptApproval, state: page.approval }}
             cancel={pageHref(page.id)}
           />
         </Layout>,
@@ -2302,6 +2410,111 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
 
   // Publish a page, or take it down (ADR-032). Owner action only: MCP has no
   // equivalent, on purpose, so an agent cannot publish what it wrote.
+  // The owner's mark (ADR-078). Only a person reaches this route: the console
+  // signs people in, so `by(c)` never names an agent.
+  app.post("/p/:id/approval", async (c) => {
+    const page = await loadPage(c);
+    if (!page) return notFound(c, `Page ${c.req.param("id")}`);
+    const form = await c.req.parseBody();
+    const state = text(form, "approval");
+    const next = text(form, "next");
+    try {
+      await setApproval(context, page.id, state as Approval, text(form, "version"), by(c, text(form, "note")));
+    } catch (error) {
+      if (error instanceof ValidationError) {
+        return render(
+          c,
+          <Layout title="Not changed" section="collections">
+            <ValidationBanner error={error} />
+          </Layout>,
+          400,
+        );
+      }
+      if (!(error instanceof VersionConflictError)) throw error;
+      return render(
+        c,
+        <Layout title="Not changed" section="collections">
+          <Banner kind="bad">
+            <strong>Not changed: the page changed since you opened it.</strong>{" "}
+            <a href={pageHref(page.id)}>Open {page.title} again</a>, read the new version, and mark it once more.
+          </Banner>
+        </Layout>,
+        409,
+      );
+    }
+    const flag = state === "approved" ? "approved" : state === "disapproved" ? "disapproved" : "unmarked";
+    return c.redirect(next ? safeNext(next) : `${pageHref(page.id)}?${flag}=1`, 303);
+  });
+
+  // The review queue (ADR-078 decision 6): what the owner has not judged yet,
+  // most urgent first. Every button is a form, so the screen needs no script.
+  app.get("/review", async (c) => {
+    const { items, counts } = await reviewQueue(context);
+    const pages = await allPages(context);
+    const byId = new Map(pages.map((page) => [page.id, page]));
+    const collectionOf = (page: Page) => ancestorsOf(page.id, byId)[0] ?? page;
+    return render(
+      c,
+      <Layout title="Review" section="review">
+        <header class="ak-pagehead">
+          <div>
+            <p class="ak-eyebrow">Review</p>
+            <h1>Waiting for your judgement</h1>
+            <p class="ak-small">
+              Pages whose approval an edit reset come first, then pages an agent wrote that nobody has
+              checked, then the rest by how many pages link to them. Approving a page ranks it up for
+              agents; disapproving hides it from their search and tells them not to build on it.
+            </p>
+          </div>
+        </header>
+        <p>
+          {items.length} to review · {counts.approved} approved · {counts.disapproved} disapproved.
+          Facts re-checked is a different question: see <a href="/freshness">Freshness</a>.
+        </p>
+        {items.length === 0 ? (
+          <p class="ak-empty">Nothing waiting. Every unmarked page was last written by you.</p>
+        ) : (
+          <div class="ak-tblwrap">
+            <table class="ak-table">
+              <thead>
+                <tr>
+                  <th>Page</th>
+                  <th>Collection</th>
+                  <th>Why</th>
+                  <th>Last write</th>
+                  <th>Mark</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((item) => {
+                  const page = item.page;
+                  const root = collectionOf(page);
+                  return (
+                    <tr id={page.id}>
+                      <td>
+                        <a href={pageHref(page.id)}>{page.title}</a>
+                      </td>
+                      <td>{root.id === page.id ? <span class="ak-soft">itself</span> : <a href={pageHref(root.id)}>{root.title}</a>}</td>
+                      <td>
+                        <ReviewReasonText item={item} />
+                      </td>
+                      <td>
+                        <ActorPill actor={page.updatedBy} /> <When at={page.updatedAt} />
+                      </td>
+                      <td class="ak-row">
+                        <ApprovalButtons page={page} next={`/review#${page.id}`} />
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Layout>,
+    );
+  });
+
   app.post("/p/:id/publish", async (c) => {
     const page = await loadPage(c);
     if (!page) return notFound(c, `Page ${c.req.param("id")}`);

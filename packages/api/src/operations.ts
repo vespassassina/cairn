@@ -792,6 +792,66 @@ export async function setApproval(
 }
 
 /** The four approval fields as every surface returns them (ADR-078 decision 5). */
+/** Why a page is in the review queue (ADR-078). */
+export type ReviewReason = "changed" | "agent" | "never";
+
+export interface ReviewItem {
+  page: Page;
+  reason: ReviewReason;
+  /** Pages linking here; the tie-breaker for pages nobody has looked at. */
+  inbound: number;
+}
+
+/** The mark across the workspace, for the home page and the summary. */
+export interface ApprovalCounts {
+  approved: number;
+  /** Neutral now, but marked before an edit reset it. */
+  changed: number;
+  disapproved: number;
+  /** Neutral, never marked, last written by an agent. */
+  unchecked: number;
+}
+
+export function approvalCounts(pages: readonly Page[]): ApprovalCounts {
+  const counts: ApprovalCounts = { approved: 0, changed: 0, disapproved: 0, unchecked: 0 };
+  for (const page of pages) {
+    if (page.approval === "approved") counts.approved += 1;
+    else if (page.approval === "disapproved") counts.disapproved += 1;
+    else if (page.approvalPrevious) counts.changed += 1;
+    else if (page.updatedBy.kind === "agent") counts.unchecked += 1;
+  }
+  return counts;
+}
+
+/**
+ * What the owner should look at, in order (ADR-078 decision 6): pages whose
+ * mark an edit reset, then unmarked pages an agent wrote last, newest first,
+ * then everything else unmarked by how many pages link to it. Approved and
+ * disapproved pages are not in the queue: they have been judged. Shared by
+ * the console's `/review`; the counts also feed the home page and the
+ * workspace summary.
+ */
+export async function reviewQueue(context: AppContext): Promise<{ items: ReviewItem[]; counts: ApprovalCounts }> {
+  const pages = await allPagesForStaleness(context);
+  const newestFirst = (a: Page, b: Page) => b.updatedAt.localeCompare(a.updatedAt);
+  const neutral = pages.filter((page) => page.approval === "neutral");
+  const changed = neutral.filter((page) => page.approvalPrevious !== null).sort(newestFirst);
+  const byAgent = neutral.filter((page) => page.approvalPrevious === null && page.updatedBy.kind === "agent").sort(newestFirst);
+  const rest = neutral.filter((page) => page.approvalPrevious === null && page.updatedBy.kind !== "agent");
+  const linked = await Promise.all(
+    rest.map(async (page) => ({ page, reason: "never" as const, inbound: (await context.store.getInboundEdges(context.workspaceId, page.id)).length })),
+  );
+  linked.sort((a, b) => b.inbound - a.inbound || a.page.title.localeCompare(b.page.title));
+  return {
+    items: [
+      ...changed.map((page) => ({ page, reason: "changed" as const, inbound: 0 })),
+      ...byAgent.map((page) => ({ page, reason: "agent" as const, inbound: 0 })),
+      ...linked,
+    ],
+    counts: approvalCounts(pages),
+  };
+}
+
 export function approvalJson(page: Page): Record<string, unknown> {
   return {
     approval: page.approval,

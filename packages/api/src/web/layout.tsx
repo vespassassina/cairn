@@ -9,7 +9,7 @@ import { ASSET_VERSION, documentTitle, HEAD_TAGS } from "./assets.js";
  * everything it has a component for, `cairn-*` only for what it does not.
  */
 
-export type Section = "collections" | "recent" | "tables" | "freshness" | "search" | "none";
+export type Section = "collections" | "recent" | "tables" | "freshness" | "review" | "search" | "none";
 
 /** The facts fault 8 (ADR-056/057) puts in the console footer. */
 export interface FooterFacts {
@@ -78,6 +78,9 @@ export const Layout: FC<{
               </a>
               <a href="/freshness" aria-current={section === "freshness" ? "page" : undefined}>
                 Freshness
+              </a>
+              <a href="/review" aria-current={section === "review" ? "page" : undefined}>
+                Review
               </a>
             </nav>
             <form action="/search" method="get" role="search">

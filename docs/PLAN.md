@@ -32,7 +32,7 @@ Increment: the owner can approve, disapprove and review; agents rank and hide ac
 4. [x] `searchPages`: boost and disapproved filter, `include_disapproved` on MCP, REST, CLI; parity test extended to the console. Test: criterion 5.
 5. [x] `pnpm eval` before and after per backend, numbers in the changelog. Test: criterion 6.
 6. [x] `get_page`, REST and `cairn read` show the mark and the notice lines. Test: criterion 7.
-7. Console: approval buttons on the page view, `/review` queue, home count. Test: criterion 8.
+7. [x] Console: approval buttons on the page view, `/review` queue, home count. Test: criterion 8.
 8. Side-by-side diff view and the two buttons. Test: criterion 9.
 9. Sync, export, import carry the mark. Test: criterion 10.
 10. Instructions, summary, skill, `pnpm context-cost`, `docs/CLI.md`, `docs/AGENT-OPERATE.md`, changelog, roadmap. Test: criteria 11 and 12.

@@ -30,7 +30,7 @@ const CAIRN_CSS = `
 .cairn-top{ display:flex; gap:var(--ak-s4); align-items:center; flex-wrap:wrap;
   padding:var(--ak-s3) 0; margin-bottom:var(--ak-s5); border-bottom:1px solid var(--ak-rule) }
 .cairn-top .cairn-brand{ font-weight:700; color:var(--ak-ink); text-decoration:none; letter-spacing:.02em }
-.cairn-top nav{ display:flex; gap:var(--ak-s3) }
+.cairn-top nav{ display:flex; gap:var(--ak-s3); flex-wrap:wrap }
 .cairn-top nav a{ color:var(--ak-ink-muted); text-decoration:none; padding:2px 0;
   border-bottom:2px solid transparent }
 .cairn-top nav a[aria-current="page"]{ color:var(--ak-ink); border-bottom-color:var(--ak-accent) }

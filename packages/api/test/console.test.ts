@@ -3,6 +3,7 @@ import type { Hono } from "hono";
 import { createApp } from "../src/app.js";
 import { createContext, OWNER, type AppContext } from "../src/context.js";
 import { addSynonym } from "../src/operations.js";
+import { eventually } from "@cairn/core/testing";
 
 /**
  * Review console tests (ADR-009). Driven through `app.fetch`, like the MCP
@@ -983,5 +984,124 @@ describe("connecting an agent from the console home page", () => {
     expect(html).toContain(`claude mcp add --transport http cairn ${PUBLIC}/mcp`);
     expect(html).toContain(`cairn instances add ws_console ${PUBLIC}`);
     expect(html).not.toContain(`${ORIGIN}/mcp`);
+  });
+});
+
+describe("approval in the console (ADR-078)", () => {
+  async function agentPage(title: string, body = "Some text.") {
+    return context.pages.create(context.workspaceId, { title, body }, AGENT);
+  }
+
+  it("sets the mark from the page view and shows who set it and when", async () => {
+    const page = await agentPage("Doses");
+    const result = await post(`/p/${page.id}/approval`, { approval: "approved", version: page.version });
+    expect(result.status).toBe(303);
+    expect(result.location).toBe(`/p/${page.id}?approved=1`);
+
+    const saved = await context.pages.get(context.workspaceId, page.id);
+    expect(saved.approval).toBe("approved");
+    expect(saved.approvalVersion).toBe(page.version);
+    const [latest] = await context.pages.history(context.workspaceId, page.id);
+    expect(latest!.note).toBe("Marked approved");
+    expect(latest!.actor.kind).toBe("user");
+
+    const { html } = await get(`/p/${page.id}?approved=1`);
+    expect(html).toContain("Approved by Owner");
+    expect(html).toContain(`action="/p/${page.id}/approval"`);
+    expect(html).toContain('name="approval" value="disapproved"');
+    expect(html).toContain('name="approval" value="neutral"');
+    expect(html).not.toContain('name="approval" value="approved"');
+  });
+
+  it("refuses a stale version, and says to open the page again", async () => {
+    const page = await agentPage("Stale");
+    await post(`/p/${page.id}/approval`, { approval: "approved", version: page.version });
+    const result = await post(`/p/${page.id}/approval`, { approval: "disapproved", version: page.version });
+    expect(result.status).toBe(409);
+    expect(result.html).toContain("changed since you opened it");
+  });
+
+  it("warns on a disapproved page and on one changed since approval", async () => {
+    const page = await agentPage("Wrong");
+    await post(`/p/${page.id}/approval`, { approval: "disapproved", version: page.version });
+    expect((await get(`/p/${page.id}`)).html).toContain("Do not build on this page");
+
+    const other = await agentPage("Changed", "Short.");
+    await post(`/p/${other.id}/approval`, { approval: "approved", version: other.version });
+    const approved = await context.pages.get(context.workspaceId, other.id);
+    await context.pages.update(context.workspaceId, other.id, { title: "Changed", body: "A completely different and much longer body of text." }, approved.version, AGENT);
+    const { html } = await get(`/p/${other.id}`);
+    expect(html).toContain("Was approved");
+    expect(html).toContain("changed since");
+  });
+
+  it("lists changed-since-approval pages first, then unchecked agent writes, then the rest by links, with buttons that work without JavaScript", async () => {
+    const changed = await agentPage("Changed since", "Short.");
+    await post(`/p/${changed.id}/approval`, { approval: "approved", version: changed.version });
+    const approvedChanged = await context.pages.get(context.workspaceId, changed.id);
+    await context.pages.update(context.workspaceId, changed.id, { title: "Changed since", body: "A completely different and much longer body of text." }, approvedChanged.version, AGENT);
+
+    const byAgent = await agentPage("By an agent");
+    const byOwner = await context.pages.create(context.workspaceId, { title: "By the owner", body: "Mine." }, { actor: OWNER });
+    const linked = await context.pages.create(context.workspaceId, { title: "Linked to", body: "Popular." }, { actor: OWNER });
+    await context.pages.create(context.workspaceId, { title: "Linker", body: `See [[${linked.id}]] and [[${linked.id}]].` }, { actor: OWNER });
+    const fine = await agentPage("Fine");
+    await post(`/p/${fine.id}/approval`, { approval: "approved", version: fine.version });
+
+    // Inbound links are derived, so the "Linked to" row's place settles a moment after the write (hard rule 11).
+    const html = await eventually(async () => {
+      const { status, html } = await get("/review");
+      expect(status).toBe(200);
+      const order = [changed, byAgent, linked, byOwner].map((page) => html.indexOf(`href="/p/${page.id}"`));
+      expect(order.every((at) => at > 0)).toBe(true);
+      expect(order).toEqual([...order].sort((a, b) => a - b));
+      return html;
+    });
+    expect(html).not.toContain(`href="/p/${fine.id}"`);
+    expect(html).toContain("changed since approval");
+    // Plain forms: the buttons need no script.
+    expect(html).toContain(`<form method="post" action="/p/${changed.id}/approval"`);
+    expect(html).not.toContain("data-ak-action");
+
+    // A row's button posts the mark and comes back to the queue.
+    const current = await context.pages.get(context.workspaceId, changed.id);
+    const result = await post(`/p/${changed.id}/approval`, { approval: "approved", version: current.version, next: `/review#${changed.id}` });
+    expect(result.status).toBe(303);
+    expect(result.location).toBe(`/review#${changed.id}`);
+    expect((await get("/review")).html).not.toContain(`href="/p/${changed.id}"`);
+  });
+
+  it("only goes back to a place on this console", async () => {
+    const page = await agentPage("Elsewhere");
+    const result = await post(`/p/${page.id}/approval`, { approval: "approved", version: page.version, next: "https://evil.example/" });
+    expect(result.location).toBe("/");
+  });
+
+  it("shows the count on the home page, linking to the queue", async () => {
+    await agentPage("One");
+    await agentPage("Two");
+    const { html } = await get("/");
+    expect(html).toContain('href="/review"');
+    expect(html).toContain("2 pages to review");
+  });
+
+  it("lets the owner keep the mark through a large edit from the editor", async () => {
+    const page = await agentPage("Kept", "Short.");
+    await post(`/p/${page.id}/approval`, { approval: "approved", version: page.version });
+    const approved = await context.pages.get(context.workspaceId, page.id);
+    expect((await get(`/p/${page.id}/edit`)).html).toContain('name="keep_approval"');
+    const result = await post(`/p/${page.id}/edit`, {
+      title: "Kept",
+      body: "A completely different and much longer body of text.",
+      tags: "",
+      version: approved.version,
+      note: "Rewrote it",
+      keep_approval: "1",
+    });
+    expect(result.status).toBe(303);
+    const saved = await context.pages.get(context.workspaceId, page.id);
+    expect(saved.approval).toBe("approved");
+    const [latest] = await context.pages.history(context.workspaceId, page.id);
+    expect(latest!.note).toContain("approval kept by the owner");
   });
 });
