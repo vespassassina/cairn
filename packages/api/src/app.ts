@@ -62,7 +62,7 @@ export interface Caller {
   identity: string | null;
 }
 
-const SERVER_INFO = { name: "cairn", version: "0.1.5" };
+const SERVER_INFO = { name: "cairn", version: "0.1.6" };
 
 /**
  * A fresh server and transport per request.

@@ -11,6 +11,15 @@ Each entry answers four questions:
 3. **Fix.** What changed, with the commit or file.
 4. **Lesson.** What to do differently next time. This is the part worth reading.
 
+## 2026-09-24
+
+### `cairn search` silently returned "no matches" for everything, on every instance
+
+1. **What happened.** The owner reported search broken on the Azure instance. Reproduced: `cairn search "peptide"` returned "no matches" against both the Azure instance and the local "laptop" instance, even though `"peptide"` is the single most common word in the workspace (96 pages under a "Peptides" collection, tagged `peptide`). A direct `curl` of the same server's `GET /search?q=peptide` returned real results with passages and snippets, so the server was never the problem.
+2. **Cause.** ADR-057 (2026-09-16, "Group search results by page instead of by chunk") renamed the search REST response's top-level field from `hits` to `pages`. The published npm package `@vespassassina/cairncli@0.1.5` had gone out the day before, on 2026-09-15, still parsing `json["hits"]` (`packages/cli/src/main.ts`'s `search` case). Its version was never bumped when the wire format changed, so `npm install -g @vespassassina/cairncli` kept serving that stale build: `hits` no longer exists in the server's response, so the CLI always read an empty array and printed "no matches", regardless of what the server actually found. This affected every machine running the CLI from npm, not just Azure — the "laptop" instance failed identically, through the same stale global binary.
+3. **Fix.** Bumped `packages/cli/package.json` to `0.1.6` and rebuilt the package from current source (`pnpm --filter @vespassassina/cairncli build`), then reinstalled it globally (`npm install -g .` from `packages/cli`) to fix this machine immediately. Confirmed `cairn search "peptide"` now returns real results against both the local and Azure instances. The npm registry still serves the broken `0.1.5`; republishing `0.1.6` needs its own tag push, which is a release action the owner does, not something done unattended.
+4. **Lesson.** A change to a REST response shape the CLI depends on is a breaking change to the published package, even when nothing in the monorepo's own build or tests notices, because the CLI's contract tests run against source, never against what npm actually serves. When a route's response shape changes, bump `packages/cli/package.json`'s version in the same commit and treat republishing as part of landing that change, not a separate later step — otherwise the gap between "merged" and "published" is exactly where a client silently drifts out of sync with its server, and the failure mode is not a crash but a wrong, misleadingly plausible answer ("no matches" reads as "you searched for the wrong thing," not "your CLI is out of date").
+
 ## 2026-09-23
 
 ### `createPageFromTemplate`'s optional `parentId` failed `pnpm build` under `exactOptionalPropertyTypes`

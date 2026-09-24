@@ -4,6 +4,10 @@ What changed, and why. Newest first. One entry per meaningful change: code, desi
 
 Entries link to the ADR when there is one. A change of direction that has no ADR yet still gets an entry here.
 
+## 2026-09-24
+
+**Fixed: `cairn search` silently found nothing, on every instance, because the published CLI never learned about ADR-057's response-shape change.** Reported as "search is broken on Azure"; reproduced identically against the local instance too, and a direct `curl` of the same server's `GET /search` returned real results, so the server was fine. ADR-057 (2026-09-16) renamed the search response's field from `hits` to `pages`; `@vespassassina/cairncli@0.1.5`, published to npm the day before that landed, still read `hits` and so always saw an empty array, printing "no matches" for every query regardless of what the server actually found. Bumped `packages/cli/package.json` to `0.1.6`, rebuilt and reinstalled the CLI globally on this machine to confirm the fix; republishing `0.1.6` to npm is a release action, left for the owner (`docs/LESSONS.md`).
+
 ## 2026-09-23
 
 **Built ADR-075: templates and daily notes are pages with a shape.** `docs/ROADMAP.md`'s "Templates and daily notes" item named the gap: starting a new page from a reusable shape, or opening the day's running note, both meant copying an old page's body by hand. No new field, store method or index: ADR-075 decision 1 models both as ordinary pages under a well-known root collection, "Templates" and "Daily notes" (`packages/api/src/templates.ts`), found by listing root pages and matching title, the same technique `attachments.ts`'s well-known table already uses, carried from tables to pages, and created empty the first time either is needed. `substitutePlaceholders` (decision 2) is plain `String.prototype.replaceAll` on `{{date}}` and `{{title}}`, nothing else, no templating language; `{{date}}` is a new date-only `YYYY-MM-DD` (UTC) convention, deliberately not the full ISO timestamp `verifiedAt`/`editedAt` already use elsewhere, because a same-day lookup needs day granularity to find the same note twice.
