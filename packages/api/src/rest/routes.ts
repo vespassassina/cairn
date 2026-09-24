@@ -22,6 +22,7 @@ import {
   publishPage,
   setApproval,
   approvalJson,
+  approvalNotice,
   createPublishTokenOp,
   listPublishTokensOp,
   revokePublishTokenOp,
@@ -350,9 +351,12 @@ function pageMarkdown(page: Page): string {
     `tags: ${JSON.stringify(page.tags)}`,
     ...(page.sources.length > 0 ? [`sources: ${JSON.stringify(page.sources)}`] : []),
     `verified: ${page.verifiedAt ?? "never"}`,
+    `approval: ${page.approval}${page.approvalPrevious ? ` (was ${page.approvalPrevious})` : ""}`,
     `updated: ${page.updatedAt} by ${page.updatedBy.kind} ${JSON.stringify(page.updatedBy.label)}`,
     "---",
     "",
+    // The notice sits between the header and the body, never inside it (ADR-078).
+    ...(approvalNotice(page) ? [`> ${approvalNotice(page)}`, ""] : []),
     page.body,
   ].join("\n");
 }

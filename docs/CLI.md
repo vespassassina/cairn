@@ -222,6 +222,8 @@ cairn unmark <page-id> --version V        back to neutral, no judgement either w
 
 The approval mark is the owner's judgement of a page (ADR-078), separate from `verified`, which any agent can set after re-checking facts. Only a person sets it: the three commands refuse to run when `CLAUDECODE` or `CAIRN_AGENT` is set, the same signals the CLI uses to name an agent in the history, and tell the agent to ask you instead. Each mark is a revision whose note names the new state, with your `--note` after it. A small later edit keeps the mark; a large one, or a title change, drops it back to neutral and the console's review queue shows the page as changed since approval.
 
+Every read shows where a page stands. `cairn read` prints an `approval:` line in the front matter, with `(was approved)` after `neutral` when an edit reset the mark, and on a disapproved or reset page one quoted notice line between the front matter and the body, so an agent reading the page cannot miss it. The notice is never part of the body: a read, edit and write back leaves the page text as it was.
+
 ## Your data: export and import
 
 ```

@@ -120,3 +120,15 @@ describe("search and the mark", () => {
     expect(stdout).toContain(`${bad.id}  [disapproved]`);
   });
 });
+
+describe("read and the mark", () => {
+  it("shows the mark in the front matter and the notice line before the body", async () => {
+    const page = await somePage();
+    expect(await cairn({}, "disapprove", page.id, "--version", page.version)).toBe(0);
+    expect(await cairn({}, "read", page.id)).toBe(0);
+    expect(stdout).toContain("approval: disapproved");
+    const notice = stdout.indexOf("Disapproved by the owner on");
+    expect(notice).toBeGreaterThan(stdout.lastIndexOf("---"));
+    expect(notice).toBeLessThan(stdout.indexOf("Notes."));
+  });
+});

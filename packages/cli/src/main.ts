@@ -1074,9 +1074,12 @@ export async function run(argv: string[], io: Io): Promise<number> {
             `tags: ${JSON.stringify(p["tags"])}`,
             ...(list(p["sources"]).length > 0 ? [`sources: ${JSON.stringify(p["sources"])}`] : []),
             `verified: ${p["verified_at"] ?? "never"}`,
+            `approval: ${String(p["approval"] ?? "neutral")}${p["approval_previous"] ? ` (was ${String(p["approval_previous"])})` : ""}`,
             `updated: ${String(p["updated_at"])} by ${String(updatedBy?.["kind"])} ${JSON.stringify(updatedBy?.["name"])}`,
             "---",
             "",
+            // The owner's notice, before the body and never inside it (ADR-078).
+            ...(p["approval_notice"] ? [`> ${String(p["approval_notice"])}`, ""] : []),
             String(p["body"] ?? ""),
           ].join("\n");
           const children = list(p["children"]);

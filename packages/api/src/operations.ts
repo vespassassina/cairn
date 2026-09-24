@@ -48,6 +48,23 @@ import { getOrCreateDailyNote, substitutePlaceholders, todayDateOnly, type Daily
 
 // Shapes returned to agents, on every surface.
 
+/**
+ * The one line an agent must read before the body of a marked page (ADR-078
+ * decision 5). Null when there is nothing to say: neutral pages that were
+ * never marked, and approved ones. Never written into the body itself, so a
+ * read-edit-write cannot copy it into the page.
+ */
+export function approvalNotice(page: Page): string | null {
+  const day = (iso: string | null) => (iso ?? page.updatedAt).slice(0, 10);
+  if (page.approval === "disapproved") {
+    return `Disapproved by the owner on ${day(page.approvalAt)}. Do not build on this page; say so if asked about it.`;
+  }
+  if (page.approval === "neutral" && page.approvalPrevious) {
+    return `Was ${page.approvalPrevious}; changed since by ${page.updatedBy.label} on ${day(page.editedAt)}, not yet re-reviewed.`;
+  }
+  return null;
+}
+
 export function pageSummary(page: Page): Record<string, unknown> {
   return {
     id: page.id,
@@ -56,6 +73,13 @@ export function pageSummary(page: Page): Record<string, unknown> {
     tags: page.tags,
     sources: page.sources,
     verified_at: page.verifiedAt,
+    // The owner's judgement (ADR-078). The details only when there are
+    // any, so an unmarked wiki costs nothing more per read.
+    approval: page.approval,
+    approval_at: page.approvalAt ?? undefined,
+    approval_version: page.approvalVersion ?? undefined,
+    approval_previous: page.approvalPrevious ?? undefined,
+    approval_notice: approvalNotice(page) ?? undefined,
     updated_at: page.updatedAt,
     updated_by: { kind: page.updatedBy.kind, name: page.updatedBy.label },
     version: page.version,
