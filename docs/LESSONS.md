@@ -13,6 +13,13 @@ Each entry answers four questions:
 
 ## 2026-09-24
 
+### The SIGKILL crash-recovery test's 35ms pre-kill delay was too tight on CI's ARM runner
+
+1. **What happened.** Publishing the `cairn search` fix (below) as `v0.1.6` needed CI green first. `packages/api/test/crash-recovery-system.test.ts`'s "restarts successfully afterward and shows exactly the writes that were confirmed before the kill" failed on `test (ubuntu-24.04-arm)` in two separate runs, and once on `test (ubuntu-latest)` too, all with the same assertion: `no write was confirmed before the kill; the delay is too short: expected 0 to be greater than 0`.
+2. **Cause.** The test starts 400 concurrent page-creation requests, waits 35ms, then sends `SIGKILL`, and asserts at least one request got a 201 before the kill landed — proof the hammer was actually exercising in-flight writes, not writing to a server already dead. 35ms is not always enough for even one full HTTP round trip plus a SQLite write to complete on a loaded, shared CI runner; the ARM runner hit this twice in three attempts, `ubuntu-latest` once. Nothing in this session's own changes touched this file or its timing; it is pre-existing runner-speed variance the test was already close to the edge of.
+3. **Fix.** Widened the delay from 35ms to 150ms, per the test's own comment: "if this is ever 0 the timing needs widening, not the assertions below loosening." Confirmed locally (`npx vitest run test/crash-recovery-system.test.ts`) and against the full suite (867 passed, 1 skipped, unchanged). Not yet confirmed on CI's ARM runner specifically, since that is the whole reason for the change; the next CI run against this commit is the real test.
+4. **Lesson.** A hand-picked millisecond delay in a timing-sensitive test needs headroom for the slowest CI runner in the matrix, not just a fast local machine or the fastest runner. When a delay-based assertion fails intermittently on one runner class, treat the failure as evidence the margin is too thin before assuming it is unrelated noise worth just retrying past.
+
 ### `cairn search` silently returned "no matches" for everything, on every instance
 
 1. **What happened.** The owner reported search broken on the Azure instance. Reproduced: `cairn search "peptide"` returned "no matches" against both the Azure instance and the local "laptop" instance, even though `"peptide"` is the single most common word in the workspace (96 pages under a "Peptides" collection, tagged `peptide`). A direct `curl` of the same server's `GET /search?q=peptide` returned real results with passages and snippets, so the server was never the problem.

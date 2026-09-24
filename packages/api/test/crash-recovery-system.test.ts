@@ -271,7 +271,10 @@ describe.skipIf(process.platform === "win32")("surviving a real SIGKILL mid-writ
       const server = await startServer(database);
 
       const { confirmed, done } = hammer(server, 400);
-      await new Promise((r) => setTimeout(r, 35));
+      // Widened from 35ms (2026-09-24, docs/LESSONS.md): too tight on a
+      // loaded CI runner, especially ubuntu-24.04-arm, where the first
+      // write's full round trip sometimes did not land before the kill.
+      await new Promise((r) => setTimeout(r, 150));
       server.process.kill("SIGKILL");
       await server.exited;
       await done;
