@@ -6,6 +6,10 @@ Entries link to the ADR when there is one. A change of direction that has no ADR
 
 ## 2026-09-24
 
+### Released: v0.1.7
+
+`pnpm set-version 0.1.7`, updating `package.json`, `packages/cli/package.json`, `packages/cli/src/main.ts` and `packages/api/src/app.ts`. Ships the NEAR phrase search and per-collection synonyms below, and everything since `v0.1.6`, including the fix for `cairn search` silently finding nothing on a published CLI stuck on the pre-ADR-057 wire format. Tagging `v0.1.7` and pushing it lets CI's `release` job publish `@vespassassina/cairncli` to npm and attach the built executables to a GitHub release, gated on the tag matching the version in `package.json`.
+
 **Built ADR-076 and ADR-077: quoted-phrase NEAR search and per-collection search synonyms.** The owner asked for both in one request, along with MCP/skill/CLI/REST integration and an agent hint to record synonyms per domain.
 
 ADR-076: a double-quoted span in a search query, `"appetite suppressant"`, is now a phrase, asking FTS5's `NEAR(...)` operator that its words appear within 10 tokens of each other, fixed and not a per-query setting. `extractPhrases()` (`packages/core/src/search/terms.ts`) parses quoted spans into folded word arrays, dropping single-word "phrases" as carrying no proximity meaning; the SQLite adapter (`packages/adapter-sqlite/src/search-index.ts`) runs one `NEAR(...)` query per phrase purely to collect which chunk ids satisfy it, used as a ranking tiebreak after `covered()` and before raw BM25 score. A phrase changes ranking only, never which pages qualify as a match, so the change is additive: an unquoted query computes an empty phrase list and behaves exactly as before.
