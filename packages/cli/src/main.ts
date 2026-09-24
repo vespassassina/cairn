@@ -65,7 +65,7 @@ import {
  * instructions.
  */
 
-export const VERSION = "0.1.7";
+export const VERSION = "0.1.8";
 
 export interface Io {
   fetch: Fetch;
@@ -223,7 +223,7 @@ Presence
 
 Options
   --json          print the raw API response
-  -V, cairn version   print the CLI version
+  -v, -V, --version, cairn version   print the CLI version
   --limit N, --cursor C
   -i, --instance NAME use this registered instance
   CAIRN_URL       server, default http://localhost:8787; takes precedence over instances
@@ -589,6 +589,16 @@ function refreshFailedMessage(error: RefreshFailed, registered: Instance[]): str
 }
 
 export async function run(argv: string[], io: Io): Promise<number> {
+  // -v and a bare --version print the CLI's own version, same as -V. Handled
+  // here, before parseArgs, because --version is also the page-version
+  // option every write command takes (e.g. `cairn write <id> --version V`);
+  // that collision only matters with a subcommand, so this only fires when
+  // --version is the entire command line, with nothing to be a value for.
+  if (argv.length === 1 && (argv[0] === "-v" || argv[0] === "--version")) {
+    io.stdout(`cairn ${VERSION}\n`);
+    return 0;
+  }
+
   let flags: Flags;
   let positionals: string[];
   try {

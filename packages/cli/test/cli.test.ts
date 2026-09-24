@@ -451,6 +451,19 @@ describe("cairn", () => {
     expect(await cairn("version")).toBe(0);
   });
 
+  it("prints its version for -v and a bare --version too", async () => {
+    expect(await cairn("-v")).toBe(0);
+    expect(stdout).toBe(`cairn ${VERSION}\n`);
+    expect(await cairn("--version")).toBe(0);
+    expect(stdout).toBe(`cairn ${VERSION}\n`);
+  });
+
+  it("still treats --version as the page-version option when a command follows", async () => {
+    const { id } = await createLog();
+    expect(await cairn("append", id, "--version", "not-a-real-version", "--note", "should fail")).not.toBe(0);
+    expect(stderr).not.toContain(`cairn ${VERSION}`);
+  });
+
   it("turns Windows line endings into plain newlines", async () => {
     stdin = "## Firmware\r\n\r\nWritten in Notepad.\r\n";
     expect(await cairn("create", "--title", "From Windows")).toBe(0);

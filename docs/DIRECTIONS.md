@@ -13,6 +13,14 @@ Rules:
 
 ## 2026-09-24
 
+### "build and deploy to npm"
+
+The owner asked to ship the FTS5 NEAR / synonyms work (previous entry) to npm. Publishing is a release action, so version and tag were confirmed first: asked patch (0.1.7) or minor (0.2.0) against the current 0.1.6; the owner picked the recommended patch bump, 0.1.7. Landed as `v0.1.7`: `pnpm set-version 0.1.7`, a changelog entry, tag pushed, CI's `release` job published `@vespassassina/cairncli@0.1.7` to npm and cut the GitHub release.
+
+### "cairn -v or --version shoudl return the version"
+
+Both `-v` and a bare `--version` were previously unrecognised or failing: only the documented `-V` worked, because `--version` was already claimed elsewhere as the per-command page-version option, and `parseArgs`'s `short` field only takes one letter, never both cases. Landed in `packages/cli/src/main.ts` (a pre-`parseArgs` check for the exact whole-command-line invocations `-v` and `--version`, leaving `--version <value>` on a subcommand untouched), `docs/CLI.md`, `docs/LESSONS.md`, and two new tests in `packages/cli/test/cli.test.ts`.
+
 ### "let's do FTS5 NEAR and a small synonims table for domain term, each collection has his own, each collection is a domain, make the synonims table visible in cairn and editable by humans (add and remove synonims) and add to the MCP/skill/cli/api integration to list/add/remove synonims and a hint to agents to store them per domain when possible."
 
 The owner asked for FTS5 proximity search and a per-collection domain-synonyms table, reachable everywhere Cairn's other capabilities are, with a hint telling agents to record jargon as they notice it. Three points were asked back and answered directly: synonyms live in a dedicated new core concept rather than the existing generic table mechanism; NEAR defaults to distance 10, unordered, not a per-query setting; and "visible and editable by a person" is met by a review-console screen, since the dedicated-store answer to the first question ruled out a literal page-tree entity.

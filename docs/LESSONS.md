@@ -13,6 +13,13 @@ Each entry answers four questions:
 
 ## 2026-09-24
 
+### `cairn -v` and `cairn --version` did nothing, only `-V` worked
+
+1. **What happened.** The owner reported that `cairn -v` and `cairn --version` should print the version; only the documented `-V` did. `-v` was an unrecognised option and `--version` failed with "argument missing", since it silently collided with the unrelated `--version <V>` option every write command takes (`cairn append <id> --version V`).
+2. **Cause.** `node:util`'s `parseArgs` only accepts one `short` letter per option and is case-sensitive, so `-V` (the CLI's own version flag) and `-v` were never the same option; `-v` was simply never defined. `--version` was worse: it was already claimed, in the same flat `OPTIONS` map, as the string option carrying a page's version token, so parsing `cairn --version` alone tried to read a value for that option and failed before the CLI-version check ever ran.
+3. **Fix.** Added a check in `run()` (`packages/cli/src/main.ts`), before `parseArgs` runs, for the exact invocations `["-v"]` and `["--version"]` — the whole command line, nothing else — which print the version and return, the same as `-V`. This only fires when there is no subcommand and nothing for `--version` to be a value for, so `cairn append <id> --version V` still reads the page version exactly as before. Covered by two new tests in `packages/cli/test/cli.test.ts`, one for each of `-v`/bare `--version`, and one confirming `--version` still means the page-version option when a command follows it.
+4. **Lesson.** A short flag's letter is case-sensitive and single, and a long flag name is shared across the whole option map, not scoped to one command: two flags that look like natural aliases (`-V`/`-v`, or a top-level flag and a same-named per-command option) do not become one just because they read the same to a person. Check a flag's exact spelling and case works before calling a CLI option "done", and design new per-command flags to avoid a name a global flag might plausibly want.
+
 ### Synonym expansion (ADR-077) silently matched nothing for any hyphenated or multi-word term
 
 1. **What happened.** While building the search synonyms feature, a contract test added a pair `{GLP-1, glucagon-like peptide 1}` and expected a search for `"GLP-1"` to find a page whose body only contained the spelled-out synonym. It failed: the expansion map built by `resolveSynonyms()` (`packages/api/src/operations.ts`) was empty, so the search behaved as if no synonym existed.

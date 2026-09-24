@@ -175,11 +175,11 @@ cairn -V
 cairn overview
 ```
 
-`cairn -V` prints the version. `cairn overview` needs a running server; without one it says it cannot reach Cairn, which also proves the executable runs.
+`cairn -V`, `cairn -v` or `cairn --version` prints the version. `cairn overview` needs a running server; without one it says it cannot reach Cairn, which also proves the executable runs.
 
 ## Update it
 
-`cairn -V` says which version you have; the newest is at the top of https://github.com/vespassassina/cairn/releases. Before `v0.1.4`, every build said `0.1.0`, so an older one cannot tell you.
+`cairn -V` (or `-v`/`--version`) says which version you have; the newest is at the top of https://github.com/vespassassina/cairn/releases. Before `v0.1.4`, every build said `0.1.0`, so an older one cannot tell you.
 
 1. **An executable you downloaded:** download it again over the old one. The `latest` address always gives the newest release, so on an Apple silicon Mac:
 

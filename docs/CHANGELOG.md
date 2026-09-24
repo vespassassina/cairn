@@ -6,6 +6,8 @@ Entries link to the ADR when there is one. A change of direction that has no ADR
 
 ## 2026-09-24
 
+**Fixed: `cairn -v` and a bare `cairn --version` did nothing; only the documented `-V` printed the version.** `--version` was already the name of a different, per-command option (`cairn append <id> --version V`, etc.), so `node:util`'s `parseArgs` tried to read it as that option's value and failed before the CLI-version check ran; `-v` was simply never defined, since `short` only takes one case-sensitive letter. Fixed with a check in `run()` (`packages/cli/src/main.ts`) for the whole command line being exactly `-v` or `--version`, before `parseArgs` runs, so a version token on a real subcommand is untouched. `docs/CLI.md` updated; two new tests in `packages/cli/test/cli.test.ts`; `docs/LESSONS.md`.
+
 ### Released: v0.1.7
 
 `pnpm set-version 0.1.7`, updating `package.json`, `packages/cli/package.json`, `packages/cli/src/main.ts` and `packages/api/src/app.ts`. Ships the NEAR phrase search and per-collection synonyms below, and everything since `v0.1.6`, including the fix for `cairn search` silently finding nothing on a published CLI stuck on the pre-ADR-057 wire format. Tagging `v0.1.7` and pushing it lets CI's `release` job publish `@vespassassina/cairncli` to npm and attach the built executables to a GitHub release, gated on the tag matching the version in `package.json`.
