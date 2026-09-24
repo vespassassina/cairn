@@ -212,6 +212,16 @@ cairn restore <page-id> <version> --version V   bring an old version back, as a 
 
 Every write is kept as a revision (ADR-008), so nothing is really lost. `cairn peek` reads one back without touching anything, useful before deciding whether to restore it. `cairn restore` is an ordinary write: it needs `--version`, the page's current version from `cairn read`, and creates a new revision rather than rewriting history, so restoring can itself be undone the same way (ADR-045).
 
+## Marking what you have checked: approve, disapprove, unmark
+
+```
+cairn approve <page-id> --version V       you read it and it holds; agents rank it higher
+cairn disapprove <page-id> --version V    it is wrong; agents leave it out of search results
+cairn unmark <page-id> --version V        back to neutral, no judgement either way
+```
+
+The approval mark is the owner's judgement of a page (ADR-078), separate from `verified`, which any agent can set after re-checking facts. Only a person sets it: the three commands refuse to run when `CLAUDECODE` or `CAIRN_AGENT` is set, the same signals the CLI uses to name an agent in the history, and tell the agent to ask you instead. Each mark is a revision whose note names the new state, with your `--note` after it. A small later edit keeps the mark; a large one, or a title change, drops it back to neutral and the console's review queue shows the page as changed since approval.
+
 ## Your data: export and import
 
 ```

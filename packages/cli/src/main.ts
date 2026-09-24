@@ -138,6 +138,12 @@ Write (every write is a revision the owner can review and undo)
   cairn publish <page-id> --version V     serve it, and everything under it, to anyone
       with no sign-in, at <server>/w. Publishing a collection publishes its wiki
   cairn unpublish <page-id> --version V   take it back down
+  cairn approve <page-id> --version V     mark the page's knowledge approved by you, the
+                                          owner; agents rank it higher (ADR-078)
+  cairn disapprove <page-id> --version V  mark it wrong; agents leave it out of search
+  cairn unmark <page-id> --version V      back to neutral, no judgement either way.
+      All three are for a person at the keyboard: they refuse to run when
+      CLAUDECODE or CAIRN_AGENT is set
       Publishing is per server: it never travels with sync, export or import
   cairn publish-token create <page-id> --name NAME [--description D]
       issue a token gating that published subtree; shown once, save it. No
@@ -1287,6 +1293,28 @@ export async function run(argv: string[], io: Io): Promise<number> {
               "   only on this Cairn: publishing does not travel with sync.\n"
             : `ok ${id} and everything under it are private again, version ${String(json?.["version"])}\n`,
         );
+        return 0;
+      }
+
+      case "approve":
+      case "disapprove":
+      case "unmark": {
+        const id = need(args[0], "the page to mark");
+        const version = need(flags.version, "--version V, from cairn read");
+        if (agent) {
+          throw new UsageError(
+            `cairn ${command} is for a person at the keyboard, and this session looks like an agent's ` +
+              `(${io.env["CAIRN_AGENT"] ? "CAIRN_AGENT" : "CLAUDECODE"} is set), so nothing was marked. ` +
+              "Ask the owner to mark the page in the console, or to run this command themselves.",
+          );
+        }
+        const state = command === "approve" ? "approved" : command === "disapprove" ? "disapproved" : "neutral";
+        const { json } = await client.request("POST", `/pages/${encodeURIComponent(id)}/approval`, {
+          body: { approval: state, ...(note ? { change_note: note } : {}) },
+          ifMatch: version,
+          headers: { "x-cairn-actor": "person" },
+        });
+        out(json, () => `ok ${id} ${state}, version ${String(json?.["version"])}\n`);
         return 0;
       }
 

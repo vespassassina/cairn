@@ -20,6 +20,8 @@ import {
   moveRecord,
   removeSynonym,
   publishPage,
+  setApproval,
+  approvalJson,
   createPublishTokenOp,
   listPublishTokensOp,
   revokePublishTokenOp,
@@ -175,6 +177,10 @@ const schemas = {
     // Left out on PUT: the table keeps the one it has.
     description: z.string().max(280).nullable().optional(),
     change_note: z.string().max(500),
+  }),
+  approval: z.object({
+    approval: z.enum(["approved", "neutral", "disapproved"]),
+    change_note: CHANGE_NOTE,
   }),
   publish: z.object({
     id: z.string().min(1),
@@ -627,6 +633,25 @@ export function restRoutes(context: AppContext, callerFor: CallerFor, options: R
     const page = await undeletePage(context, c.req.param("id"), by(c, input.change_note));
     c.header("ETag", etag(page.version));
     return c.json(restPage(page), 201);
+  });
+
+  // The approval mark (ADR-078). A bearer token or an OAuth token names an
+  // agent, and only a person may set the mark, so the CLI declares a person
+  // at the keyboard with `X-Cairn-Actor: person` and this route translates
+  // that into a user actor. The refusal itself is setApproval's, shared with
+  // the console. The trust is the same the CLI's own agent naming rests on
+  // (ADR-078 consequence 5).
+  api.post("/pages/:id/approval", async (c) => {
+    const version = requireIfMatch(c);
+    const input = await parseBody(c, schemas.approval);
+    const caller = by(c, input.change_note);
+    const declared = c.req.header("x-cairn-actor")?.trim().toLowerCase() === "person";
+    const actor = declared
+      ? { kind: "user" as const, id: "cli:person", label: `Person at ${caller.actor.label}`.slice(0, 120) }
+      : caller.actor;
+    const page = await setApproval(context, c.req.param("id"), input.approval, version, { ...caller, actor });
+    c.header("ETag", etag(page.version));
+    return c.json({ id: page.id, ...approvalJson(page), version: page.version });
   });
 
   // Prune a page's older revisions and compact the database (ADR-059).

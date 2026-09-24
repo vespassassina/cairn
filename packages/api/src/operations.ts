@@ -1,5 +1,6 @@
 import {
   addSources,
+  APPROVALS,
   CairnError,
   NotFoundError,
   PageHasChildrenError,
@@ -9,6 +10,7 @@ import {
   tokenize,
   ValidationError,
   VersionConflictError,
+  type Approval,
   type Table,
   type Diff,
   type Edge,
@@ -587,7 +589,7 @@ export interface ErrorBody {
 }
 
 export interface DescribedError {
-  status: 400 | 404 | 409 | 422 | 500;
+  status: 400 | 403 | 404 | 409 | 422 | 500;
   body: ErrorBody;
 }
 
@@ -636,6 +638,9 @@ export function describeError(error: unknown, wording: ErrorWording): DescribedE
   if (error instanceof PageNotDeletedError) {
     return { status: 422, body: { error: "not_deleted", message: error.message } };
   }
+  if (error instanceof ApprovalByAgentError) {
+    return { status: 403, body: { error: "approval_person_only", message: error.message } };
+  }
   return {
     status: 500,
     body: { error: "internal", message: error instanceof Error ? error.message : String(error) },
@@ -647,6 +652,82 @@ export function describeError(error: unknown, wording: ErrorWording): DescribedE
  * (ADR-024). The id says which: pages are tried first. Needs the version the
  * caller read, like any other write.
  */
+/**
+ * An agent tried to set the approval mark (ADR-078 decision 2). The message
+ * names both ways a person can do it, since the agent's next step is to ask.
+ */
+export class ApprovalByAgentError extends CairnError {
+  constructor(actorLabel: string) {
+    super(
+      `Only a person sets the approval mark, and this call came from an agent (${actorLabel}). ` +
+        "Ask the owner to mark the page in the console, or to run cairn approve, cairn disapprove or cairn unmark themselves.",
+      "approval_person_only",
+    );
+  }
+}
+
+/** The revision note each state writes; the person's own note follows it. */
+const APPROVAL_NOTES: Record<Approval, string> = {
+  approved: "Marked approved",
+  disapproved: "Marked disapproved",
+  neutral: "Approval mark removed",
+};
+
+/**
+ * Set a page's approval mark (ADR-078 decision 2). The console, REST and the
+ * CLI all come here, so the rule lives here: a person only, with the version
+ * they read, and a revision whose note names the new state. The content is
+ * carried over untouched; the mark is a fact about the page, not an edit.
+ *
+ * `approvalVersion` records the version the person looked at, which is
+ * `version`, not the one this write creates: the body at that version is
+ * what later edits are measured against (decision 3). Unmark clears all of
+ * it: a person removing their judgement leaves nothing to diff against.
+ */
+export async function setApproval(
+  context: AppContext,
+  id: string,
+  state: Approval,
+  version: string,
+  by: WriteContext,
+): Promise<Page> {
+  if (!APPROVALS.includes(state)) {
+    throw new ValidationError([{ field: "approval", message: `must be one of ${APPROVALS.join(", ")}` }]);
+  }
+  if (by.actor.kind === "agent") throw new ApprovalByAgentError(by.actor.label);
+  const ws = context.workspaceId;
+  const page = await context.store.getPage(ws, id);
+  if (!page) throw new NotFoundError("page", id);
+  const marked = state !== "neutral";
+  const own = by.note?.trim();
+  return context.pages.update(
+    ws,
+    id,
+    {
+      title: page.title,
+      body: page.body,
+      tags: page.tags,
+      parentId: page.parentId,
+      approval: state,
+      approvalAt: marked ? new Date().toISOString() : null,
+      approvalVersion: marked ? version : null,
+      approvalPrevious: null,
+    },
+    version,
+    { actor: by.actor, note: own ? `${APPROVAL_NOTES[state]}: ${own}` : APPROVAL_NOTES[state] },
+  );
+}
+
+/** The four approval fields as every surface returns them (ADR-078 decision 5). */
+export function approvalJson(page: Page): Record<string, unknown> {
+  return {
+    approval: page.approval,
+    approval_at: page.approvalAt,
+    approval_version: page.approvalVersion,
+    approval_previous: page.approvalPrevious,
+  };
+}
+
 /**
  * Where to notify IndexNow, when `CAIRN_INDEXNOW_KEY` is configured
  * (ADR-074). `origin` is the address this Cairn is reachable at, the same

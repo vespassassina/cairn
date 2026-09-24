@@ -53,7 +53,7 @@ export class CairnClient {
   async request(
     method: string,
     path: string,
-    init: { body?: unknown; ifMatch?: string | null } = {},
+    init: { body?: unknown; ifMatch?: string | null; headers?: Record<string, string> } = {},
   ): Promise<ApiResponse> {
     const headers: Record<string, string> = {
       accept: "application/json, text/markdown",
@@ -62,6 +62,7 @@ export class CairnClient {
     if (this.options.token) headers["authorization"] = `Bearer ${this.options.token}`;
     if (init.body !== undefined) headers["content-type"] = "application/json";
     if (init.ifMatch) headers["if-match"] = `"${init.ifMatch}"`;
+    Object.assign(headers, init.headers ?? {});
 
     const url = `${this.options.baseUrl.replace(/\/+$/, "")}/api/v1${path}`;
     let response: Response;
