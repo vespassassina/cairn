@@ -127,6 +127,8 @@ const CAIRN_CSS = `
 /* Search snippets. */
 .cairn-hit{ padding:var(--ak-s3) 0; border-bottom:1px solid var(--ak-rule) }
 .cairn-hit mark{ background:var(--ak-accent-wash); color:inherit; padding:0 1px }
+.cairn-passage{ margin-top:var(--ak-s2) }
+.cairn-passage p{ margin:0 }
 
 /* Row form. */
 .cairn-fields{ display:grid; grid-template-columns:minmax(120px, 200px) 1fr; gap:var(--ak-s3) var(--ak-s4); align-items:center }

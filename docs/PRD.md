@@ -102,7 +102,7 @@ What no one combines: typed tables next to the wiki, a revision for every write 
 ### Runtime
 
 1. **API and MCP server:** TypeScript with Hono, on Node, in one container (ADR-020). Azure Functions and AWS Lambda were targets until ADR-020 dropped them.
-2. **Frontend:** React with BlockNote (ProseMirror based). Hosted on Azure Static Web Apps free plan or S3 plus CloudFront.
+2. **Frontend:** the review console, server-rendered by the same Hono process with Hono JSX and forms, no client-side application (ADR-009). A React and BlockNote editor is Phase 2, gated on Phase 1, and would be served by the same container, not a separate static host.
 3. **Indexer:** extracts links, mentions and tags and writes chunks. Runs inline on write in P0, because it is cheap and removes a moving part. Embeddings are slower, so they are computed in the background in the same process, never on the write path (ADR-022). A full rebuild command regenerates all derived data from pages (ADR-005).
 
 The MCP server runs in stateless streamable HTTP mode, which suits a container that scales to zero. See ADR-006.
@@ -134,7 +134,7 @@ Five rules govern the boundary (ADR-005).
 
 One logical store with three document families, partitioned by workspace.
 
-1. **Pages.** Title, parent, tags, BlockNote JSON blocks embedded in the document, sources, version token. One point read per page. Sources are where the page's facts came from: URLs or short citations, added to by each write (ADR-027). Rows carry them too. `verified_at` is when the page's facts were last confirmed, null for never, set by a write that says it re-checked them (ADR-028).
+1. **Pages.** Title, parent, tags, a Markdown body with `[[page-id]]` links, sources, version token. (Earlier drafts said BlockNote JSON blocks; the code stores Markdown, and a Phase 2 editor would read and write that Markdown.) One point read per page. Sources are where the page's facts came from: URLs or short citations, added to by each write (ADR-027). Rows carry them too. `verified_at` is when the page's facts were last confirmed, null for never, set by a write that says it re-checked them (ADR-028).
 2. **Tables.** A schema document plus one document per row. Field types in v1: text, number, date, select, multi-select, checkbox, URL, relation. A relation links to pages, or to the rows of a table, its own included, and can hold a list (ADR-024). A table sits under a page in the tree, or at the top. Until ADR-026 tables were called collections; a collection is now a top-level page and everything under it, one wiki, a view of the tree rather than a stored family.
 3. **Edges.** One document per link, partitioned by source page. A mirrored reverse edge partitioned by target so backlinks are a single-partition query. Edge types: link, mention, relation, parent, tag.
 

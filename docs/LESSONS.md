@@ -13,6 +13,13 @@ Each entry answers four questions:
 
 ## 2026-09-24
 
+### The console's search skipped synonyms and listed one page several times
+
+1. **What happened.** During the product review, a console search for "zigbee coordinator" showed the same page four times, once per passage, and a search for a synonym found nothing, while the same query through MCP or `cairn search` grouped the passages under one page and expanded the synonym.
+2. **Cause.** `packages/api/src/web/console.tsx` called the search adapter directly (`context.search.search`), where MCP, REST and the CLI go through `searchPages` in `packages/api/src/operations.ts`. When ADR-057 (one entry per page) and ADR-077 (synonyms) were added to `searchPages`, the console kept its older direct call. Hard rule 14 says surfaces translate and never decide, and the console is a surface too, but the parity test (`packages/api/test/parity.test.ts`) covers MCP, REST and CLI, not the console.
+3. **Fix.** The console route calls `searchPages` and renders its page-grouped shape, with a test in `packages/api/test/console.test.ts` that a page with three matching passages is listed once and that a collection synonym reaches the console's results.
+4. **Lesson.** When a shared operation gains behaviour, grep for every caller of the adapter it wraps, including the console. The console counts as a fourth surface under hard rule 14; extend the parity test to it when the next shared operation lands.
+
 ### `cairn -v` and `cairn --version` did nothing, only `-V` worked
 
 1. **What happened.** The owner reported that `cairn -v` and `cairn --version` should print the version; only the documented `-V` did. `-v` was an unrecognised option and `--version` failed with "argument missing", since it silently collided with the unrelated `--version <V>` option every write command takes (`cairn append <id> --version V`).

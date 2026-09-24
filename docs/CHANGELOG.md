@@ -6,6 +6,10 @@ Entries link to the ADR when there is one. A change of direction that has no ADR
 
 ## 2026-09-24
 
+**Fixed: the console's search now goes through `searchPages`, like MCP, REST and the CLI.** It called the search adapter directly, so it had no synonym expansion (ADR-077) and listed a page once per matching passage instead of once with its passages (ADR-057). Found by the product review below; hard rule 14. Results now show each page once with up to three passages and a count of any more. Test in `packages/api/test/console.test.ts`; `docs/LESSONS.md`.
+
+**Fixed: PRD section 7 described a React and BlockNote front end and BlockNote JSON page bodies.** The code stores Markdown and serves a server-rendered console (ADR-009). The PRD was wrong; it now says so and keeps the editor as Phase 2.
+
 **Added `docs/REVIEW-2026-09-24.md`, a product review against note tools and agent-memory tools.** The owner asked what Cairn nailed and missed against Notion, Obsidian, Logseq and forum sentiment, whether it can serve for personal notes, and what to adopt from Notion. The review records two findings that are bugs: the console's search calls the adapter directly instead of `searchPages` (`packages/api/src/web/console.tsx:1972`), so it lacks synonym expansion and one-entry-per-page grouping, against hard rule 14; and PRD section 7 still describes BlockNote JSON storage and a React front end that the code does not have. Neither is fixed here. It also lists a ranked set of note-taking additions that stay inside ADR-009: capture into an inbox, a Today link, link by title, callouts and tickable checklists, saved table views and query blocks, embeds, and a draft-versus-promoted state for agent writes.
 
 ### Released: v0.1.8

@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import type { Hono } from "hono";
 import { createApp } from "../src/app.js";
 import { createContext, OWNER, type AppContext } from "../src/context.js";
+import { addSynonym } from "../src/operations.js";
 
 /**
  * Review console tests (ADR-009). Driven through `app.fetch`, like the MCP
@@ -253,6 +254,32 @@ describe("rendering untrusted page content", () => {
     const { html } = await get("/search?q=adhesion");
     expect(html).toContain("<mark>adhesion</mark>");
     expect(html).not.toContain("<b>bold</b>");
+  });
+
+  it("lists a page once with its passages, and expands synonyms, like the other surfaces (hard rule 14)", async () => {
+    const root = await context.pages.create(
+      context.workspaceId,
+      { title: "Homelab", body: "The lab." },
+      { actor: OWNER },
+      "pg_lab_root",
+    );
+    await context.pages.create(
+      context.workspaceId,
+      {
+        title: "Coordinator stalls",
+        parentId: root.id,
+        body: "# Fault\n\nThe zigbee coordinator stalls.\n\n# Recovery\n\nRestart the zigbee coordinator.\n\n# Power\n\nThe zigbee coordinator draws little.",
+      },
+      { actor: OWNER },
+    );
+    await addSynonym(context, root.id, "zigbee", "z2m", { actor: OWNER });
+
+    const grouped = await get("/search?q=zigbee+coordinator");
+    expect(grouped.html.match(/class="cairn-hit"/g)).toHaveLength(1);
+    expect(grouped.html).toContain("Recovery");
+
+    const expanded = await get("/search?q=z2m+coordinator");
+    expect(expanded.html).toContain("Coordinator stalls");
   });
 
   it("names the query and suggests a next move when nothing matches (fault 6, console-and-search-polish)", async () => {

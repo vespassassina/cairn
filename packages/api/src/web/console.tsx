@@ -32,6 +32,7 @@ import {
   moveRecord,
   publishPage,
   removeSynonym,
+  searchPages,
   type StalePageSummary,
 } from "../operations.js";
 import { ASSET_VERSION, CONSOLE_CSS, CONSOLE_JS, documentTitle, FAVICON_SVG, HEAD_TAGS, ICON_180_PNG, ICON_512_PNG, MANIFEST } from "./assets.js";
@@ -1969,7 +1970,9 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
 
   app.get("/search", async (c) => {
     const q = (c.req.query("q") ?? "").trim();
-    const result = q ? await context.search.search(ws, { query: q, limit: 30 }) : null;
+    // Through searchPages like MCP, REST and the CLI (hard rule 14), so the
+    // console gets synonym expansion and one entry per page too.
+    const result = q ? await searchPages(context, { query: q, limit: 30 }) : null;
     const titles = resolverFor(await allPages(context));
 
     // Snippets mark matches with [ ]. Escape everything, then turn only
@@ -1991,19 +1994,29 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
         <h1>{q ? `Results for “${q}”` : "Search"}</h1>
         {result ? (
           <p class="ak-small">
-            {result.hits.length} matches, {result.mode} mode.
+            {result.pages.length}
+            {result.truncated ? "+" : ""} pages, {result.mode} mode.
           </p>
         ) : null}
-        {result && result.hits.length === 0 ? (
+        {result && result.pages.length === 0 ? (
           <div class="ak-empty">Nothing matched “{q}”. Try fewer words, or a synonym.</div>
         ) : null}
-        {result?.hits.map((hit) => (
+        {result?.pages.map((hit) => (
           <div class="cairn-hit">
             <a href={pageHref(hit.pageId)}>
               <strong>{titles.title(hit.pageId) ?? hit.pageId}</strong>
             </a>
-            <p class="ak-small">{hit.headingPath.slice(1).join(" › ")}</p>
-            <p>{highlight(hit.snippet)}</p>
+            {hit.passages.map((passage) => (
+              <div class="cairn-passage">
+                <p class="ak-small">{passage.headingPath.slice(1).join(" › ")}</p>
+                <p>{highlight(passage.snippet)}</p>
+              </div>
+            ))}
+            {hit.morePassages > 0 ? (
+              <p class="ak-small">
+                {hit.morePassages} more {hit.morePassages === 1 ? "passage" : "passages"} on this page.
+              </p>
+            ) : null}
           </div>
         ))}
       </Layout>,
