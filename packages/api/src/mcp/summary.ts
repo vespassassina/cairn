@@ -1,5 +1,6 @@
 import type { Page, Paged, Row } from "@cairn/core";
 import type { AppContext } from "../context.js";
+import { approvalCounts } from "../operations.js";
 import { SERVER_INSTRUCTIONS } from "./instructions.js";
 
 /**
@@ -161,6 +162,15 @@ export async function workspaceSummary(context: AppContext, budget: number = SUM
   if (pages.length > 0) {
     const total = complete ? String(pages.length) : `${pages.length}+`;
     push(`Pages: ${total}.`);
+    // The owner's marks (ADR-078 decision 5), only once there are any: a
+    // workspace with none reads as it did before.
+    const marks = approvalCounts(pages);
+    const markParts = [
+      marks.approved > 0 ? `${marks.approved} approved` : null,
+      marks.changed > 0 ? `${marks.changed} changed since approval` : null,
+      marks.disapproved > 0 ? `${marks.disapproved} disapproved` : null,
+    ].filter((part): part is string => part !== null);
+    if (markParts.length > 0) push(`Approval: ${markParts.join(", ")}.`);
 
     const counts = descendantCounts(pages);
     const roots = pages

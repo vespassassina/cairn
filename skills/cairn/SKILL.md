@@ -25,7 +25,8 @@ once only if it would have mattered. If it says to sign in, ask the user to run
    keyword match needs most of your words on the page, so use a few distinctive
    ones. If nothing comes back, try other words or one unusual word before
    deciding nothing is there.
-3. `cairn read <page-id>` prints the page as Markdown with its `version`.
+3. `cairn read <page-id>` prints the page as Markdown with its `version`, and
+   the owner's mark: see "The owner's mark" below.
 4. `cairn links <page-id>` walks one hop of links in both directions.
 5. Say which page an answer came from.
 
@@ -89,6 +90,18 @@ means a list of row ids from `col_x`: set it with `--set 'components=["row_a","r
 `cairn links <table-id>/<row-id>` shows a row's links and what links to it, and
 `[[table-id/row-id]]` links a page to a row. `cairn move <id> --parent <page-id>
 --version <v>` puts a page or table under a page, or `--parent root` at the top.
+
+## The owner's mark
+
+Only the owner marks a page approved or disapproved, in the console or with
+`cairn approve`, `cairn disapprove` and `cairn unmark`, which refuse to run from
+an agent session; say that when asked and leave it to them. `cairn search` ranks
+approved pages higher and leaves disapproved ones out unless you pass
+`--include-disapproved`. A read shows the mark in the front matter and, on a
+disapproved page or one that was approved and has changed since, one quoted
+notice line before the body: do not build on a disapproved page, and say so if
+asked about it; a changed page waits for the owner's re-review, not yours. The
+mark travels with sync, export and import; publishing does not.
 
 ## Publishing
 

@@ -76,6 +76,33 @@ describe("workspace summary", () => {
     expect(summary).not.toContain("BPC-157\" (");
   });
 
+  it("counts the owner's marks on one line, and says nothing when there are none (ADR-078)", async () => {
+    await seedWiki();
+    expect(await workspaceSummary(context, 800)).not.toContain("Approval:");
+    const ws = context.workspaceId;
+    const byTitle = async (title: string) => (await context.store.listPages(ws, { limit: 50, cursor: null })).items.find((p) => p.title === title)!;
+    const mark = async (title: string, approval: "approved" | "disapproved") => {
+      const page = await byTitle(title);
+      return context.pages.update(ws, page.id, { ...page, approval, approvalAt: "2026-09-24T10:00:00.000Z", approvalVersion: page.version }, page.version, BY);
+    };
+    const approved = await mark("BPC-157", "approved");
+    await mark("TB-500", "approved");
+    await mark("Longevity", "disapproved");
+    // A large edit resets one mark; the trace counts as changed since approval.
+    await context.pages.update(
+      ws,
+      approved.id,
+      { title: approved.title, parentId: approved.parentId, tags: approved.tags, body: "Rewritten from scratch, at length, so the mark cannot stay." },
+      approved.version,
+      BY,
+    );
+    const summary = await workspaceSummary(context, 800);
+    expect(summary).toContain("Pages: 6.\nApproval: 1 approved, 1 changed since approval, 1 disapproved.");
+    // The instructions say what the marks mean, once, in the fixed text.
+    expect(SERVER_INSTRUCTIONS).toContain("include_disapproved");
+    expect(SERVER_INSTRUCTIONS).toContain("approval_notice");
+  });
+
   it("says so when the workspace is empty", async () => {
     const summary = await workspaceSummary(context, 800);
     expect(summary).toContain("Nothing yet");

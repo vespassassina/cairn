@@ -15,10 +15,10 @@ Three doors for agents, over one core:
 | Door | For | Context cost per session |
 |---|---|---|
 | `cairn` CLI and skill | agents with a shell: Claude Code, Codex | about 115 tokens until used |
-| MCP | claude.ai, Claude Desktop, Cowork | about 7,200 tokens |
+| MCP | claude.ai, Claude Desktop, Cowork | about 7,300 tokens |
 | REST at `/api/v1` | scripts, cron jobs, other agents | none |
 
-Characters measured with `pnpm context-cost` on a 126-page wiki, tokens estimated at four characters each.
+Characters measured with `pnpm context-cost` on a 132-page wiki, tokens estimated at four characters each.
 
 Status: early, and working. It runs on your machine, with the console, MCP, REST and the CLI, and deploys to your own server or Azure with sign-in through GitHub or any OpenID Connect provider. See `docs/ROADMAP.md`.
 

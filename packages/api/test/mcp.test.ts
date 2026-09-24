@@ -106,7 +106,7 @@ describe("transport and auth", () => {
     const names = new Set((listed.result.tools as Array<{ name: string }>).map((t) => t.name));
     const mentioned = instructions.match(/\b[a-z]+_[a-z_]+\b/g) ?? [];
     // Words that name an error or a field, not a tool.
-    const tools = mentioned.filter((word) => !["version_conflict", "change_note", "verified_at"].includes(word));
+    const tools = mentioned.filter((word) => !["version_conflict", "change_note", "verified_at", "include_disapproved", "approval_notice"].includes(word));
     expect(tools.length).toBeGreaterThan(0);
     for (const name of tools) expect(names.has(name), name).toBe(true);
     expect(names.has("search")).toBe(true);

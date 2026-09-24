@@ -1,6 +1,6 @@
 # Plan: notes, approval, dropbox and the mobile app
 
-From the product review of 2026-09-24 and the owner's direction the same day. Specs: `docs/specs/knowledge-approval.md`, `docs/specs/dropbox.md`, `docs/specs/mobile-capture-app.md`, `docs/specs/console-for-notes.md`. Status: specs and plan agreed by the owner on 2026-09-24. Sprint 0 done the same day; waiting on gate 1.
+From the product review of 2026-09-24 and the owner's direction the same day. Specs: `docs/specs/knowledge-approval.md`, `docs/specs/dropbox.md`, `docs/specs/mobile-capture-app.md`, `docs/specs/console-for-notes.md`. Status: specs and plan agreed by the owner on 2026-09-24. Sprints 0 and 1 done the same day; waiting on gate 2.
 
 Rules: one outcome and one test per task; a sprint is a working increment; each sprint opens with its ADR and closes with the four logs, `pnpm build`, `pnpm test`, and for search changes `pnpm eval`. Tasks tick here as they close. Sizes are agent working sessions: S under one, M one to two, L three or more.
 
@@ -35,7 +35,7 @@ Increment: the owner can approve, disapprove and review; agents rank and hide ac
 7. [x] Console: approval buttons on the page view, `/review` queue, home count. Test: criterion 8.
 8. [x] Side-by-side diff view and the two buttons. Test: criterion 9.
 9. [x] Sync, export, import carry the mark. Test: criterion 10.
-10. Instructions, summary, skill, `pnpm context-cost`, `docs/CLI.md`, `docs/AGENT-OPERATE.md`, changelog, roadmap. Test: criteria 11 and 12.
+10. [x] Instructions, summary, skill, `pnpm context-cost`, `docs/CLI.md`, `docs/AGENT-OPERATE.md`, changelog, roadmap. Test: criteria 11 and 12.
 
 ## Sprint 2: dropbox (E2, M)
 
