@@ -5,11 +5,13 @@ import { readHistory, sweepOrphans, writeWithRevision } from "../history/revisio
 import { chunkPage, DEFAULT_CHUNK_OPTIONS, type ChunkOptions } from "../indexer/chunk.js";
 import { extractReferences } from "../indexer/extract.js";
 import { normalizeVerifiedAt } from "../freshness.js";
+import { approvalAfterEdit, carryOverNote, changedChars } from "../approval.js";
 import { editTime } from "../edit-time.js";
 import { normalizeSources } from "../sources.js";
 import type { DocumentStore } from "../ports/document-store.js";
 import type { SearchIndex } from "../ports/search-index.js";
 import type {
+  Approval,
   Edge,
   ExpectedVersion,
   Id,
@@ -359,6 +361,11 @@ export class PageService {
     // edit can neither publish a page nor take it down (ADR-032).
     const published = input.public ?? current?.public ?? false;
     const sources = input.sources === undefined ? (current?.sources ?? []) : normalizeSources(input.sources);
+    // A marked page keeps or loses its mark by the size of this edit, unless
+    // the write names the mark itself, as setApproval, sync and import do
+    // (ADR-078 decision 3). The decision goes into the revision note.
+    const carried = current && input.approval === undefined ? await this.carryOver(current, input) : null;
+    if (carried) context = { ...context, note: [context.note?.trim(), carried.note].filter(Boolean).join(" ") };
     input = {
       ...rest,
       sources,
@@ -366,12 +373,16 @@ export class PageService {
       public: published,
       // The mark is kept unless this write says otherwise, so the revision
       // snapshot records it as it stands after the write (ADR-078).
-      approval: input.approval ?? current?.approval ?? "neutral",
+      approval: carried?.approval ?? input.approval ?? current?.approval ?? "neutral",
       approvalAt: input.approvalAt !== undefined ? input.approvalAt : (current?.approvalAt ?? null),
       approvalVersion:
         input.approvalVersion !== undefined ? input.approvalVersion : (current?.approvalVersion ?? null),
       approvalPrevious:
-        input.approvalPrevious !== undefined ? input.approvalPrevious : (current?.approvalPrevious ?? null),
+        carried?.approvalPrevious !== undefined
+          ? carried.approvalPrevious
+          : input.approvalPrevious !== undefined
+            ? input.approvalPrevious
+            : (current?.approvalPrevious ?? null),
       verifiedAt: verified
         ? at
         : verifiedAt !== undefined
@@ -400,6 +411,33 @@ export class PageService {
     );
     await this.index(page);
     return page;
+  }
+
+  /**
+   * What an edit does to a page's approval mark (ADR-078 decision 3). Null
+   * when there is no mark, or nothing changed. The body is measured against
+   * the revision the person approved; if that revision was vacuumed away,
+   * against the current body, the nearest thing left.
+   */
+  private async carryOver(
+    current: Page,
+    input: PageInput,
+  ): Promise<{ approval: Approval; approvalPrevious: Exclude<Approval, "neutral"> | null; note: string } | null> {
+    if (current.approval === "neutral") return null;
+    const approvedAt = current.approvalVersion
+      ? await this.store.getRevision(current.workspaceId, "page", current.id, current.approvalVersion)
+      : null;
+    const baseline =
+      approvedAt && "body" in approvedAt.snapshot && typeof approvedAt.snapshot.body === "string"
+        ? approvedAt.snapshot.body
+        : current.body;
+    const titleChanged = input.title !== current.title;
+    const changed = changedChars(baseline, input.body);
+    if (!titleChanged && changed === 0) return null;
+    const { keep } = approvalAfterEdit({ titleChanged, changedChars: changed, baselineLength: baseline.length });
+    return keep
+      ? { approval: current.approval, approvalPrevious: current.approvalPrevious, note: carryOverNote(true, current.approval) }
+      : { approval: "neutral", approvalPrevious: current.approval, note: carryOverNote(false, current.approval) };
   }
 
   private async index(page: Page): Promise<void> {
