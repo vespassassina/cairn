@@ -72,6 +72,15 @@ const CAIRN_CSS = `
   }
 }
 
+/* Side-by-side diff (ADR-078), before the phone block below so its one-column
+   override wins. The diff colours themselves are further down with the inline diff.: each row a two-column grid, older text left. */
+.cairn-side .cairn-side-row{ display:grid; grid-template-columns:1fr 1fr; padding:0 }
+.cairn-side .cairn-side-row > div{ min-width:0; border-left:1px solid var(--ak-rule) }
+.cairn-side .cairn-side-row > div:first-child{ border-left:0 }
+.cairn-side .cairn-side-head > div{ font-family:var(--ak-sans); font-size:11px; letter-spacing:.06em;
+  text-transform:uppercase; color:var(--ak-ink-soft); background:var(--ak-fill); padding-top:2px; padding-bottom:2px }
+.cairn-side .cairn-side-empty{ background:var(--ak-fill) }
+
 /* Single column below 700px: the tree, the body and the rail stack in that
    order, source order already matching (ADR-056). */
 @media (max-width: 700px){
@@ -82,6 +91,10 @@ const CAIRN_CSS = `
   /* artifactkit's .ak-pagehead is flex-nowrap; at this width the title and
      the Edit/History buttons together no longer fit one row (ADR-056). */
   .ak-pagehead{ flex-wrap:wrap }
+  /* Side-by-side diff: one column, before over after, row by row. */
+  .cairn-side .cairn-side-row{ grid-template-columns:1fr }
+  .cairn-side .cairn-side-row > div{ border-left:0 }
+  .cairn-side .cairn-side-head{ display:none }
   .cairn-tree-toggle > summary{
     display:flex; align-items:center; cursor:pointer; min-height:44px;
     font-size:13px; font-weight:600;

@@ -13,6 +13,13 @@ Each entry answers four questions:
 
 ## 2026-09-24
 
+### The side-by-side diff stayed two columns on a phone although the phone rule was there
+
+1. **What happened.** The first browser check of the side-by-side diff (ADR-078, sprint 1 task 8) at 375 px showed two narrow columns with the Before/After header, while a static test asserting the phone rule existed had passed.
+2. **Cause.** The console stylesheet in `packages/api/src/web/assets.ts` has its phone media block early in the file, before the diff styles. The new base rule `.cairn-side .cairn-side-row{ grid-template-columns:1fr 1fr }` was added beside the diff styles, after the phone block; same specificity, later wins, so the phone override lost. The test only checked the rule was present, not that it came after the base rule.
+3. **Fix.** The base rules moved above the phone block, with a comment saying why, and the test now asserts the order: base rule, then the media block, then the override.
+4. **Lesson.** In this stylesheet a phone override for a new component must sit above the `@media (max-width: 700px)` block or inside it, never after it, and a test for a media rule must check position, not presence. A screenshot at phone width is the check that catches it.
+
 ### Restarting the local dev server dropped the session's Cairn MCP client for the rest of the session
 
 1. **What happened.** After a code change, the local dev server on port 8787 was stopped and started again to verify the fix. From then on every Cairn MCP tool in the Claude Code session was gone, reported as `ECONNREFUSED`, although `/health` and `/mcp` on 8787 answered within seconds of the restart and the Azure copy answered too. The specs and plan of that day could not be written into Cairn through MCP.

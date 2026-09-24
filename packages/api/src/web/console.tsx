@@ -40,7 +40,7 @@ import {
   type StalePageSummary,
 } from "../operations.js";
 import { ASSET_VERSION, CONSOLE_CSS, CONSOLE_JS, documentTitle, FAVICON_SVG, HEAD_TAGS, ICON_180_PNG, ICON_512_PNG, MANIFEST } from "./assets.js";
-import { ActorPill, ageOf, Banner, DiffView, Layout, setFooterFactsProvider, Verified, When } from "./layout.js";
+import { ActorPill, ageOf, Banner, DiffView, Layout, setFooterFactsProvider, SideBySideDiff, Verified, When } from "./layout.js";
 import { createMarkdownRenderer, pageHref, type LinkResolver } from "./markdown.js";
 import { wikiHref, type SelfDescription } from "./public.js";
 import { isSameOrigin, SESSION_COOKIE, sessionValue, timingSafeEqual } from "./session.js";
@@ -548,11 +548,27 @@ const ApprovalButtons: FC<{ page: Page; next?: string | undefined }> = ({ page, 
   </>
 );
 
+/**
+ * Where to see what changed since the owner approved a page: the side-by-side
+ * view between the version they approved and the current one (ADR-078). Null
+ * when there is no baseline, or nothing changed since.
+ */
+function sinceApprovalHref(page: Page): string | null {
+  if (!page.approvalVersion || page.approvalVersion === page.version) return null;
+  return `${pageHref(page.id)}/v/${encodeURIComponent(page.version)}?view=side&from=${encodeURIComponent(page.approvalVersion)}`;
+}
+
 /** Why a page is in the review queue, in words. */
 const ReviewReasonText: FC<{ item: ReviewItem }> = ({ item }) =>
   item.reason === "changed" ? (
     <span>
       <span class="ak-pill ak-pill-warn">changed</span> was {item.page.approvalPrevious}, changed since approval
+      {sinceApprovalHref(item.page) ? (
+        <>
+          {" "}
+          (<a href={sinceApprovalHref(item.page)!}>see what changed</a>)
+        </>
+      ) : null}
     </span>
   ) : item.reason === "agent" ? (
     <span>
@@ -1486,6 +1502,11 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
                   Edit
                 </a>
                 <ApprovalButtons page={page} />
+                {sinceApprovalHref(page) ? (
+                  <a class="ak-btn" href={sinceApprovalHref(page)!}>
+                    Changes since approval
+                  </a>
+                ) : null}
                 <a class="ak-btn" href={`/new?parent=${encodeURIComponent(page.id)}`}>
                   Add child
                 </a>
@@ -1839,6 +1860,26 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
     const page = await context.store.getPage(ws, id);
     const titles = resolverFor(await allPages(context));
     const isCurrent = page?.version === view.revision.version;
+    // `from` compares with an older version instead of the one before: the
+    // approved one, from "Changes since approval" (ADR-078). `view=side`
+    // shows either comparison as two columns.
+    const from = c.req.query("from") ?? null;
+    const sideBySide = c.req.query("view") === "side";
+    let diff = view.diff;
+    let fromLabel: string | null = null;
+    if (from && from !== view.revision.version) {
+      const baseline = await context.store.getRevision(ws, "page", id, from);
+      if (!baseline) return notFound(c, "The version to compare with");
+      diff = diffLines((baseline.snapshot as PageSnapshot).body, view.snapshot.body);
+      fromLabel = page?.approvalVersion === from ? "since it was approved" : `since version ${from.slice(0, 8)}`;
+    }
+    const versionHref = (side: boolean) => {
+      const query = new URLSearchParams();
+      if (side) query.set("view", "side");
+      if (from) query.set("from", from);
+      const q = query.toString();
+      return `${pageHref(id)}/v/${encodeURIComponent(view.revision.version)}${q ? `?${q}` : ""}`;
+    };
 
     return render(
       c,
@@ -1877,12 +1918,19 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
             </form>
           ) : null}
         </header>
-        <h2>What changed</h2>
-        {view.diff ? (
+        <div class="ak-sechead">
+          <h2>{fromLabel ? `What changed ${fromLabel}` : "What changed"}</h2>
+          {diff ? (
+            <a class="ak-btn" href={versionHref(!sideBySide)}>
+              {sideBySide ? "Inline" : "Side by side"}
+            </a>
+          ) : null}
+        </div>
+        {diff ? (
           <>
-            {view.titleChanged ? <p class="ak-small">The title changed too.</p> : null}
-            {view.tagsChanged ? <p class="ak-small">The tags changed too.</p> : null}
-            <DiffView diff={view.diff} />
+            {!fromLabel && view.titleChanged ? <p class="ak-small">The title changed too.</p> : null}
+            {!fromLabel && view.tagsChanged ? <p class="ak-small">The tags changed too.</p> : null}
+            {sideBySide ? <SideBySideDiff diff={diff} /> : <DiffView diff={diff} />}
           </>
         ) : (
           <p class="ak-small">This is the first recorded version.</p>

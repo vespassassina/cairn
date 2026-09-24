@@ -1105,3 +1105,55 @@ describe("approval in the console (ADR-078)", () => {
     expect(latest!.note).toContain("approval kept by the owner");
   });
 });
+
+describe("side-by-side diff (ADR-078)", () => {
+  it("renders the same lines as the inline diff, in two columns, with a toggle either way", async () => {
+    const page = await context.pages.create(context.workspaceId, { title: "Doses", body: "one\ntwo\nthree\nfour\nfive" }, { actor: OWNER });
+    const edited = await context.pages.update(context.workspaceId, page.id, { title: "Doses", body: "one\ntwo changed\nthree\nfour\nfive\nsix" }, page.version, AGENT);
+
+    const inline = await get(`/p/${page.id}/v/${edited.version}`);
+    const side = await get(`/p/${page.id}/v/${edited.version}?view=side`);
+    expect(side.status).toBe(200);
+    expect(inline.html).toContain(`href="/p/${page.id}/v/${edited.version}?view=side"`);
+    expect(side.html).toContain(`href="/p/${page.id}/v/${edited.version}"`);
+    expect(side.html).toContain('class="cairn-diff cairn-side"');
+
+    const count = (html: string, needle: string) => html.split(needle).length - 1;
+    expect(count(inline.html, "cairn-del")).toBe(1);
+    expect(count(inline.html, "cairn-add")).toBe(2);
+    expect(count(side.html, "cairn-del")).toBe(1);
+    expect(count(side.html, "cairn-add")).toBe(2);
+    // Removed text on the left, added on the right, paired on one row.
+    expect(side.html).toMatch(/<div class="cairn-del">- two<\/div><div class="cairn-add">\+ two changed<\/div>/);
+  });
+
+  it("compares with the approved version on request, from the page and from the queue", async () => {
+    const page = await context.pages.create(context.workspaceId, { title: "Doses", body: "approved text" }, AGENT);
+    await post(`/p/${page.id}/approval`, { approval: "approved", version: page.version });
+    const approved = await context.pages.get(context.workspaceId, page.id);
+    const second = await context.pages.update(context.workspaceId, page.id, { title: "Doses", body: "a first rewrite of the whole thing" }, approved.version, AGENT);
+    const third = await context.pages.update(context.workspaceId, page.id, { title: "Doses", body: "a second rewrite of the whole thing" }, second.version, AGENT);
+
+    const sinceApproval = `/p/${page.id}/v/${third.version}?view=side&from=${page.version}`;
+    const escaped = sinceApproval.replace("&", "&amp;");
+    expect((await get(`/p/${page.id}`)).html).toContain(`href="${escaped}"`);
+    expect((await get("/review")).html).toContain(`href="${escaped}"`);
+
+    const { html } = await get(sinceApproval);
+    expect(html).toContain("- approved text");
+    expect(html).toContain("+ a second rewrite of the whole thing");
+    expect(html).not.toContain("first rewrite");
+    expect(html).toContain("since it was approved");
+  });
+
+  it("stacks the two columns on a phone", async () => {
+    const css = await (await app.fetch(new Request(`${ORIGIN}/assets/console.css`, { headers: { cookie } }))).text();
+    const base = css.indexOf(".cairn-side .cairn-side-row{ display:grid; grid-template-columns:1fr 1fr");
+    const phone = css.indexOf("@media (max-width: 700px)");
+    const override = css.indexOf(".cairn-side .cairn-side-row{ grid-template-columns:1fr }");
+    expect(base).toBeGreaterThan(0);
+    expect(phone).toBeGreaterThan(base);
+    // Same specificity, so the override must come later in the sheet to win.
+    expect(override).toBeGreaterThan(phone);
+  });
+});

@@ -1,7 +1,7 @@
 /** @jsxImportSource hono/jsx */
 import type { Child, FC } from "hono/jsx";
 import { raw } from "hono/html";
-import type { Actor, Diff } from "@cairn/core";
+import type { Actor, Diff, DiffLine } from "@cairn/core";
 import { ASSET_VERSION, documentTitle, HEAD_TAGS } from "./assets.js";
 
 /**
@@ -174,10 +174,12 @@ export const Verified: FC<{ at: string | null }> = ({ at }) =>
  * A diff with a little context around each change. Every line carries a
  * prefix, so the change reads without colour.
  */
-export const DiffView: FC<{ diff: Diff; context?: number }> = ({ diff, context = 3 }) => {
-  if (diff.added === 0 && diff.removed === 0) {
-    return <p class="ak-small">No change to the text.</p>;
-  }
+/**
+ * The lines worth showing: every changed line with `context` lines around
+ * it, as runs. A gap between runs is folded. Shared by the inline and the
+ * side-by-side views, so the two always show the same lines.
+ */
+function foldedRuns(diff: Diff, context: number): DiffLine[][] {
   const keep = new Set<number>();
   diff.lines.forEach((line, i) => {
     if (line.op === "equal") return;
@@ -189,27 +191,92 @@ export const DiffView: FC<{ diff: Diff; context?: number }> = ({ diff, context =
       keep.add(j);
     }
   });
-
-  const rows: Child[] = [];
+  const runs: DiffLine[][] = [];
   let last = -1;
   for (const i of [...keep].sort((a, b) => a - b)) {
-    if (last !== -1 && i > last + 1) {
-      rows.push(<div class="cairn-gap">…</div>);
-    }
-    const line = diff.lines[i]!;
-    const prefix = line.op === "add" ? "+ " : line.op === "remove" ? "- " : "  ";
-    const cls = line.op === "add" ? "cairn-add" : line.op === "remove" ? "cairn-del" : "";
-    rows.push(<div class={cls}>{prefix + line.text}</div>);
+    if (last === -1 || i > last + 1) runs.push([]);
+    runs[runs.length - 1]!.push(diff.lines[i]!);
     last = i;
   }
+  return runs;
+}
+
+const DiffSummary: FC<{ diff: Diff }> = ({ diff }) => (
+  <p class="ak-small">
+    {diff.added} added, {diff.removed} removed
+    {diff.coarse ? " (too large to compare line by line)" : ""}
+  </p>
+);
+
+const prefixOf = (op: DiffLine["op"]) => (op === "add" ? "+ " : op === "remove" ? "- " : "  ");
+const classOf = (op: DiffLine["op"]) => (op === "add" ? "cairn-add" : op === "remove" ? "cairn-del" : "");
+
+export const DiffView: FC<{ diff: Diff; context?: number }> = ({ diff, context = 3 }) => {
+  if (diff.added === 0 && diff.removed === 0) {
+    return <p class="ak-small">No change to the text.</p>;
+  }
+  const rows: Child[] = [];
+  foldedRuns(diff, context).forEach((run, n) => {
+    if (n > 0) rows.push(<div class="cairn-gap">…</div>);
+    for (const line of run) rows.push(<div class={classOf(line.op)}>{prefixOf(line.op) + line.text}</div>);
+  });
 
   return (
     <div>
-      <p class="ak-small">
-        {diff.added} added, {diff.removed} removed
-        {diff.coarse ? " (too large to compare line by line)" : ""}
-      </p>
+      <DiffSummary diff={diff} />
       <div class="cairn-diff" role="region" aria-label="Changes">
+        {rows}
+      </div>
+    </div>
+  );
+};
+
+/**
+ * The same diff as two columns (ADR-078): the older text left, the newer
+ * right. Inside a run, each stretch of removed lines is paired row by row
+ * with the added lines that follow it, so a changed line sits beside its
+ * replacement; the longer side's extra lines face an empty cell. Same
+ * folding as DiffView, so both views show the same lines. CSS grid, no
+ * script; the stylesheet stacks the columns on a phone.
+ */
+export const SideBySideDiff: FC<{ diff: Diff; context?: number }> = ({ diff, context = 3 }) => {
+  if (diff.added === 0 && diff.removed === 0) {
+    return <p class="ak-small">No change to the text.</p>;
+  }
+  const rows: Child[] = [];
+  const row = (left: DiffLine | null, right: DiffLine | null) =>
+    rows.push(
+      <div class="cairn-side-row">
+        {left ? <div class={classOf(left.op)}>{prefixOf(left.op) + left.text}</div> : <div class="cairn-side-empty"></div>}
+        {right ? <div class={classOf(right.op)}>{prefixOf(right.op) + right.text}</div> : <div class="cairn-side-empty"></div>}
+      </div>,
+    );
+  foldedRuns(diff, context).forEach((run, n) => {
+    if (n > 0) rows.push(<div class="cairn-gap">…</div>);
+    let i = 0;
+    while (i < run.length) {
+      const line = run[i]!;
+      if (line.op === "equal") {
+        row(line, line);
+        i += 1;
+        continue;
+      }
+      const removed: DiffLine[] = [];
+      const added: DiffLine[] = [];
+      while (i < run.length && run[i]!.op === "remove") removed.push(run[i++]!);
+      while (i < run.length && run[i]!.op === "add") added.push(run[i++]!);
+      for (let k = 0; k < Math.max(removed.length, added.length); k += 1) row(removed[k] ?? null, added[k] ?? null);
+    }
+  });
+
+  return (
+    <div>
+      <DiffSummary diff={diff} />
+      <div class="cairn-diff cairn-side" role="region" aria-label="Changes, side by side">
+        <div class="cairn-side-row cairn-side-head">
+          <div>Before</div>
+          <div>After</div>
+        </div>
         {rows}
       </div>
     </div>
