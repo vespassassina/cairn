@@ -13,6 +13,13 @@ Each entry answers four questions:
 
 ## 2026-09-24
 
+### Restarting the local dev server dropped the session's Cairn MCP client for the rest of the session
+
+1. **What happened.** After a code change, the local dev server on port 8787 was stopped and started again to verify the fix. From then on every Cairn MCP tool in the Claude Code session was gone, reported as `ECONNREFUSED`, although `/health` and `/mcp` on 8787 answered within seconds of the restart and the Azure copy answered too. The specs and plan of that day could not be written into Cairn through MCP.
+2. **Cause.** The MCP client (`http://localhost:8787/mcp` in `~/.claude.json`) dialled during the few seconds the server was down, recorded the failure, and does not retry on its own. A user-config MCP server can only be reconnected by the person, with `/mcp` in the session; the agent has no tool for it.
+3. **Fix.** The person reconnects with `/mcp`. Until then the `cairn` CLI reaches the same store over HTTP (`cairn --instance laptop ...`), so nothing is blocked, only the MCP tools. No code changed.
+4. **Lesson.** A restart of the local Cairn is not free for an agent session that also uses it over MCP. Restart only when a change needs checking, say so in the same message so the person knows to reconnect, and use the CLI for Cairn writes until they have. A server that answers is not the same as a client that is connected: probe the client's status before blaming the server.
+
 ### The console's search skipped synonyms and listed one page several times
 
 1. **What happened.** During the product review, a console search for "zigbee coordinator" showed the same page four times, once per passage, and a search for a synonym found nothing, while the same query through MCP or `cairn search` grouped the passages under one page and expanded the synonym.
