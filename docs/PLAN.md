@@ -1,6 +1,6 @@
 # Plan: notes, approval, dropbox and the mobile app
 
-From the product review of 2026-09-24 and the owner's direction the same day. Specs: `docs/specs/knowledge-approval.md`, `docs/specs/dropbox.md`, `docs/specs/mobile-capture-app.md`, `docs/specs/console-for-notes.md`. Status: proposed, waiting for the owner's yes on specs and plan.
+From the product review of 2026-09-24 and the owner's direction the same day. Specs: `docs/specs/knowledge-approval.md`, `docs/specs/dropbox.md`, `docs/specs/mobile-capture-app.md`, `docs/specs/console-for-notes.md`. Status: specs and plan agreed by the owner on 2026-09-24. Sprint 0 done the same day; waiting on gate 1.
 
 Rules: one outcome and one test per task; a sprint is a working increment; each sprint opens with its ADR and closes with the four logs, `pnpm build`, `pnpm test`, and for search changes `pnpm eval`. Tasks tick here as they close. Sizes are agent working sessions: S under one, M one to two, L three or more.
 
@@ -16,11 +16,11 @@ Order: E1 before E2 so drops enter a workspace that already tells approved from 
 
 ## Sprint 0: decisions (S)
 
-1. ADR-078 knowledge approval: model, person-only writes, carry-over thresholds, ranking constant, how the CLI knows a person is at the keyboard. Test: the ADR answers the spec's open questions 1 to 3.
-2. ADR-079 dropbox and drop tokens: Inbox as a well-known collection, server-side upload, token scope and kind. Test: answers dropbox open question 1.
-3. ADR-080 the mobile app: amends ADR-009 with one service worker and states its boundary. Test: ADR-009's rule 3 is quoted and the exception is one sentence.
-4. ADR-081 console for notes: Markdown extensions, the preview script, `CAIRN_TIME_ZONE`. Test: `docs/decisions/README.md` indexes all four; changelog entry.
-5. Roadmap section "Notes and approval" with every item at `next`. Test: `docs/ROADMAP.md` diff.
+1. [x] ADR-078 knowledge approval: model, person-only writes, carry-over thresholds, ranking constant, how the CLI knows a person is at the keyboard. Test: the ADR answers the spec's open questions 1 to 3.
+2. [x] ADR-079 dropbox and drop tokens: Inbox as a well-known collection, server-side upload, token scope and kind. Test: answers dropbox open question 1.
+3. [x] ADR-080 the mobile app: amends ADR-009 with one service worker and states its boundary. Test: ADR-009's rule 3 is quoted and the exception is one sentence.
+4. [x] ADR-081 console for notes: Markdown extensions, the preview script, `CAIRN_TIME_ZONE`. Test: `docs/decisions/README.md` indexes all four; changelog entry.
+5. [x] Roadmap section "Notes and approval" with every item at `next`. Test: `docs/ROADMAP.md` diff.
 
 ## Sprint 1: approval (E1, L)
 
