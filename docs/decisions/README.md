@@ -83,6 +83,8 @@ A decision that changes is not edited away. Add a new ADR that supersedes it, an
 | [073](ADR-073.md) | Stale-page reviews reach MCP, REST and the CLI, not just the console | accepted | 2026-09-23 |
 | [074](ADR-074.md) | Publish and unpublish notify IndexNow, opt-in | accepted | 2026-09-23 |
 | [075](ADR-075.md) | Templates and daily notes are pages with a shape | accepted | 2026-09-23 |
+| [076](ADR-076.md) | A quoted phrase in a search query asks FTS5 for NEAR proximity, fixed at distance 10 | accepted | 2026-09-24 |
+| [077](ADR-077.md) | Per-collection search synonyms, a dedicated store, expanded workspace-wide at query time | accepted | 2026-09-24 |
 
 ## Writing one
 

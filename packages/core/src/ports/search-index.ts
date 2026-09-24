@@ -104,6 +104,15 @@ export interface SearchIndex {
       cursor?: string | null;
       /** Ignored, with `mode: "keyword"` returned, when vectors are off. */
       mode?: SearchMode;
+      /**
+       * Extra words each query term also matches (ADR-077), keyed by the
+       * folded term as `core/search/terms.ts` `queryTerms` produces it. The
+       * caller resolves these from the synonyms store before calling
+       * `search`, so a backend never has to know that store exists: it only
+       * ever sees a wider set of words to match per term, the same way every
+       * backend already treats one term's stem forms as equivalent.
+       */
+      synonyms?: Record<string, string[]>;
     },
   ): Promise<SearchResult>;
 }

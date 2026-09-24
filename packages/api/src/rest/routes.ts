@@ -4,6 +4,7 @@ import { MAX_SOURCES, NotFoundError, type Actor, type Page, type Paged, type Rev
 import type { AppContext } from "../context.js";
 import {
   tableJson,
+  addSynonym,
   childSummaryJson,
   childrenPreview,
   describeError,
@@ -15,7 +16,9 @@ import {
   listChildren,
   listDeletedPages,
   listStalePages,
+  listSynonyms,
   moveRecord,
+  removeSynonym,
   publishPage,
   createPublishTokenOp,
   listPublishTokensOp,
@@ -40,6 +43,7 @@ import {
   verifiedTimes,
   searchPages,
   stalePageJson,
+  synonymPairJson,
   writeRow,
 } from "../operations.js";
 import { workspaceSummary } from "../mcp/summary.js";
@@ -126,6 +130,11 @@ const schemas = {
     change_note: CHANGE_NOTE,
   }),
   deleteBody: z.object({ change_note: CHANGE_NOTE }).default({}),
+  addSynonym: z.object({
+    term: z.string().min(1),
+    synonym: z.string().min(1),
+    change_note: CHANGE_NOTE,
+  }),
   createPageFromTemplate: z.object({
     template_id: z.string().min(1),
     title: z.string().min(1),
@@ -471,6 +480,32 @@ export function restRoutes(context: AppContext, callerFor: CallerFor, options: R
       never_verified_count: result.neverVerifiedCount,
       oldest_verified_at: result.oldestVerifiedAt,
     });
+  });
+
+  // A collection's search synonyms (ADR-077). collection_id is a top-level
+  // page's id, not a table id.
+  api.get("/collections/:id/synonyms", async (c) => {
+    const pairs = await listSynonyms(context, c.req.param("id"));
+    return c.json({ synonyms: pairs.map(synonymPairJson) });
+  });
+
+  api.post("/collections/:id/synonyms", async (c) => {
+    const body = await parseBody(c, schemas.addSynonym);
+    const pair = await addSynonym(context, c.req.param("id"), body.term, body.synonym, by(c, body.change_note));
+    return c.json({ synonym: synonymPairJson(pair) }, 201);
+  });
+
+  api.delete("/collections/:id/synonyms", async (c) => {
+    const term = c.req.query("term");
+    const synonym = c.req.query("synonym");
+    if (!term || !synonym) {
+      throw new BadRequest("Pass term and synonym as query parameters.", [
+        { field: "term", message: "required" },
+        { field: "synonym", message: "required" },
+      ]);
+    }
+    await removeSynonym(context, c.req.param("id"), term, synonym);
+    return c.body(null, 204);
   });
 
   api.post("/pages", async (c) => {

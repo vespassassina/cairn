@@ -5,6 +5,7 @@ import { budgetList, budgetPages, budgetText, DEFAULT_TOKEN_BUDGET } from "../bu
 import type { AppContext } from "../context.js";
 import {
   tableJson,
+  addSynonym,
   childSummaryJson,
   childrenPreview,
   deletePage,
@@ -17,8 +18,10 @@ import {
   listChildren,
   listDeletedPages,
   listStalePages,
+  listSynonyms,
   moveRecord,
   pageSummary,
+  removeSynonym,
   renderDiff,
   revisionDetail,
   revisionSummary,
@@ -26,6 +29,7 @@ import {
   searchPages,
   sourceChangesJson,
   stalePageJson,
+  synonymPairJson,
   undeletePage,
   vacuumPage,
   verifiedTimes,
@@ -354,6 +358,71 @@ export function registerTools(server: McpServer, context: AppContext, actor: Act
           never_verified_count: result.neverVerifiedCount,
           oldest_verified_at: result.oldestVerifiedAt,
         });
+      } catch (error) {
+        return toolError(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "list_synonyms",
+    {
+      title: "List a collection's search synonyms",
+      description:
+        "A collection's synonym pairs (ADR-077): words the owner or an agent said mean the same thing in that domain, so search for either finds pages that only use the other. " +
+        "collection_id is a top-level page's id, the same sense as \"Collections (top-level pages)\" in this workspace's summary, not a table id.",
+      inputSchema: {
+        collection_id: z.string().min(1).describe("A top-level page's id."),
+      },
+    },
+    async ({ collection_id }): Promise<ToolResult> => {
+      try {
+        const pairs = await listSynonyms(context, collection_id);
+        return json({ synonyms: pairs.map(synonymPairJson) });
+      } catch (error) {
+        return toolError(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "add_synonym",
+    {
+      title: "Add a search synonym",
+      description:
+        "Adds a synonym pair to a collection (ADR-077), so search for either term finds pages that use only the other. Store domain jargon here when you notice it: an abbreviation, an alias, a common misspelling, a brand name for a compound, in whichever collection that word belongs to. Adding the same pair twice does nothing new.",
+      inputSchema: {
+        collection_id: z.string().min(1).describe("A top-level page's id. Store the pair under the collection the word belongs to."),
+        term: z.string().min(1).describe("One side of the pair."),
+        synonym: z.string().min(1).describe("The other side. Either word, searched, will find the other."),
+        change_note: CHANGE_NOTE,
+      },
+    },
+    async ({ collection_id, term, synonym, change_note }): Promise<ToolResult> => {
+      try {
+        const pair = await addSynonym(context, collection_id, term, synonym, by(change_note));
+        return json({ synonym: synonymPairJson(pair) });
+      } catch (error) {
+        return toolError(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "remove_synonym",
+    {
+      title: "Remove a search synonym",
+      description: "Removes a synonym pair from a collection (ADR-077). Does nothing if it is not there.",
+      inputSchema: {
+        collection_id: z.string().min(1).describe("A top-level page's id."),
+        term: z.string().min(1),
+        synonym: z.string().min(1),
+      },
+    },
+    async ({ collection_id, term, synonym }): Promise<ToolResult> => {
+      try {
+        await removeSynonym(context, collection_id, term, synonym);
+        return json({ removed: true });
       } catch (error) {
         return toolError(error);
       }

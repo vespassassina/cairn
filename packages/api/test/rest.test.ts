@@ -1076,6 +1076,46 @@ describe("freshness (ADR-028)", () => {
   });
 });
 
+describe("synonyms (ADR-077)", () => {
+  it("lists, adds and removes a collection's search synonyms", async () => {
+    const collection = await call("/pages", { method: "POST", body: { title: "Peptides", body: "Root." } });
+    const collectionId = String(collection.json["id"]);
+
+    const empty = await call(`/collections/${collectionId}/synonyms`);
+    expect(empty.status).toBe(200);
+    expect(empty.json["synonyms"]).toEqual([]);
+
+    const added = await call(`/collections/${collectionId}/synonyms`, {
+      method: "POST",
+      body: { term: "GLP-1", synonym: "glucagon-like peptide 1", change_note: "Common abbreviation" },
+    });
+    expect(added.status).toBe(201);
+    expect(added.json["synonym"]).toMatchObject({
+      term: "glp-1",
+      synonym: "glucagon-like peptide 1",
+      collection_id: collectionId,
+    });
+
+    const listed = await call(`/collections/${collectionId}/synonyms`);
+    expect((listed.json["synonyms"] as unknown[]).length).toBe(1);
+
+    const missingTerm = await call(`/collections/${collectionId}/synonyms`, {
+      method: "POST",
+      body: { term: "", synonym: "x" },
+    });
+    expect(missingTerm.status).toBe(400);
+
+    const removed = await call(
+      `/collections/${collectionId}/synonyms?term=${encodeURIComponent("GLP-1")}&synonym=${encodeURIComponent("glucagon-like peptide 1")}`,
+      { method: "DELETE" },
+    );
+    expect(removed.status).toBe(204);
+
+    const afterRemove = await call(`/collections/${collectionId}/synonyms`);
+    expect(afterRemove.json["synonyms"]).toEqual([]);
+  });
+});
+
 describe("edit times (ADR-030)", () => {
   it("returns edited_at, takes an exact one on PUT, and gives revisions their parent", async () => {
     const parent = await call("/pages", { method: "POST", body: { title: "Peptides", body: "Hub." } });

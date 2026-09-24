@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { getLoadablePath } from "sqlite-vec";
 import {
+  extractPhrases,
   isNegatedEverywhere,
   queryTerms,
   requiredMatches,
@@ -152,6 +153,24 @@ interface ChunkRow {
  */
 function quote(term: string): string {
   return `"${term.replace(/"/g, '""')}"`;
+}
+
+/**
+ * How far apart NEAR still counts a phrase's words as together (ADR-076).
+ * Fixed, not a setting: chosen for Cairn's own prose length with `pnpm eval`,
+ * and one fewer thing an agent has to know to write a phrase query.
+ */
+const NEAR_DISTANCE = 10;
+
+/** An MATCH clause for one query term plus its synonyms (ADR-077), OR'd together. */
+function altQuery(term: string, synonyms: string[]): string {
+  const alts = [term, ...synonyms];
+  return alts.length === 1 ? quote(alts[0]!) : `(${alts.map(quote).join(" OR ")})`;
+}
+
+/** A MATCH clause asking FTS5 for a quoted phrase's words within NEAR_DISTANCE of each other. */
+function nearQuery(words: string[]): string {
+  return `NEAR(${words.map(quote).join(" ")}, ${NEAR_DISTANCE})`;
 }
 
 function hashText(text: string): string {
@@ -321,7 +340,13 @@ export class SqliteSearchIndex implements SearchIndex {
 
   async search(
     workspaceId: WorkspaceId,
-    options: { query: string; limit?: number; cursor?: string | null; mode?: SearchMode },
+    options: {
+      query: string;
+      limit?: number;
+      cursor?: string | null;
+      mode?: SearchMode;
+      synonyms?: Record<string, string[]>;
+    },
   ): Promise<SearchResult> {
     const limit = Math.max(
       1,
@@ -336,7 +361,8 @@ export class SqliteSearchIndex implements SearchIndex {
       return { hits: [], mode: "keyword", truncated: false, cursor: null };
     }
 
-    const keyword = this.keywordRanking(workspaceId, terms);
+    const phrases = extractPhrases(options.query);
+    const keyword = this.keywordRanking(workspaceId, terms, options.synonyms ?? {}, phrases);
     let mode: SearchMode = "keyword";
     let ranked = keyword;
 
@@ -370,19 +396,29 @@ export class SqliteSearchIndex implements SearchIndex {
   }
 
   /** Chunks that pass the keyword rule (ADR-021), best first. */
-  private keywordRanking(workspaceId: WorkspaceId, terms: string[]): HitRecord[] {
-    // Which pages hold each term, in at least one chunk where it is not
-    // negated (ADR-042): "less hungry" does not count towards "hungry".
+  private keywordRanking(
+    workspaceId: WorkspaceId,
+    terms: string[],
+    synonyms: Record<string, string[]>,
+    phrases: string[][],
+  ): HitRecord[] {
+    // Which pages hold each term or one of its synonyms (ADR-077), in at
+    // least one chunk where that word is not negated (ADR-042): "less
+    // hungry" does not count towards "hungry".
     const pagesOf = this.db.prepare(
       "SELECT page_id, text FROM chunks WHERE chunks MATCH ? AND workspace_id = ?",
     );
     const required = requiredMatches(terms.length);
     const coverage = new Map<string, number>();
     for (const term of terms) {
-      const rows = pagesOf.all(quote(term), workspaceId) as unknown as { page_id: string; text: string }[];
+      const alts = [term, ...(synonyms[term] ?? [])];
+      const rows = pagesOf.all(altQuery(term, synonyms[term] ?? []), workspaceId) as unknown as {
+        page_id: string;
+        text: string;
+      }[];
       const affirmed = new Set<string>();
       for (const { page_id, text } of rows) {
-        if (!isNegatedEverywhere(text, term)) affirmed.add(page_id);
+        if (alts.some((alt) => !isNegatedEverywhere(text, alt))) affirmed.add(page_id);
       }
       for (const page_id of affirmed) coverage.set(page_id, (coverage.get(page_id) ?? 0) + 1);
     }
@@ -398,13 +434,32 @@ export class SqliteSearchIndex implements SearchIndex {
          ORDER BY ${RANK}, chunk_id
          LIMIT ?`,
       )
-      .all(terms.map(quote).join(" OR "), workspaceId, CANDIDATES) as unknown as HitRecord[];
+      .all(
+        terms.map((term) => altQuery(term, synonyms[term] ?? [])).join(" OR "),
+        workspaceId,
+        CANDIDATES,
+      ) as unknown as HitRecord[];
+
+    // A quoted phrase (ADR-076) does not narrow which pages match: it only
+    // says which of them said the words together rather than scattered, so
+    // those rank first. Plain bag-of-words queries never touch this path.
+    const phraseChunks = new Set<string>();
+    if (phrases.length > 0) {
+      const phraseStmt = this.db.prepare(
+        "SELECT chunk_id FROM chunks WHERE chunks MATCH ? AND workspace_id = ?",
+      );
+      for (const words of phrases) {
+        const rows = phraseStmt.all(nearQuery(words), workspaceId) as unknown as { chunk_id: string }[];
+        for (const row of rows) phraseChunks.add(row.chunk_id);
+      }
+    }
 
     return candidates
       .filter((record) => covered(record) >= required)
       .sort(
         (a, b) =>
           covered(b) - covered(a) ||
+          Number(phraseChunks.has(b.chunk_id)) - Number(phraseChunks.has(a.chunk_id)) ||
           b.score - a.score ||
           (a.chunk_id < b.chunk_id ? -1 : a.chunk_id > b.chunk_id ? 1 : 0),
       );

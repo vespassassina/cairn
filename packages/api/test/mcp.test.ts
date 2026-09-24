@@ -145,6 +145,9 @@ describe("transport and auth", () => {
         "get_attachment",
         "list_attachments",
         "delete_attachment",
+        "list_synonyms",
+        "add_synonym",
+        "remove_synonym",
       ].sort(),
     );
     // No tool publishes a page, on purpose: publishing is the owner's action,
@@ -972,6 +975,51 @@ describe("agent navigation (ADR-058)", () => {
     expect((firstPage.data["pages"] as unknown[]).length).toBe(1);
     expect((firstPage.data["pages"] as Array<Record<string, unknown>>)[0]!["id"]).toBe(never.data["id"]);
     expect(firstPage.data["cursor"]).toBeTruthy();
+  });
+
+  it("lists, adds and removes per-collection synonyms, expanding search either way (ADR-077)", async () => {
+    const collection = await callTool("create_page", { title: "Peptides", body: "Root." });
+    const collectionId = collection.data["id"] as string;
+
+    const empty = await callTool("list_synonyms", { collection_id: collectionId });
+    expect(empty.isError).toBe(false);
+    expect(empty.data["synonyms"]).toEqual([]);
+
+    const added = await callTool("add_synonym", {
+      collection_id: collectionId,
+      term: "GLP-1",
+      synonym: "glucagon-like peptide 1",
+      change_note: "Common abbreviation",
+    });
+    expect(added.isError).toBe(false);
+    const addedPair = added.data["synonym"] as Record<string, unknown>;
+    expect(addedPair["term"]).toBe("glp-1");
+    expect(addedPair["synonym"]).toBe("glucagon-like peptide 1");
+    expect(addedPair["collection_id"]).toBe(collectionId);
+
+    const listed = await callTool("list_synonyms", { collection_id: collectionId });
+    expect((listed.data["synonyms"] as unknown[]).length).toBe(1);
+
+    const onlySynonym = await callTool("create_page", {
+      title: "Semaglutide",
+      body: "A glucagon-like peptide 1 receptor agonist.",
+    });
+    await eventually(async () => {
+      const found = await callTool("search", { query: "GLP-1" });
+      expect(
+        (found.data["pages"] as Array<Record<string, unknown>>).some((p) => p["page_id"] === onlySynonym.data["id"]),
+      ).toBe(true);
+    });
+
+    const removed = await callTool("remove_synonym", {
+      collection_id: collectionId,
+      term: "GLP-1",
+      synonym: "glucagon-like peptide 1",
+    });
+    expect(removed.isError).toBe(false);
+
+    const afterRemove = await callTool("list_synonyms", { collection_id: collectionId });
+    expect(afterRemove.data["synonyms"]).toEqual([]);
   });
 
   it("refuses undelete_page for a page that still exists, naming restore instead", async () => {

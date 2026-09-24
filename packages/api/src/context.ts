@@ -1,6 +1,6 @@
 import { TableService, PageService } from "@cairn/core";
-import type { Actor, AuthStore, DocumentStore, SearchIndex } from "@cairn/core";
-import { SqliteAuthStore, SqliteDocumentStore, SqliteSearchIndex } from "@cairn/adapter-sqlite";
+import type { Actor, AuthStore, DocumentStore, SearchIndex, SynonymsStore } from "@cairn/core";
+import { SqliteAuthStore, SqliteDocumentStore, SqliteSearchIndex, SqliteSynonymsStore } from "@cairn/adapter-sqlite";
 import { LocalEmbedder } from "@cairn/adapter-embeddings-local";
 import { openAttachmentsStore, type AttachmentBlobStore } from "./attachments-blob.js";
 import type { Config } from "./config.js";
@@ -19,6 +19,8 @@ export interface AppContext {
   tables: TableService;
   /** OAuth clients, codes and refresh tokens, apart from content (ADR-017). */
   auth: AuthStore;
+  /** Per-collection search synonyms (ADR-077). */
+  synonyms: SynonymsStore;
   workspaceId: string;
   /** Where attachment blobs are signed against (ADR-064). Null when off. */
   attachmentsStore: AttachmentBlobStore | null;
@@ -57,9 +59,11 @@ export async function createContext(
       : {}),
   });
   const auth = new SqliteAuthStore({ location: config.database });
+  const synonyms = new SqliteSynonymsStore({ location: config.database });
   await store.init();
   await search.init();
   await auth.init();
+  await synonyms.init();
 
   const pages = new PageService(store, search);
   if (search.needsRebuild) {
@@ -84,6 +88,7 @@ export async function createContext(
     pages,
     tables,
     auth,
+    synonyms,
     workspaceId: config.workspaceId,
     // Absent in tests and short-lived commands, which never touch attachments
     // (ADR-064), the same pattern `embeddings` above uses.
@@ -93,6 +98,7 @@ export async function createContext(
 
 export async function closeContext(context: AppContext): Promise<void> {
   await context.auth.close();
+  await context.synonyms.close();
   await context.search.close();
   await context.store.close();
 }

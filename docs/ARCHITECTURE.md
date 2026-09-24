@@ -118,6 +118,8 @@ Search returns pages that hold most of the query's words, with filler words igno
 
 With embeddings on (the default), the same adapter keeps vectors in sqlite-vec tables and searches by meaning too: a small English model (bge-small-en-v1.5) runs in the server process behind the `Embedder` port (`packages/adapter-embeddings-local`), chunks are embedded in the background after each write, and hybrid search fuses the two rankings. Without the model, or if it fails, search is keyword only and says so (ADR-022).
 
+A quoted phrase in the query asks FTS5 for `NEAR`, fixed at distance 10 and unordered, additive to the plain match and never a filter (ADR-076). Each collection can also hold its own term/synonym pairs behind a `SynonymsStore` port; a query term that matches one side of a stored pair, once tokenized the same way search terms are, is expanded to the other side workspace-wide before the search runs (ADR-077).
+
 ## Rules that keep this portable
 
 See CLAUDE.md, "Hard rules". The short version: no cloud SDK outside an adapter, every adapter passes the shared suites unchanged, route handlers use web standard types, and optional services degrade instead of failing.

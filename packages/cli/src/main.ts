@@ -109,8 +109,13 @@ Read
   cairn changes [--since T] [--agents|--people]   what changed, newest first
   cairn stale [--limit N]                 pages needing a re-check, never verified
                                           first, then oldest verified first (ADR-028)
+  cairn synonyms list <collection-id>     a collection's search synonym pairs (ADR-077)
 
 Write (every write is a revision the owner can review and undo)
+  cairn synonyms add <collection-id> <term> <synonym>       search for either finds
+                                          the other; collection-id is a top-level page's
+                                          id, the same one cairn collections lists
+  cairn synonyms remove <collection-id> <term> <synonym>
   cairn create --title T [--parent ID] [--tag X]...     body from --text, --file or stdin
   cairn new --template ID --title T [--parent ID]       create a page from a template page's
                                           body, {{date}} and {{title}} substituted in; parent
@@ -1438,6 +1443,46 @@ export async function run(argv: string[], io: Io): Promise<number> {
           return `${lines.join("\n") || "nothing stale"}\n${summary}${more}\n`;
         });
         return 0;
+      }
+
+      case "synonyms": {
+        const sub = args[0];
+        if (sub === "list") {
+          const collectionId = need(args[1], "the collection (top-level page) id");
+          const { json } = await client.request("GET", `/collections/${encodeURIComponent(collectionId)}/synonyms`);
+          out(json, () => {
+            const pairs = list(json?.["synonyms"]);
+            if (pairs.length === 0) return `no synonyms for ${collectionId}\n`;
+            return pairs.map((p) => `${String(p["term"])}  =  ${String(p["synonym"])}\n`).join("");
+          });
+          return 0;
+        }
+        if (sub === "add") {
+          const collectionId = need(args[1], "the collection (top-level page) id");
+          const term = need(args[2], "the term");
+          const synonym = need(args[3], "the synonym");
+          warnIfNoNote();
+          const { json } = await client.request("POST", `/collections/${encodeURIComponent(collectionId)}/synonyms`, {
+            body: { term, synonym, ...(note ? { change_note: note } : {}) },
+          });
+          const pair = json?.["synonym"] as Record<string, unknown> | undefined;
+          out(json, () => `ok ${collectionId}: "${String(pair?.["term"] ?? term)}" = "${String(pair?.["synonym"] ?? synonym)}"\n`);
+          return 0;
+        }
+        if (sub === "remove") {
+          const collectionId = need(args[1], "the collection (top-level page) id");
+          const term = need(args[2], "the term");
+          const synonym = need(args[3], "the synonym");
+          await client.request(
+            "DELETE",
+            `/collections/${encodeURIComponent(collectionId)}/synonyms${query({ term, synonym })}`,
+          );
+          out(null, () => `ok ${collectionId}: "${term}" = "${synonym}" removed\n`);
+          return 0;
+        }
+        throw new UsageError(
+          `cairn synonyms needs a subcommand: list <collection-id>, add <collection-id> <term> <synonym>, or remove <collection-id> <term> <synonym>. Got "${sub ?? ""}".`,
+        );
       }
 
       case "undelete": {

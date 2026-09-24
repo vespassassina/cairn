@@ -10,6 +10,7 @@ export * from "./ports/search-index.js";
 export * from "./ports/auth-store.js";
 export * from "./ports/snapshotter.js";
 export * from "./ports/embedder.js";
+export * from "./ports/synonyms.js";
 export * from "./query/filter.js";
 export * from "./query/validate.js";
 export * from "./indexer/chunk.js";

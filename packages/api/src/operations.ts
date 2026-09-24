@@ -5,6 +5,8 @@ import {
   PageHasChildrenError,
   PageNotDeletedError,
   parseRowNodeId,
+  queryTerms,
+  tokenize,
   ValidationError,
   VersionConflictError,
   type Table,
@@ -19,6 +21,7 @@ import {
   type Row,
   type SearchHit,
   type SearchMode,
+  type SynonymPair,
 } from "@cairn/core";
 import type { AppContext } from "./context.js";
 import { notifyIndexNow } from "./indexnow.js";
@@ -251,6 +254,38 @@ function decodePageCursor(cursor: string): number {
  * since `SearchIndex.search` is deterministic and gives no other way to know
  * how many chunks make up N distinct pages.
  */
+/**
+ * Every query term's alternates from the workspace's synonyms (ADR-077), so
+ * `SearchIndex.search` can match either side of a pair. Union of every
+ * collection: a query is asked of the whole workspace, and "collection" only
+ * shapes where a human curates a pair, not where it applies. Bidirectional:
+ * a pair {ghrp, growth hormone releasing peptide} expands a search for
+ * either word with the other.
+ *
+ * A pair's term or synonym may itself be several words ("GLP-1" tokenizes
+ * to "glp" and "1", same as FTS5's own tokenizer splits it). Such a side
+ * applies only when every one of its tokens is already among the query's
+ * terms, and then the *other* side is attached as an alternate to each of
+ * those tokens' slots: a page containing only the spelled-out synonym
+ * satisfies every one of "GLP-1"'s two term slots, exactly as a page
+ * containing "GLP-1" itself would.
+ */
+async function resolveSynonyms(context: AppContext, query: string): Promise<Record<string, string[]>> {
+  const terms = new Set(queryTerms(query));
+  if (terms.size === 0) return {};
+  const pairs = await context.synonyms.listAll(context.workspaceId);
+  const expansion: Record<string, string[]> = {};
+  const attach = (sideTokens: string[], alt: string) => {
+    if (sideTokens.length === 0 || !sideTokens.every((token) => terms.has(token))) return;
+    for (const token of sideTokens) (expansion[token] ??= []).push(alt);
+  };
+  for (const pair of pairs) {
+    attach(tokenize(pair.term), pair.synonym);
+    attach(tokenize(pair.synonym), pair.term);
+  }
+  return expansion;
+}
+
 export async function searchPages(
   context: AppContext,
   options: { query: string; limit?: number; cursor?: string | null; mode?: SearchMode },
@@ -264,12 +299,14 @@ export async function searchPages(
   let mode: SearchMode = "keyword";
   let chunkCursor: string | null = null;
   let round = 0;
+  const synonyms = await resolveSynonyms(context, options.query);
 
   while (pages.length <= needed && round < MAX_SEARCH_ROUNDS) {
     const result = await context.search.search(context.workspaceId, {
       query: options.query,
       limit: CHUNKS_PER_ROUND,
       cursor: chunkCursor,
+      synonyms,
       ...(options.mode === undefined ? {} : { mode: options.mode }),
     });
     mode = result.mode;
@@ -288,6 +325,60 @@ export async function searchPages(
     truncated,
     cursor: truncated ? encodePageCursor(needed) : null,
   };
+}
+
+/** `SynonymPair` in the snake_case shape every surface sends over the wire. */
+export function synonymPairJson(pair: SynonymPair): Record<string, unknown> {
+  return {
+    id: pair.id,
+    collection_id: pair.collectionId,
+    term: pair.term,
+    synonym: pair.synonym,
+    created_at: pair.createdAt,
+  };
+}
+
+/**
+ * A collection's synonym pairs (ADR-077), in the order they were added.
+ * Shared by REST's `GET /collections/:id/synonyms`, MCP's `list_synonyms`
+ * tool and `cairn synonyms list`.
+ */
+export async function listSynonyms(context: AppContext, collectionId: string): Promise<SynonymPair[]> {
+  return context.synonyms.list(context.workspaceId, collectionId);
+}
+
+/**
+ * Adds a synonym pair to a collection (ADR-077): search for either word then
+ * finds pages that only use the other. Shared by REST's
+ * `POST /collections/:id/synonyms`, MCP's `add_synonym` tool and
+ * `cairn synonyms add`.
+ */
+export async function addSynonym(
+  context: AppContext,
+  collectionId: string,
+  term: string,
+  synonym: string,
+  by: WriteContext,
+): Promise<SynonymPair> {
+  if (term.trim().length === 0 || synonym.trim().length === 0) {
+    throw new ValidationError([{ field: "term", message: "term and synonym must both be non-empty" }]);
+  }
+  return context.synonyms.add(context.workspaceId, collectionId, term, synonym, by);
+}
+
+/**
+ * Removes a synonym pair from a collection (ADR-077). Shared by REST's
+ * `DELETE /collections/:id/synonyms`, MCP's `remove_synonym` tool and
+ * `cairn synonyms remove`. Does nothing if the pair is not there, the same
+ * as every other remove in Cairn.
+ */
+export async function removeSynonym(
+  context: AppContext,
+  collectionId: string,
+  term: string,
+  synonym: string,
+): Promise<void> {
+  await context.synonyms.remove(context.workspaceId, collectionId, term, synonym);
 }
 
 /** A compact unified-style diff: only changed lines and a little context. */

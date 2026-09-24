@@ -11,6 +11,7 @@ export function newId(prefix: string): string {
 export const newPageId = (): string => newId("pg");
 export const newTableId = (): string => newId("col");
 export const newRowId = (): string => newId("row");
+export const newSynonymId = (): string => newId("syn");
 
 /** A fresh optimistic-concurrency token, chosen by the service (ADR-008 rule 5). */
 export const newVersion = (): string => randomUUID();

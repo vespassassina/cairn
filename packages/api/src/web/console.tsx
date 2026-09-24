@@ -25,7 +25,15 @@ import {
   type Row,
 } from "@cairn/core";
 import { OWNER, type AppContext } from "../context.js";
-import { listStalePages, moveRecord, publishPage, type StalePageSummary } from "../operations.js";
+import {
+  addSynonym,
+  listStalePages,
+  listSynonyms,
+  moveRecord,
+  publishPage,
+  removeSynonym,
+  type StalePageSummary,
+} from "../operations.js";
 import { ASSET_VERSION, CONSOLE_CSS, CONSOLE_JS, documentTitle, FAVICON_SVG, HEAD_TAGS, ICON_180_PNG, ICON_512_PNG, MANIFEST } from "./assets.js";
 import { ActorPill, ageOf, Banner, DiffView, Layout, setFooterFactsProvider, Verified, When } from "./layout.js";
 import { createMarkdownRenderer, pageHref, type LinkResolver } from "./markdown.js";
@@ -1432,12 +1440,118 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
               </p>
             )}
             <PublishControl page={page} publishedVia={publishedVia} />
+            {page.parentId === null ? (
+              <>
+                <h3>Search synonyms</h3>
+                <p class="ak-small">
+                  <a href={`${pageHref(page.id)}/synonyms`}>Edit this collection's synonyms</a>
+                </p>
+              </>
+            ) : null}
             <h3>Page</h3>
             <p class="ak-small ak-mono">{page.id}</p>
           </aside>
         </div>
       </Layout>,
     );
+  });
+
+  // A collection's search synonyms (ADR-077): pairs a person or agent added
+  // so search for either word finds pages that only use the other. Kept
+  // inside ADR-009's scope for the console, a plain table with an add form,
+  // one per top-level page ("collection", the same sense the workspace
+  // summary uses, not ADR-024's Table).
+  app.get("/p/:id/synonyms", async (c) => {
+    const page = await loadPage(c);
+    if (!page) return notFound(c, `Page ${c.req.param("id")}`);
+    const pairs = await listSynonyms(context, page.id);
+    return render(
+      c,
+      <Layout title={`${page.title}: synonyms`} section="collections" here={page.id}>
+        <header class="ak-pagehead">
+          <div>
+            <p class="ak-eyebrow">
+              <a href={pageHref(page.id)}>{page.title}</a>
+            </p>
+            <h1>Search synonyms</h1>
+            <p class="ak-small">
+              Words that mean the same thing under {page.title}. A search for either finds pages
+              that only use the other.
+            </p>
+          </div>
+        </header>
+        {pairs.length === 0 ? (
+          <p class="ak-empty">No synonyms yet.</p>
+        ) : (
+          <div class="ak-tblwrap">
+            <table class="ak-table">
+              <thead>
+                <tr>
+                  <th>Term</th>
+                  <th>Synonym</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {pairs.map((pair) => (
+                  <tr>
+                    <td>{pair.term}</td>
+                    <td>{pair.synonym}</td>
+                    <td>
+                      <form method="post" action={`${pageHref(page.id)}/synonyms/${encodeURIComponent(pair.id)}/delete`}>
+                        <button type="submit" class="ak-btn ak-btn-small">
+                          Remove
+                        </button>
+                      </form>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <h2>Add a pair</h2>
+        <form method="post" action={`${pageHref(page.id)}/synonyms`} class="ak-form">
+          <label>
+            Term
+            <input type="text" name="term" required />
+          </label>
+          <label>
+            Synonym
+            <input type="text" name="synonym" required />
+          </label>
+          <label>
+            Why (optional)
+            <input type="text" name="note" />
+          </label>
+          <button type="submit" class="ak-btn">
+            Add
+          </button>
+        </form>
+      </Layout>,
+    );
+  });
+
+  app.post("/p/:id/synonyms", async (c) => {
+    const page = await loadPage(c);
+    if (!page) return notFound(c, `Page ${c.req.param("id")}`);
+    const form = await c.req.parseBody();
+    const term = text(form, "term");
+    const synonym = text(form, "synonym");
+    const note = text(form, "note");
+    if (term.trim() !== "" && synonym.trim() !== "") {
+      await addSynonym(context, page.id, term, synonym, by(c, note));
+    }
+    return c.redirect(`${pageHref(page.id)}/synonyms`, 303);
+  });
+
+  app.post("/p/:id/synonyms/:pairId/delete", async (c) => {
+    const page = await loadPage(c);
+    if (!page) return notFound(c, `Page ${c.req.param("id")}`);
+    const pairs = await listSynonyms(context, page.id);
+    const pair = pairs.find((p) => p.id === c.req.param("pairId"));
+    if (pair) await removeSynonym(context, page.id, pair.term, pair.synonym);
+    return c.redirect(`${pageHref(page.id)}/synonyms`, 303);
   });
 
   // A print view (ADR-009's review console, kept inside its scope: no new

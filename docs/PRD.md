@@ -184,6 +184,7 @@ Cairn contains one small OAuth 2.1 authorization server that delegates login to 
 | `create_table` | Create a table with a typed schema. Added during the PoC: this list assumed tables were created in the web editor, which is Phase 2, so without it tables cannot be used at all. |
 | `get_history` | Revisions of a page or row, newest first, with actor, time and change note (ADR-008). |
 | `get_revision` | One revision's content, and its diff against the version it replaced. |
+| `list_synonyms`, `add_synonym`, `remove_synonym` | A collection's stored term/synonym pairs (ADR-077). Search expands a query term to its stored alternates workspace-wide at query time; a quoted phrase in the query asks for FTS5 `NEAR` proximity instead of a plain match (ADR-076). |
 
 Write tools (`create_page`, `update_page`, `upsert_row`) accept an optional `change_note` so an agent can say why it made a change. It is shown in the review console's recent changes. They also accept `sources`, URLs or short citations for where the facts came from, added to the page's or row's list and shown beside it in the console (ADR-027). `update_page` takes `verified: true` when the agent re-checked the page's facts and they still hold; `get_page` and search hits return `verified_at` (ADR-028).
 

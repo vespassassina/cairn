@@ -11,6 +11,14 @@ Rules:
 3. Every entry says where it landed: an ADR, a doc, a commit, or "not yet".
 4. A later direction that reverses an earlier one does not edit it. Add the new one and point back.
 
+## 2026-09-24
+
+### "let's do FTS5 NEAR and a small synonims table for domain term, each collection has his own, each collection is a domain, make the synonims table visible in cairn and editable by humans (add and remove synonims) and add to the MCP/skill/cli/api integration to list/add/remove synonims and a hint to agents to store them per domain when possible."
+
+The owner asked for FTS5 proximity search and a per-collection domain-synonyms table, reachable everywhere Cairn's other capabilities are, with a hint telling agents to record jargon as they notice it. Three points were asked back and answered directly: synonyms live in a dedicated new core concept rather than the existing generic table mechanism; NEAR defaults to distance 10, unordered, not a per-query setting; and "visible and editable by a person" is met by a review-console screen, since the dedicated-store answer to the first question ruled out a literal page-tree entity.
+
+Landed as ADR-076 (NEAR phrases) and ADR-077 (per-collection synonyms, expanded workspace-wide at query time): a new `SynonymsStore` core port and SQLite adapter; `list_synonyms`/`add_synonym`/`remove_synonym` in MCP, the matching `cairn synonyms list/add/remove` CLI commands, `GET/POST/DELETE /collections/:id/synonyms` in REST, a `/p/:id/synonyms` console screen linked from a top-level page's view, and the agent hint in both `packages/api/src/mcp/instructions.ts` and `skills/cairn/SKILL.md`.
+
 ## 2026-09-23
 
 ### "add to the cli when calling a remote one, a message that it might take several seconds"

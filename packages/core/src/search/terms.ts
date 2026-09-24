@@ -125,3 +125,21 @@ export function isNegatedEverywhere(text: string, term: string, window = 4): boo
   }
   return found;
 }
+
+/**
+ * The quoted phrases in a query, each as its folded words, in order (ADR-076).
+ * A phrase of one word carries no proximity meaning and is left out: it is
+ * already a plain term. `"appetite suppressant"` becomes `["appetite",
+ * "suppressant"]`, so a backend can ask for those words near each other
+ * rather than anywhere on the same page.
+ */
+export function extractPhrases(query: string): string[][] {
+  const phrases: string[][] = [];
+  const re = /"([^"]+)"/g;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(query)) !== null) {
+    const words = tokenize(match[1] ?? "");
+    if (words.length >= 2) phrases.push(words);
+  }
+  return phrases;
+}

@@ -29,11 +29,11 @@ export const FIXED_INSTRUCTIONS_CEILING = 1500;
 
 export const SERVER_INSTRUCTIONS = `Cairn is the owner's long-term memory: wiki pages in Markdown, linked with [[page-id]], and typed tables of rows. A top-level page with everything under it is a collection, one wiki.
 
-Read before you answer. When a topic may be in Cairn, call search first, then get_page on the best hits. Search matches keywords and, for English text, meaning: use a few distinctive words, and retry with other words before deciding nothing is there. Say which page an answer came from.
+Read before you answer. When a topic may be in Cairn, call search first, then get_page on the best hits. Search matches keywords and, for English text, meaning: try a few distinctive words before deciding nothing is there. Say which page it came from.
 
 Write back what lasts: findings, decisions and their reasons, corrected facts. Search first and prefer update_page over a new page, so knowledge does not split across duplicates. Link related pages with [[page-id]]. Put structured records in a table with upsert_row, or a page from a template.
 
-Every write needs change_note saying what changed and why, and sources when a fact came from somewhere: a URL, DOI, PubMed id or short citation, the original rather than a summary. Pass verified: true when you re-check a page and it still holds; find what needs one with list_stale_pages. Writes apply at once and every one is kept as a revision the owner can review and restore, so write freely but accurately.
+Every write needs change_note saying what changed and why, and sources when a fact came from somewhere: a URL, DOI, PubMed id or short citation, the original rather than a summary. Pass verified: true when you re-check a page and it still holds; find what needs one with list_stale_pages. Missing jargon? add_synonym, per collection. Writes apply at once and every one is kept as a revision the owner can review and restore, so write freely but accurately.
 
 Writes carry the version you read. On version_conflict, read the page again, merge your change into the new text, and retry. Never overwrite blindly.
 
