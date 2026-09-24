@@ -6,6 +6,8 @@ Entries link to the ADR when there is one. A change of direction that has no ADR
 
 ## 2026-09-24
 
+**Added `docs/REVIEW-2026-09-24.md`, a product review against note tools and agent-memory tools.** The owner asked what Cairn nailed and missed against Notion, Obsidian, Logseq and forum sentiment, whether it can serve for personal notes, and what to adopt from Notion. The review records two findings that are bugs: the console's search calls the adapter directly instead of `searchPages` (`packages/api/src/web/console.tsx:1972`), so it lacks synonym expansion and one-entry-per-page grouping, against hard rule 14; and PRD section 7 still describes BlockNote JSON storage and a React front end that the code does not have. Neither is fixed here. It also lists a ranked set of note-taking additions that stay inside ADR-009: capture into an inbox, a Today link, link by title, callouts and tickable checklists, saved table views and query blocks, embeds, and a draft-versus-promoted state for agent writes.
+
 ### Released: v0.1.8
 
 `pnpm set-version 0.1.8`, updating `package.json`, `packages/cli/package.json`, `packages/cli/src/main.ts` and `packages/api/src/app.ts`. Ships the `-v`/`--version` fix below. Tagging `v0.1.8` and pushing it lets CI's `release` job publish `@vespassassina/cairncli` to npm and attach the built executables to a GitHub release, gated on the tag matching the version in `package.json`.

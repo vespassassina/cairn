@@ -13,6 +13,10 @@ Rules:
 
 ## 2026-09-24
 
+### "run a review of the tool, the ui, the ux and evaluate what we miss and what we nailed against existing tools and discussions on reddit and on forums. how can we make this better ? i would like to use it to take notes too. what can we adopt from notion ?"
+
+A product review, not a code change. Landed as `docs/REVIEW-2026-09-24.md`: a capability inventory, a console tour on desktop and phone, forum sentiment (Hacker News read in full, Obsidian and Logseq forums, Reddit through search snippets only, since reddit.com was blocked from the tools used), a Notion feature analysis classified by fit under ADR-009 and the PRD non-goals, and a ranked recommendation. Two new directions inside it: the owner wants Cairn for personal notes as well, and wants to know what to take from Notion. The review found one hard-rule-14 bug (console search skips `searchPages`, so no synonyms and duplicate results) and a PRD section 7 disagreement with the code; both listed in `docs/REVIEW-2026-09-24.md` section 3.4, not fixed in this commit. A copy of the summary is in Cairn under Projects.
+
 ### "build and deploy to npm"
 
 The owner asked to ship the FTS5 NEAR / synonyms work (previous entry) to npm. Publishing is a release action, so version and tag were confirmed first: asked patch (0.1.7) or minor (0.2.0) against the current 0.1.6; the owner picked the recommended patch bump, 0.1.7. Landed as `v0.1.7`: `pnpm set-version 0.1.7`, a changelog entry, tag pushed, CI's `release` job published `@vespassassina/cairncli@0.1.7` to npm and cut the GitHub release.
