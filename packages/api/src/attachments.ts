@@ -121,16 +121,22 @@ function requireBlobStore(context: AppContext): NonNullable<AppContext["attachme
  * Creates a `pending` row and mints a signed upload URL for its blob key.
  * The caller PUTs the bytes there directly, then calls `confirmAttachmentUpload`.
  */
-export async function createAttachment(
-  context: AppContext,
-  params: { pageId: string; filename: string; altText: string | null | undefined; sha256: string; contentType: string; bytes: number },
-  by: WriteContext,
-): Promise<{ row: AttachmentSummary; uploadUrl: string }> {
-  const store = requireBlobStore(context);
+interface AttachmentParams {
+  pageId: string;
+  filename: string;
+  altText: string | null | undefined;
+  sha256: string;
+  contentType: string;
+  bytes: number;
+}
 
-  const page = await context.store.getPage(context.workspaceId, params.pageId);
-  if (!page) throw new NotFoundError("page", params.pageId);
-
+/**
+ * The rules every attachment meets before a row exists, whether the caller
+ * uploads the bytes itself (`createAttachment`) or hands them to the server
+ * (`storeAttachment`, ADR-079). Refuses a type a browser would execute, a
+ * size outside the ceiling, and a hash that is not one.
+ */
+export function checkAttachmentInput(params: Pick<AttachmentParams, "contentType" | "bytes" | "sha256">): void {
   if (NEVER_SERVED_TYPES.has(params.contentType.toLowerCase())) {
     throw new ValidationError([
       {
@@ -147,6 +153,13 @@ export async function createAttachment(
   if (!/^[0-9a-f]{64}$/i.test(params.sha256)) {
     throw new ValidationError([{ field: "sha256", message: "must be 64 hex characters, the SHA-256 of the file's bytes" }]);
   }
+}
+
+/** The `pending` row for an attachment whose bytes are not confirmed yet. */
+async function createPendingRow(context: AppContext, params: AttachmentParams, by: WriteContext) {
+  const page = await context.store.getPage(context.workspaceId, params.pageId);
+  if (!page) throw new NotFoundError("page", params.pageId);
+  checkAttachmentInput(params);
 
   const blobKey = `sha256/${params.sha256.toLowerCase()}`;
   const tbl = await findOrCreateTable(context);
@@ -168,8 +181,54 @@ export async function createAttachment(
     },
     by,
   );
+  return { row: summarize(row), blobKey };
+}
+
+/**
+ * Creates a `pending` row and mints a signed upload URL for its blob key.
+ * The caller PUTs the bytes there directly, then calls `confirmAttachmentUpload`.
+ */
+export async function createAttachment(
+  context: AppContext,
+  params: AttachmentParams,
+  by: WriteContext,
+): Promise<{ row: AttachmentSummary; uploadUrl: string }> {
+  const store = requireBlobStore(context);
+  const { row, blobKey } = await createPendingRow(context, params, by);
   const uploadUrl = await store.uploadUrl(blobKey, UPLOAD_URL_SECONDS);
-  return { row: summarize(row), uploadUrl };
+  return { row, uploadUrl };
+}
+
+/** Hex SHA-256 of the bytes, by Web Crypto, so this stays free of `node:crypto`. */
+export async function sha256Hex(bytes: Uint8Array): Promise<string> {
+  // `Uint8Array` is a `BufferSource`; the cast keeps the DOM-less lib happy.
+  const digest = await globalThis.crypto.subtle.digest("SHA-256", bytes as unknown as ArrayBuffer);
+  return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/**
+ * The server-side upload (ADR-079 decision 2): the bytes are already in
+ * hand, from a multipart drop, so the server hashes them, writes the row,
+ * puts the blob and commits in one go. The one path in this module where
+ * bytes pass through the process; ADR-064 kept them out, and ADR-079
+ * consequence 3 accepts it within the drop limits. The same checks as
+ * `createAttachment`, and the same commit step, so what lands is
+ * indistinguishable from a direct upload.
+ */
+export async function storeAttachment(
+  context: AppContext,
+  params: { pageId: string; filename: string; contentType: string; bytes: Uint8Array },
+  by: WriteContext,
+): Promise<AttachmentSummary> {
+  const store = requireBlobStore(context);
+  const sha256 = await sha256Hex(params.bytes);
+  const { row, blobKey } = await createPendingRow(
+    context,
+    { pageId: params.pageId, filename: params.filename, altText: null, sha256, contentType: params.contentType, bytes: params.bytes.byteLength },
+    by,
+  );
+  await store.put(blobKey, params.bytes, params.contentType);
+  return confirmAttachmentUpload(context, row.id, by);
 }
 
 /**

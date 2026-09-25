@@ -29,14 +29,24 @@ import type { AppContext } from "./context.js";
 import { notifyIndexNow } from "./indexnow.js";
 import { createPublishToken, listPublishTokens, revokePublishToken, type PublishTokenSummary } from "./publish-tokens.js";
 import {
+  AttachmentsDisabledError,
   confirmAttachmentUpload,
   createAttachment,
   deleteAttachment,
   getAttachment,
   listAttachmentsForPage,
+  storeAttachment,
   type AttachmentSummary,
 } from "./attachments.js";
-import { getOrCreateDailyNote, substitutePlaceholders, todayDateOnly, type DailyNoteResult } from "./templates.js";
+import { isRasterType } from "./attachments-thumbnail.js";
+import {
+  findOrCreateCollection,
+  getOrCreateDailyNote,
+  INBOX_COLLECTION_NAME,
+  substitutePlaceholders,
+  todayDateOnly,
+  type DailyNoteResult,
+} from "./templates.js";
 
 /**
  * What the MCP tools and the REST API share (ADR-013 rule 1).
@@ -651,6 +661,113 @@ export async function createPageFromTemplate(
 export async function getTodayNoteOp(context: AppContext, by: WriteContext): Promise<Record<string, unknown>> {
   const result: DailyNoteResult = await getOrCreateDailyNote(context, by);
   return { ...pageSummary(result.page), created: result.created };
+}
+
+// The dropbox (ADR-079).
+
+/** One file in a drop, bytes already in hand: a multipart part, or a file the CLI read. */
+export interface DropFile {
+  filename: string;
+  contentType: string;
+  bytes: Uint8Array;
+}
+
+export interface DropInput {
+  text?: string | null;
+  title?: string | null;
+  tags?: readonly string[] | null;
+  /** A shared link: recorded as the page's one source. */
+  url?: string | null;
+  files?: readonly DropFile[] | null;
+}
+
+/** The `drop` tag every drop carries, so a drop moved out of the Inbox still says where it came from. */
+export const DROP_TAG = "drop";
+
+/** ADR-079 decision 2's ceilings, checked by the surfaces before bytes are read in full. */
+export const DROP_LIMITS = { maxFiles: 10, maxFileBytes: 25 * 1024 * 1024, maxTextBytes: 64 * 1024 } as const;
+
+/** `2026-09-24 19:31`, UTC, for a drop with nothing to name it by. */
+function dropTimestamp(now: Date): string {
+  return now.toISOString().slice(0, 16).replace("T", " ");
+}
+
+/**
+ * The title of a drop (ADR-079 decision 1): the `title` field, else the
+ * first non-blank line of the text cut at 80 characters, else the first
+ * filename, else the timestamp. A blank field counts as absent at each step,
+ * so a phone that always sends an empty title does not produce empty pages.
+ */
+export function dropTitle(input: {
+  title?: string | null | undefined;
+  text?: string | null | undefined;
+  filenames: readonly string[];
+  now: Date;
+}): string {
+  const title = input.title?.trim();
+  if (title) return title;
+  const line = (input.text ?? "")
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .find((l) => l.length > 0);
+  if (line) return line.slice(0, 80);
+  const filename = input.filenames.find((name) => name.trim().length > 0);
+  if (filename) return filename;
+  return dropTimestamp(input.now);
+}
+
+/**
+ * The body of a drop: the text as given, then, after one blank line, one
+ * link per file in the order sent. Images as image links, so the console
+ * and the public wiki render them; everything else as a plain link.
+ */
+export function dropBody(text: string, attachments: readonly Pick<AttachmentSummary, "id" | "filename" | "contentType">[]): string {
+  const links = attachments.map((a) =>
+    isRasterType(a.contentType) ? `![${a.filename}](attachment:${a.id})` : `[${a.filename}](attachment:${a.id})`,
+  );
+  if (links.length === 0) return text;
+  if (text.trim().length === 0) return links.join("\n");
+  return `${text.replace(/\s+$/, "")}\n\n${links.join("\n")}`;
+}
+
+/**
+ * Files a drop under the Inbox (ADR-079 decisions 1 and 2): the one operation
+ * behind `POST /api/v1/drops`, the console's capture form and `cairn drop`.
+ *
+ * Order matters. Attachments-off is checked before anything is written, so a
+ * phone whose files cannot land does not leave a half drop behind. The page
+ * is created first with the text alone, because an attachment row needs a
+ * page to hang from (ADR-064); then each file is stored server-side; then
+ * the body gets its links in one further write with the same note. A file
+ * that fails to store leaves the page with the files that did land and
+ * throws, so the caller sees the error and the person finds the drop
+ * anyway, rather than losing the text with it.
+ */
+export async function createDrop(context: AppContext, input: DropInput, by: WriteContext): Promise<Page> {
+  const files = input.files ?? [];
+  if (files.length > 0 && !context.attachmentsStore) throw new AttachmentsDisabledError();
+
+  const text = input.text ?? "";
+  const title = dropTitle({ title: input.title, text, filenames: files.map((f) => f.filename), now: new Date() });
+  const tags = Array.from(new Set([...(input.tags ?? []).map((t) => t.trim()).filter((t) => t.length > 0), DROP_TAG]));
+  const url = input.url?.trim();
+  const sources = url ? [url] : [];
+
+  const inbox = await findOrCreateCollection(context, INBOX_COLLECTION_NAME, by);
+  const page = await context.pages.create(context.workspaceId, { title, body: text, parentId: inbox.id, tags, sources }, by);
+  if (files.length === 0) return page;
+
+  const stored: AttachmentSummary[] = [];
+  for (const file of files) {
+    stored.push(await storeAttachment(context, { pageId: page.id, filename: file.filename, contentType: file.contentType, bytes: file.bytes }, by));
+  }
+  return context.pages.update(
+    context.workspaceId,
+    page.id,
+    { title, body: dropBody(text, stored), parentId: inbox.id, tags, sources },
+    page.version,
+    by,
+  );
 }
 
 // Errors.

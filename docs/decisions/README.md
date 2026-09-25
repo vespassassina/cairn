@@ -85,8 +85,8 @@ A decision that changes is not edited away. Add a new ADR that supersedes it, an
 | [075](ADR-075.md) | Templates and daily notes are pages with a shape | accepted | 2026-09-23 |
 | [076](ADR-076.md) | A quoted phrase in a search query asks FTS5 for NEAR proximity, fixed at distance 10 | accepted | 2026-09-24 |
 | [077](ADR-077.md) | Per-collection search synonyms, a dedicated store, expanded workspace-wide at query time | accepted | 2026-09-24 |
-| [078](ADR-078.md) | Knowledge approval is a mark on the page, set by a person, honoured by search | proposed | 2026-09-24 |
-| [079](ADR-079.md) | The dropbox is an Inbox collection fed by one endpoint and scoped drop tokens | proposed | 2026-09-24 |
+| [078](ADR-078.md) | Knowledge approval is a mark on the page, set by a person, honoured by search | accepted | 2026-09-24 |
+| [079](ADR-079.md) | The dropbox is an Inbox collection fed by one endpoint and scoped drop tokens | accepted | 2026-09-24 |
 | [080](ADR-080.md) | A mobile capture app at /m, a progressive web app with one service worker; amends ADR-009 | proposed | 2026-09-24 |
 | [081](ADR-081.md) | The console gains what a person needs to write notes, inside ADR-009 | proposed | 2026-09-24 |
 

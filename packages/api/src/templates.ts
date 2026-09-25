@@ -13,6 +13,8 @@ import type { AppContext } from "./context.js";
 export const TEMPLATES_COLLECTION_NAME = "Templates";
 export const DAILY_NOTES_COLLECTION_NAME = "Daily notes";
 export const DAILY_NOTE_TEMPLATE_NAME = "Daily note";
+/** Where drops land (ADR-079 decision 1): a root collection that should be empty. */
+export const INBOX_COLLECTION_NAME = "Inbox";
 
 /**
  * Today's date, UTC, day-only: `YYYY-MM-DD`. Deliberately not the full ISO
@@ -67,11 +69,11 @@ async function findCollection(context: AppContext, name: string): Promise<Page |
 /**
  * A root collection by name, created empty the first time it is needed. The
  * well-known-table pattern (`findOrCreateTable` in `attachments.ts`) applied
- * to a page: a person naming a root page exactly `Templates` or `Daily
- * notes` collides with this, the same accepted risk the existing well-known
+ * to a page: a person naming a root page exactly `Templates`, `Daily
+ * notes` or `Inbox` collides with this, the same accepted risk the existing well-known
  * tables already carry (ADR-075 decision 1).
  */
-async function findOrCreateCollection(context: AppContext, name: string, by: WriteContext): Promise<Page> {
+export async function findOrCreateCollection(context: AppContext, name: string, by: WriteContext): Promise<Page> {
   const found = await findCollection(context, name);
   if (found) return found;
   return context.pages.create(context.workspaceId, { title: name, body: "", parentId: null, tags: [], sources: [] }, by);

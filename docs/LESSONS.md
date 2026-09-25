@@ -11,6 +11,15 @@ Each entry answers four questions:
 3. **Fix.** What changed, with the commit or file.
 4. **Lesson.** What to do differently next time. This is the part worth reading.
 
+## 2026-09-25
+
+### An OAuth race test failed when vitest ran inside `packages/api`, and passed from the root
+
+1. **What happened.** While checking sprint 2 task 1, `npx vitest run` from `packages/api` reported the ADR-054 test "gives up after a bounded wait rather than hanging" timing out at 5 seconds, on the clean tree as well as with the change.
+2. **Cause.** That test holds a fake replay write open for 5 seconds and waits for both racing requests, so it needs more than vitest's default 5 second timeout. The root `vitest.config.ts` sets `testTimeout: 20_000`; a run started inside a package does not pick that file up and falls back to the default.
+3. **Fix.** None in code. `pnpm test` from the repository root is the check that counts, and it passed (934 tests). The `pnpm --filter` form does not find a vitest project either, so running from the root is the only way that reads the config.
+4. **Lesson.** Run the suite from the root, or pass `--config ../../vitest.config.ts` when narrowing to one package's file. A failure that appears only in a per-package run and involves a timeout is the missing config before it is a bug.
+
 ## 2026-09-24
 
 ### The side-by-side diff stayed two columns on a phone although the phone rule was there

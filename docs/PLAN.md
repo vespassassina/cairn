@@ -1,6 +1,6 @@
 # Plan: notes, approval, dropbox and the mobile app
 
-From the product review of 2026-09-24 and the owner's direction the same day. Specs: `docs/specs/knowledge-approval.md`, `docs/specs/dropbox.md`, `docs/specs/mobile-capture-app.md`, `docs/specs/console-for-notes.md`. Status: specs and plan agreed by the owner on 2026-09-24. Sprints 0 and 1 done the same day; waiting on gate 2.
+From the product review of 2026-09-24 and the owner's direction the same day. Specs: `docs/specs/knowledge-approval.md`, `docs/specs/dropbox.md`, `docs/specs/mobile-capture-app.md`, `docs/specs/console-for-notes.md`. Status: specs and plan agreed by the owner on 2026-09-24. Sprints 0 and 1 done the same day; gate 2 passed (eval unchanged); sprint 2 under way.
 
 Rules: one outcome and one test per task; a sprint is a working increment; each sprint opens with its ADR and closes with the four logs, `pnpm build`, `pnpm test`, and for search changes `pnpm eval`. Tasks tick here as they close. Sizes are agent working sessions: S under one, M one to two, L three or more.
 
@@ -41,7 +41,7 @@ Increment: the owner can approve, disapprove and review; agents rank and hide ac
 
 Increment: text and files reach the Inbox from a shell and the console; agents process them.
 
-1. Inbox well-known collection and `createDrop` operation with title rules. Test: unit test on title, body, tags, sources.
+1. [x] Inbox well-known collection and `createDrop` operation with title rules. Test: unit test on title, body, tags, sources.
 2. `POST /api/v1/drops`, multipart and JSON, server-side attachment upload, limits, `attachments_off`. Test: criteria 1 and 2.
 3. Drop tokens table, `Authorization` check, scope refusal, `last_used_at`, revocation. Test: criteria 3 and 4.
 4. Console `/inbox`, `/inbox/new`, file-away form, home count, `/settings/drop-tokens`. Test: criterion 5.
