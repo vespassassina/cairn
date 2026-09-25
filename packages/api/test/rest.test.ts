@@ -1502,3 +1502,66 @@ describe("drops (ADR-079)", () => {
     expect((await post(form, null)).status).toBe(401);
   });
 });
+
+describe("drop tokens (ADR-079 decision 3)", () => {
+  async function issue(kind: "person" | "agent", name = "phone") {
+    const issued = await call("/drop-tokens", { method: "POST", body: { name, description: "share sheet", kind } });
+    expect(issued.status).toBe(201);
+    return { id: String(issued.json["id"]), token: String(issued.json["token"]) };
+  }
+
+  it("is accepted only on POST /drops: a drop lands as the token's kind with the token named, any other route answers 403 drop_token_scope (criterion 3)", async () => {
+    const { id, token } = await issue("person");
+    const form = new FormData();
+    form.set("text", "call Anna re: NAS");
+    const dropped = await app.fetch(
+      new Request("http://localhost/api/v1/drops", { method: "POST", headers: { authorization: `Bearer ${token}` }, body: form }),
+    );
+    expect(dropped.status).toBe(201);
+    const page = (await dropped.json()) as Record<string, unknown>;
+    expect(page["updated_by"]).toEqual({ kind: "user", name: 'token "phone"' });
+    const history = await call(`/pages/${page["id"]}/history`);
+    expect((history.json["revisions"] as Record<string, unknown>[])[0]?.["note"]).toBe('Dropped via token "phone"');
+
+    const listed = await call("/pages", { token });
+    expect(listed.status).toBe(403);
+    expect(listed.json["error"]).toBe("drop_token_scope");
+    expect(String(listed.json["message"])).toContain("POST /api/v1/drops");
+
+    const tokens = (await call("/drop-tokens")).json["tokens"] as Record<string, unknown>[];
+    const mine = tokens.find((t) => t["id"] === id);
+    expect(mine?.["last_used_at"]).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(mine?.["kind"]).toBe("person");
+    expect(JSON.stringify(tokens)).not.toContain(token);
+  });
+
+  it("writes an agent token's drop as an agent, and a revoked token gets 401 naming the revocation (criterion 3)", async () => {
+    const { id, token } = await issue("agent", "cron");
+    const first = await call("/drops", { method: "POST", body: { text: "from a script" }, token });
+    expect(first.status).toBe(201);
+    expect(first.json["updated_by"]).toEqual({ kind: "agent", name: 'token "cron"' });
+
+    const revoked = await call(`/drop-tokens/${id}/revoke`, { method: "POST", body: {} });
+    expect(revoked.status).toBe(200);
+    expect(revoked.json["revoked_at"]).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+
+    const after = await call("/drops", { method: "POST", body: { text: "too late" }, token });
+    expect(after.status).toBe(401);
+    expect(after.json["error"]).toBe("unauthorized");
+    expect(String(after.json["message"])).toMatch(/revoked/);
+    expect(String(after.json["message"])).toContain("cron");
+
+    const unknown = await call("/drops", { method: "POST", body: { text: "x" }, token: "cairn_drop_notissued" });
+    expect(unknown.status).toBe(401);
+    expect(String(unknown.json["message"])).toMatch(/drop token/);
+  });
+
+  it("validates the request and never returns the token after creation (criterion 4)", async () => {
+    const bad = await call("/drop-tokens", { method: "POST", body: { name: "", kind: "robot" } });
+    expect(bad.status).toBe(400);
+    const { token } = await issue("person", "tablet");
+    const listed = await call("/drop-tokens");
+    expect(JSON.stringify(listed.json)).not.toContain(token);
+    expect(JSON.stringify(listed.json)).not.toContain("token_hash");
+  });
+});

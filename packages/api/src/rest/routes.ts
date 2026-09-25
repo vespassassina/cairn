@@ -34,6 +34,10 @@ import {
   createPageFromTemplate,
   checkDropLimits,
   createDrop,
+  createDropTokenOp,
+  defaultDropNote,
+  listDropTokensOp,
+  revokeDropTokenOp,
   DROP_LIMITS,
   DropTooLargeError,
   withDropSlot,
@@ -204,6 +208,12 @@ const VERIFIED_AT = z.string().nullable().optional();
 const EDITED_AT = z.string().optional();
 
 const schemas = {
+  createDropToken: z.object({
+    name: z.string().min(1),
+    description: z.string().nullable().optional(),
+    kind: z.enum(["person", "agent"]).default("agent"),
+    change_note: CHANGE_NOTE,
+  }),
   createDrop: z.object({
     text: z.string().optional(),
     title: z.string().optional(),
@@ -1068,11 +1078,27 @@ export function restRoutes(context: AppContext, callerFor: CallerFor, options: R
     }
     const contentType = c.req.header("content-type") ?? "";
     const input = contentType.startsWith("multipart/form-data") ? await multipartDrop(c) : await jsonDrop(c);
-    const page = await withDropSlot(() =>
-      createDrop(context, input, by(c, input.change_note ?? "Dropped via the API")),
-    );
+    const page = await withDropSlot(() => createDrop(context, input, by(c, input.change_note ?? defaultDropNote(callerFor(c.req.raw)))));
     const origin = publicOrigin ?? new URL(c.req.url).origin;
     return c.json({ ...pageSummary(page), link: `${origin}/p/${page.id}` }, 201);
+  });
+
+  // Drop tokens (ADR-079 decision 3): issued and revoked here for the CLI and
+  // the console; never listed with a value after creation. No MCP tool.
+
+  api.post("/drop-tokens", async (c) => {
+    const input = await parseBody(c, schemas.createDropToken);
+    return c.json(
+      await createDropTokenOp(context, { name: input.name, description: input.description, kind: input.kind }, by(c, input.change_note)),
+      201,
+    );
+  });
+
+  api.get("/drop-tokens", async (c) => c.json({ tokens: await listDropTokensOp(context) }));
+
+  api.post("/drop-tokens/:id/revoke", async (c) => {
+    const input = await parseBody(c, schemas.deleteBody);
+    return c.json(await revokeDropTokenOp(context, c.req.param("id"), by(c, input.change_note)));
   });
 
   api.post("/move", async (c) => {

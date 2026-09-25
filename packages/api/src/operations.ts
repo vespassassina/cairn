@@ -16,6 +16,7 @@ import {
   type Edge,
   type FieldDef,
   type FieldType,
+  type Actor,
   type Page,
   type Paged,
   type Revision,
@@ -28,6 +29,7 @@ import {
 import type { AppContext } from "./context.js";
 import { notifyIndexNow } from "./indexnow.js";
 import { createPublishToken, listPublishTokens, revokePublishToken, type PublishTokenSummary } from "./publish-tokens.js";
+import { createDropToken, listDropTokens, revokeDropToken, type DropTokenKind, type DropTokenSummary } from "./drop-tokens.js";
 import {
   AttachmentsDisabledError,
   confirmAttachmentUpload,
@@ -819,6 +821,42 @@ export async function createDrop(context: AppContext, input: DropInput, by: Writ
     page.version,
     by,
   );
+}
+
+/** A drop token as every surface lists it: never the value, never the hash. */
+export function dropTokenJson(token: DropTokenSummary): Record<string, unknown> {
+  return {
+    id: token.id,
+    name: token.name,
+    description: token.description,
+    kind: token.kind,
+    created_at: token.createdAt,
+    last_used_at: token.lastUsedAt,
+    revoked_at: token.revokedAt,
+  };
+}
+
+/** Issues a drop token; the one answer that carries the value (ADR-079 decision 3). */
+export async function createDropTokenOp(
+  context: AppContext,
+  params: { name: string; description: string | null | undefined; kind: DropTokenKind },
+  by: WriteContext,
+): Promise<Record<string, unknown>> {
+  const created = await createDropToken(context, params, by);
+  return { ...dropTokenJson(created), token: created.token };
+}
+
+export async function listDropTokensOp(context: AppContext): Promise<Record<string, unknown>[]> {
+  return (await listDropTokens(context)).map(dropTokenJson);
+}
+
+export async function revokeDropTokenOp(context: AppContext, id: string, by: WriteContext): Promise<Record<string, unknown>> {
+  return dropTokenJson(await revokeDropToken(context, id, by));
+}
+
+/** The revision note a drop gets when the caller gave none: names the token, so history says how it arrived. */
+export function defaultDropNote(caller: { via: string; actor: Actor }): string {
+  return caller.via === "drop-token" ? `Dropped via ${caller.actor.label}` : "Dropped via the API";
 }
 
 // Errors.

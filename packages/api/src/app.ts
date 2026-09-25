@@ -12,6 +12,7 @@ import type { OAuthServer } from "./oauth/server.js";
 import { registerConsole } from "./web/console.js";
 import { registerPublicWiki, type SelfDescription } from "./web/public.js";
 import { SESSION_COOKIE } from "./web/session.js";
+import { DROP_TOKEN_PREFIX, touchDropToken, verifyDropToken } from "./drop-tokens.js";
 
 /**
  * The Hono app. Handlers use web standard Request and Response only, so the
@@ -57,7 +58,7 @@ export interface AppOptions {
 /** How a request got in, for attribution and for GET /api/v1/me. */
 export interface Caller {
   actor: Actor;
-  via: "local" | "token" | "oauth";
+  via: "local" | "token" | "oauth" | "drop-token";
   /** The signed-in person, for OAuth: `github:<login>` and the like. */
   identity: string | null;
 }
@@ -195,6 +196,40 @@ export function createApp(options: AppOptions): Hono {
     if (trustedForMcp(c.req.raw, trust)) return next();
     const header = c.req.header("authorization") ?? "";
     const token = header.startsWith("Bearer ") ? header.slice(7).trim() : "";
+    // A drop token (ADR-079 decision 3) opens one door. Checked before the
+    // others by its prefix, so a revoked or misused one gets its own answer
+    // rather than the generic "sign in".
+    if (token.startsWith(DROP_TOKEN_PREFIX)) {
+      const check = await verifyDropToken(options.context, token);
+      if (check.status === "unknown") {
+        return c.json(
+          { error: "unauthorized", message: "This drop token is not one this Cairn issued. Create one with cairn drop-token create <name>, or in the console under Settings, Drop tokens." },
+          401,
+        );
+      }
+      if (check.status === "revoked") {
+        return c.json(
+          { error: "unauthorized", message: `The drop token "${check.name}" was revoked on ${check.revokedAt.slice(0, 10)}. Create a new one with cairn drop-token create <name>.` },
+          401,
+        );
+      }
+      if (!(c.req.method === "POST" && c.req.path === "/api/v1/drops")) {
+        return c.json(
+          {
+            error: "drop_token_scope",
+            message: `The drop token "${check.name}" only opens POST /api/v1/drops. For anything else sign in, or use the service token.`,
+          },
+          403,
+        );
+      }
+      callers.set(c.req.raw, {
+        actor: { kind: check.kind === "person" ? "user" : "agent", id: `drop-token:${check.id}`, label: `token "${check.name}"` },
+        via: "drop-token",
+        identity: null,
+      });
+      await touchDropToken(options.context, check.id);
+      return next();
+    }
     if (token !== "" && options.token !== null && timingSafeEqual(token, options.token)) {
       callers.set(c.req.raw, { actor: agentActor(c.req.raw, surface), via: "token", identity: null });
       return next();
