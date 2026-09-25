@@ -332,6 +332,27 @@ export async function getAttachment(
   return { row, downloadUrl, thumbnailUrl };
 }
 
+/**
+ * The thumbnail's bytes (webp, ADR-064 decision 6) for the console to serve
+ * from its own origin, since its CSP allows images from 'self' only. Null
+ * when the attachment, its thumbnail or the store is missing: the caller
+ * answers 404, never an error, because a missing thumbnail is not one.
+ */
+export async function getAttachmentThumbnail(context: AppContext, rowId: string): Promise<Uint8Array | null> {
+  const store = context.attachmentsStore;
+  if (!store) return null;
+  let row: AttachmentSummary;
+  try {
+    const tbl = await table(context);
+    row = summarize(await context.tables.getRow(context.workspaceId, tbl.id, rowId));
+  } catch (error) {
+    if (error instanceof NotFoundError) return null;
+    throw error;
+  }
+  if (row.status !== "committed" || row.thumbnailKey === null) return null;
+  return store.get(row.thumbnailKey);
+}
+
 /** Every committed attachment on a page, for a page's attachment list or export. */
 export async function listAttachmentsForPage(context: AppContext, pageId: string): Promise<AttachmentSummary[]> {
   const found = (await context.tables.list(context.workspaceId)).find((t) => t.name === ATTACHMENTS_TABLE_NAME);

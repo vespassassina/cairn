@@ -81,6 +81,18 @@ const CAIRN_CSS = `
   text-transform:uppercase; color:var(--ak-ink-soft); background:var(--ak-fill); padding-top:2px; padding-bottom:2px }
 .cairn-side .cairn-side-empty{ background:var(--ak-fill) }
 
+/* The Inbox (ADR-079): one block per drop, thumbnails from this origin. Above
+   the phone block so its overrides win. */
+.cairn-drops{ display:grid; gap:var(--ak-s4) }
+.cairn-drop{ border-top:1px solid var(--ak-rule); padding-top:var(--ak-s3) }
+.cairn-drop h2{ margin:0 0 var(--ak-s1) }
+.cairn-drop-excerpt{ white-space:pre-wrap; margin:var(--ak-s2) 0 }
+.cairn-drop-files{ display:flex; flex-wrap:wrap; gap:var(--ak-s2); align-items:center; margin:var(--ak-s2) 0 }
+.cairn-thumb{ width:72px; height:72px; object-fit:cover; border-radius:4px; border:1px solid var(--ak-rule); display:block }
+.cairn-drop-actions{ display:flex; flex-wrap:wrap; gap:var(--ak-s3); align-items:center; margin-top:var(--ak-s2) }
+.cairn-drop-actions .ak-select{ max-width:20rem }
+.cairn-token{ user-select:all; word-break:break-all }
+
 /* Single column below 700px: the tree, the body and the rail stack in that
    order, source order already matching (ADR-056). */
 @media (max-width: 700px){

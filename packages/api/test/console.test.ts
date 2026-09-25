@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import type { Hono } from "hono";
 import { createApp } from "../src/app.js";
 import { createContext, OWNER, type AppContext } from "../src/context.js";
-import { addSynonym } from "../src/operations.js";
+import { addSynonym, createDrop } from "../src/operations.js";
 import { eventually } from "@cairn/core/testing";
 
 /**
@@ -1155,5 +1155,125 @@ describe("side-by-side diff (ADR-078)", () => {
     expect(phone).toBeGreaterThan(base);
     // Same specificity, so the override must come later in the sheet to win.
     expect(override).toBeGreaterThan(phone);
+  });
+});
+
+describe("the Inbox in the console (ADR-079 decision 6)", () => {
+  function fakeStore() {
+    const blobs = new Map<string, Uint8Array>();
+    return {
+      async head(key: string) {
+        const found = blobs.get(key);
+        return found === undefined ? null : { bytes: found.length };
+      },
+      async uploadUrl(key: string) {
+        return `https://blob.example/${key}?upload`;
+      },
+      async downloadUrl(key: string, _expires: number, filename: string) {
+        return `https://blob.example/${key}?download&filename=${encodeURIComponent(filename)}`;
+      },
+      async put(key: string, bytes: Uint8Array) {
+        blobs.set(key, bytes);
+      },
+      async get(key: string) {
+        return blobs.get(key) ?? null;
+      },
+    };
+  }
+
+  async function drop(text: string) {
+    return createDrop(context, { text }, { actor: OWNER });
+  }
+
+  async function postForm(path: string, form: FormData) {
+    const response = await app.fetch(new Request(`${ORIGIN}${path}`, { method: "POST", headers: { cookie, origin: ORIGIN }, body: form }));
+    return { status: response.status, location: response.headers.get("location"), html: await response.text() };
+  }
+
+  it("lists drops newest first, files one from its row so it leaves the list, and the home page count matches (criterion 5)", async () => {
+    const older = await drop("older note");
+    const newer = await drop("newer note");
+    const target = await context.pages.create(context.workspaceId, { title: "NAS", body: "The NAS page." }, { actor: OWNER });
+
+    const home = await get("/");
+    expect(home.html).toContain('href="/inbox"');
+    expect(home.html).toContain("2 drops waiting");
+
+    const { status, html } = await get("/inbox");
+    expect(status).toBe(200);
+    expect(html.indexOf(`href="/p/${newer.id}"`)).toBeLessThan(html.indexOf(`href="/p/${older.id}"`));
+    expect(html).toContain(`<form method="post" action="/p/${older.id}/move"`);
+    expect(html).toContain(`<form method="post" action="/p/${older.id}/delete"`);
+
+    const moved = await post(`/p/${older.id}/move`, { parent: target.id, version: older.version, next: "/inbox" });
+    expect(moved.status).toBe(303);
+    expect(moved.location).toBe("/inbox");
+    const filed = await context.pages.get(context.workspaceId, older.id);
+    expect(filed.parentId).toBe(target.id);
+    expect(filed.tags).toContain("drop");
+
+    const after = await get("/inbox");
+    expect(after.html).not.toContain(`href="/p/${older.id}"`);
+    expect(after.html).toContain(`href="/p/${newer.id}"`);
+    expect((await get("/")).html).toContain("1 drop waiting");
+
+    const deleted = await post(`/p/${newer.id}/delete`, { version: newer.version, next: "/inbox" });
+    expect(deleted.status).toBe(303);
+    expect((await get("/inbox")).html).not.toContain(`href="/p/${newer.id}"`);
+    expect((await get("/")).html).not.toContain("drop waiting");
+  });
+
+  it("captures from the desktop form with a file, and serves the image's thumbnail from this origin", async () => {
+    context.attachmentsStore = fakeStore();
+    const form = new FormData();
+    form.set("text", "from the form");
+    form.set("tags", "todo");
+    form.append("files", new File([new Uint8Array([1, 2, 3])], "notes.pdf", { type: "application/pdf" }));
+    const empty = await get("/inbox/new");
+    expect(empty.status).toBe(200);
+    expect(empty.html).toContain('enctype="multipart/form-data"');
+
+    const result = await postForm("/inbox/new", form);
+    expect(result.status).toBe(303);
+    expect(result.location).toBe("/inbox");
+    const { html } = await get("/inbox");
+    expect(html).toContain("from the form");
+    expect(html).toContain("notes.pdf");
+
+    // A thumbnail route on this origin, so the CSP's img-src 'self' allows it.
+    const missing = await get("/a/att_nothing/thumb");
+    expect(missing.status).toBe(404);
+  });
+
+  it("refuses a capture with a file when attachments are off, naming the setting, and keeps the text in the form", async () => {
+    const form = new FormData();
+    form.set("text", "keep me");
+    form.append("files", new File([new Uint8Array([1])], "a.txt", { type: "text/plain" }));
+    const result = await postForm("/inbox/new", form);
+    expect(result.status).toBe(422);
+    expect(result.html).toContain("CAIRN_ATTACHMENTS_TO");
+    expect(result.html).toContain("keep me");
+    expect((await get("/inbox")).html).not.toContain("keep me");
+  });
+
+  it("manages drop tokens at /settings/drop-tokens: shown once, listed without the value, revoked in place", async () => {
+    const created = await post("/settings/drop-tokens", { name: "phone", description: "share sheet", kind: "person" });
+    expect(created.status).toBe(200);
+    const token = /cairn_drop_[A-Za-z0-9_-]+/.exec(created.html)?.[0];
+    expect(token).toBeDefined();
+    expect(created.html).toContain("once");
+
+    const list = await get("/settings/drop-tokens");
+    expect(list.html).toContain("phone");
+    expect(list.html).not.toContain(token!);
+    const id = /action="\/settings\/drop-tokens\/([A-Za-z0-9_-]+)\/revoke"/.exec(list.html)?.[1];
+    expect(id).toBeDefined();
+
+    const revoked = await post(`/settings/drop-tokens/${id}/revoke`, {});
+    expect(revoked.status).toBe(303);
+    expect((await get("/settings/drop-tokens")).html).toContain("revoked");
+
+    const bad = await post("/settings/drop-tokens", { name: "", kind: "person" });
+    expect(bad.status).toBe(400);
   });
 });

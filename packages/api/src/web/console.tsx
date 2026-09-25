@@ -25,9 +25,17 @@ import {
   type Row,
 } from "@cairn/core";
 import { OWNER, type AppContext } from "../context.js";
+import { AttachmentsDisabledError, getAttachmentThumbnail, listAttachmentsForPage, type AttachmentSummary } from "../attachments.js";
+import { createDropToken, listDropTokens, revokeDropToken, type DropTokenKind, type DropTokenSummary } from "../drop-tokens.js";
+import { INBOX_COLLECTION_NAME } from "../templates.js";
 import {
   addSynonym,
   approvalNotice,
+  checkDropLimits,
+  createDrop,
+  deletePage,
+  DropTooLargeError,
+  withDropSlot,
   listStalePages,
   listSynonyms,
   moveRecord,
@@ -45,7 +53,7 @@ import { createMarkdownRenderer, pageHref, type LinkResolver } from "./markdown.
 import { wikiHref, type SelfDescription } from "./public.js";
 import { isSameOrigin, SESSION_COOKIE, sessionValue, timingSafeEqual } from "./session.js";
 import type { OAuthServer } from "../oauth/server.js";
-import type { Actor, Approval } from "@cairn/core";
+import { PageHasChildrenError, type Actor, type Approval } from "@cairn/core";
 import { NO_LOCAL_TRUST, trustedForConsole, type LocalTrust } from "../trust.js";
 
 /**
@@ -110,7 +118,7 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-async function render(c: Context, element: Child, status: 200 | 400 | 404 | 409 = 200) {
+async function render(c: Context, element: Child, status: 200 | 400 | 404 | 409 | 413 | 422 = 200) {
   // `<Layout>` is an async component (it awaits the footer facts), so its
   // JSXNode.toString() itself returns a Promise rather than a string: a
   // template literal cannot await that, and stringifies it eagerly, so the
@@ -143,6 +151,36 @@ function parseTags(value: string): string[] {
     .split(",")
     .map((tag) => tag.trim().replace(/^#/, ""))
     .filter((tag) => tag !== "");
+}
+
+/**
+ * The drops waiting under the Inbox (ADR-079), newest first. The Inbox is
+ * found by title at the root, the same way `createDrop` finds it, and is
+ * absent until the first drop: no drop, no Inbox, nothing to count.
+ */
+function inboxDrops(pages: Page[]): { inbox: Page | null; drops: Page[] } {
+  const inbox = pages.find((page) => page.parentId === null && page.title === INBOX_COLLECTION_NAME) ?? null;
+  if (!inbox) return { inbox: null, drops: [] };
+  const drops = pages
+    .filter((page) => page.parentId === inbox.id)
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id));
+  return { inbox, drops };
+}
+
+const ATTACHMENT_LINK_LINE = /^!?\[[^\]]*\]\(attachment:[A-Za-z0-9_-]+\)\s*$/;
+
+/** The first lines of a drop's text, without the file links `createDrop` appended. */
+function dropExcerpt(body: string, limit = 240): string {
+  const lines = body.split(/\r?\n/).filter((line) => !ATTACHMENT_LINK_LINE.test(line));
+  const joined = lines.join("\n").trim();
+  return joined.length > limit ? `${joined.slice(0, limit).trimEnd()}\u2026` : joined;
+}
+
+/** The files a form posted: the multipart parts that are files with a name. An empty file input posts a nameless, empty part. */
+function postedFiles(form: Record<string, unknown>, key: string): File[] {
+  const raw = form[key];
+  const values = Array.isArray(raw) ? raw : [raw];
+  return values.filter((value): value is File => value instanceof File && value.name !== "");
 }
 
 // Data helpers.
@@ -1229,6 +1267,7 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
     const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
     const { counts } = await reviewQueue(context);
     const toReview = counts.changed + counts.unchecked;
+    const waiting = inboxDrops(pages).drops.length;
     return render(
       c,
       <Layout title="Cairn" section="collections">
@@ -1247,6 +1286,11 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
               )}{" "}
               {counts.approved} approved, {counts.disapproved} disapproved.
             </p>
+            {waiting > 0 ? (
+              <p class="ak-small">
+                <a href="/inbox">{plural(waiting, "drop")} waiting</a> in the Inbox to be filed.
+              </p>
+            ) : null}
           </div>
         </header>
         {roots.length === 0 ? (
@@ -2496,6 +2540,411 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
 
   // The review queue (ADR-078 decision 6): what the owner has not judged yet,
   // most urgent first. Every button is a form, so the screen needs no script.
+
+  // The Inbox (ADR-079 decision 6): drops newest first, each with a
+  // file-away form. Filing is moving; a drop absorbed elsewhere is deleted.
+  app.get("/inbox", async (c) => {
+    const pages = await allPages(context);
+    const { inbox, drops } = inboxDrops(pages);
+    const files = new Map<string, AttachmentSummary[]>();
+    for (const drop of drops) files.set(drop.id, await listAttachmentsForPage(context, drop.id));
+    // Where a drop can be filed: any page that is not the Inbox or another drop.
+    const dropIds = new Set(drops.map((drop) => drop.id));
+    const targets = pages
+      .filter((page) => page.id !== inbox?.id && !dropIds.has(page.id))
+      .sort((a, b) => a.title.localeCompare(b.title));
+    return render(
+      c,
+      <Layout title="Inbox" section="inbox">
+        <header class="ak-pagehead">
+          <div>
+            <p class="ak-eyebrow">Inbox</p>
+            <h1>{drops.length === 0 ? "Nothing waiting" : `${drops.length} drop${drops.length === 1 ? "" : "s"} waiting`}</h1>
+            <p class="ak-small">
+              What you threw at Cairn from a phone, a shell or this form. File each one under the page it belongs to, or
+              delete it once its content lives elsewhere. Agents do the same when asked.{" "}
+              <a href="/settings/drop-tokens">Drop tokens</a> let a phone or a script drop without signing in.
+            </p>
+          </div>
+          <div class="ak-row">
+            <a class="ak-btn" href="/inbox/new">
+              New drop
+            </a>
+          </div>
+        </header>
+        {drops.length === 0 ? (
+          <p class="ak-empty">
+            The Inbox is empty. <a href="/inbox/new">Drop something</a>, or share to Cairn from your phone.
+          </p>
+        ) : (
+          <div class="cairn-drops">
+            {drops.map((drop) => {
+              const attachments = files.get(drop.id) ?? [];
+              const excerpt = dropExcerpt(drop.body);
+              return (
+                <article class="cairn-drop" id={drop.id}>
+                  <h2>
+                    <a href={pageHref(drop.id)}>{drop.title}</a>
+                  </h2>
+                  <p class="ak-small">
+                    <ActorPill actor={drop.updatedBy} /> <When at={drop.createdAt} />
+                    {drop.sources.length > 0 ? (
+                      <>
+                        {" "}
+                        · <a href={sourceHref(drop.sources[0]!) ?? undefined}>{drop.sources[0]}</a>
+                      </>
+                    ) : null}
+                  </p>
+                  {excerpt ? <p class="cairn-drop-excerpt">{excerpt}</p> : null}
+                  {attachments.length > 0 ? (
+                    <p class="cairn-drop-files">
+                      {attachments.map((file) =>
+                        file.thumbnailKey ? (
+                          <a href={`${pageHref(drop.id)}#attachments`} title={file.filename}>
+                            <img class="cairn-thumb" src={`/a/${file.id}/thumb`} alt={file.altText || file.filename} loading="lazy" />
+                          </a>
+                        ) : (
+                          <span class="ak-pill ak-pill-off">{file.filename}</span>
+                        ),
+                      )}
+                    </p>
+                  ) : null}
+                  <div class="cairn-drop-actions">
+                    <form method="post" action={`/p/${drop.id}/move`} class="ak-row">
+                      <input type="hidden" name="version" value={drop.version} />
+                      <input type="hidden" name="next" value="/inbox" />
+                      <label class="ak-small" for={`parent-${drop.id}`}>
+                        File under
+                      </label>
+                      <select class="ak-select" id={`parent-${drop.id}`} name="parent">
+                        {targets.map((page) => (
+                          <option value={page.id}>{page.title}</option>
+                        ))}
+                      </select>
+                      <button class="ak-btn" type="submit">
+                        File
+                      </button>
+                    </form>
+                    <form method="post" action={`/p/${drop.id}/delete`} class="ak-row">
+                      <input type="hidden" name="version" value={drop.version} />
+                      <input type="hidden" name="next" value="/inbox" />
+                      <button class="ak-btn" type="submit">
+                        Delete
+                      </button>
+                    </form>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        )}
+      </Layout>,
+    );
+  });
+
+  const dropForm = (
+    c: Context,
+    values: { text: string; title: string; tags: string; url: string },
+    banner: Child,
+    status: 200 | 400 | 413 | 422,
+  ) =>
+    render(
+      c,
+      <Layout title="New drop" section="inbox">
+        <p class="ak-eyebrow">Inbox</p>
+        <h1>New drop</h1>
+        {banner}
+        <form method="post" action="/inbox/new" enctype="multipart/form-data" class="cairn-editor">
+          <label for="text">Text</label>
+          <textarea class="ak-input" id="text" name="text" rows={8} autofocus>
+            {values.text}
+          </textarea>
+          <label for="files">Files</label>
+          <input class="ak-input" id="files" name="files" type="file" multiple />
+          <p class="ak-small">
+            Up to 10 files of 25 MB each. Images get a thumbnail; anything else is linked by name.
+          </p>
+          <label for="title">Title (optional)</label>
+          <input class="ak-input" id="title" name="title" type="text" value={values.title} />
+          <label for="tags">Tags (optional, comma separated)</label>
+          <input class="ak-input" id="tags" name="tags" type="text" value={values.tags} />
+          <label for="url">Link (optional)</label>
+          <input class="ak-input" id="url" name="url" type="url" value={values.url} />
+          <div class="cairn-actions">
+            <button class="ak-btn" type="submit">
+              Drop
+            </button>
+            <a href="/inbox">Cancel</a>
+          </div>
+        </form>
+      </Layout>,
+      status,
+    );
+
+  app.get("/inbox/new", (c) => dropForm(c, { text: "", title: "", tags: "", url: "" }, null, 200));
+
+  app.post("/inbox/new", async (c) => {
+    const form = await c.req.parseBody({ all: true });
+    const values = {
+      text: text(form, "text").replace(/\r\n/g, "\n"),
+      title: text(form, "title").trim(),
+      tags: text(form, "tags"),
+      url: text(form, "url").trim(),
+    };
+    const parts = postedFiles(form, "files");
+    try {
+      checkDropLimits({
+        textBytes: new TextEncoder().encode(values.text).length,
+        files: parts.map((part) => ({ filename: part.name, bytes: part.size })),
+      });
+      if (parts.length > 0 && !context.attachmentsStore) throw new AttachmentsDisabledError();
+      const files = await Promise.all(
+        parts.map(async (part) => ({
+          filename: part.name,
+          contentType: part.type || "application/octet-stream",
+          bytes: new Uint8Array(await part.arrayBuffer()),
+        })),
+      );
+      await withDropSlot(() =>
+        createDrop(
+          context,
+          {
+            text: values.text,
+            title: values.title || null,
+            tags: parseTags(values.tags),
+            url: values.url || null,
+            files,
+          },
+          by(c, ""),
+        ),
+      );
+    } catch (error) {
+      if (error instanceof DropTooLargeError) {
+        return dropForm(c, values, <Banner kind="bad">{error.message}</Banner>, 413);
+      }
+      if (error instanceof AttachmentsDisabledError) {
+        return dropForm(
+          c,
+          values,
+          <Banner kind="bad">
+            Files need somewhere to live: this Cairn has attachments off. Set <code>CAIRN_ATTACHMENTS_TO</code> to a blob
+            store and restart, or drop the text without the files.
+          </Banner>,
+          422,
+        );
+      }
+      if (error instanceof ValidationError) return dropForm(c, values, <ValidationBanner error={error} />, 400);
+      throw error;
+    }
+    return c.redirect("/inbox", 303);
+  });
+
+  // A thumbnail from this origin (ADR-079 decision 6): the console's CSP
+  // allows images from 'self' only, so the signed blob URL cannot be used.
+  app.get("/a/:id/thumb", async (c) => {
+    const bytes = await getAttachmentThumbnail(context, c.req.param("id") ?? "");
+    if (!bytes) return c.text("No thumbnail: the attachment is missing, still uploading, or not an image.", 404);
+    return c.body(new Uint8Array(bytes) as Uint8Array<ArrayBuffer>, 200, { "content-type": "image/webp", "cache-control": "private, max-age=3600" });
+  });
+
+  // Move a page under another, or to the top. The Inbox's file-away form
+  // posts here; `next` says where to go back to.
+  app.post("/p/:id/move", async (c) => {
+    const page = await loadPage(c);
+    if (!page) return notFound(c, `Page ${c.req.param("id")}`);
+    const form = await c.req.parseBody();
+    const parent = text(form, "parent").trim();
+    const next = text(form, "next");
+    try {
+      await moveRecord(context, page.id, parent === "" ? null : parent, text(form, "version"), by(c, text(form, "note")));
+    } catch (error) {
+      if (!(error instanceof VersionConflictError) && !(error instanceof ValidationError)) throw error;
+      return render(
+        c,
+        <Layout title="Not moved" section="none">
+          <Banner kind="bad">
+            <strong>Not moved.</strong>{" "}
+            {error instanceof VersionConflictError
+              ? "The page changed since you opened it. Reload and try again."
+              : error.errors.map((e) => e.message).join("; ")}{" "}
+            <a href={next ? safeNext(next) : pageHref(page.id)}>Back</a>
+          </Banner>
+        </Layout>,
+        409,
+      );
+    }
+    return c.redirect(next ? safeNext(next) : `${pageHref(page.id)}?moved=1`, 303);
+  });
+
+  // Delete a page. Restorable from the deleted list (ADR-039), so a form
+  // button is enough; a page with children is refused, as everywhere.
+  app.post("/p/:id/delete", async (c) => {
+    const page = await loadPage(c);
+    if (!page) return notFound(c, `Page ${c.req.param("id")}`);
+    const form = await c.req.parseBody();
+    const next = text(form, "next");
+    try {
+      await deletePage(context, page.id, text(form, "version"), by(c, text(form, "note")));
+    } catch (error) {
+      if (!(error instanceof VersionConflictError) && !(error instanceof PageHasChildrenError)) throw error;
+      return render(
+        c,
+        <Layout title="Not deleted" section="none">
+          <Banner kind="bad">
+            <strong>Not deleted.</strong>{" "}
+            {error instanceof VersionConflictError
+              ? "The page changed since you opened it. Reload and try again."
+              : "It has pages under it. Move or delete those first."}{" "}
+            <a href={pageHref(page.id)}>Back to {page.title}</a>
+          </Banner>
+        </Layout>,
+        409,
+      );
+    }
+    return c.redirect(next ? safeNext(next) : "/", 303);
+  });
+
+  // Drop tokens (ADR-079 decision 3): made and revoked here, never through MCP.
+  const dropTokensPage = (
+    c: Context,
+    tokens: DropTokenSummary[],
+    banner: Child,
+    status: 200 | 400,
+    values: { name: string; description: string; kind: string } = { name: "", description: "", kind: "person" },
+  ) =>
+    render(
+      c,
+      <Layout title="Drop tokens" section="settings">
+        <header class="ak-pagehead">
+          <div>
+            <p class="ak-eyebrow">Settings</p>
+            <h1>Drop tokens</h1>
+            <p class="ak-small">
+              A drop token lets a phone, a script or an agent without the CLI post to <code>POST /api/v1/drops</code> and
+              nothing else. Each drop it makes is written as the token's kind and named after it. Revoke a token you
+              no longer trust: <code>last used</code> shows whether one leaked.
+            </p>
+          </div>
+        </header>
+        {banner}
+        <section>
+          <h2>New token</h2>
+          <form method="post" action="/settings/drop-tokens" class="cairn-editor">
+            <label for="name">Name: where it lives, such as phone or cron</label>
+            <input class="ak-input" id="name" name="name" type="text" value={values.name} required />
+            <label for="description">Description (optional)</label>
+            <input class="ak-input" id="description" name="description" type="text" value={values.description} />
+            <label for="kind">Who is behind it</label>
+            <select class="ak-select" id="kind" name="kind">
+              <option value="person" selected={values.kind !== "agent"}>
+                A person: my phone, my shell
+              </option>
+              <option value="agent" selected={values.kind === "agent"}>
+                An agent: a script, a cron job
+              </option>
+            </select>
+            <div class="cairn-actions">
+              <button class="ak-btn" type="submit">
+                Create token
+              </button>
+            </div>
+          </form>
+        </section>
+        <section>
+          <h2>Tokens</h2>
+          {tokens.length === 0 ? (
+            <p class="ak-empty">No drop tokens yet.</p>
+          ) : (
+            <div class="ak-tblwrap">
+              <table class="ak-table">
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Kind</th>
+                    <th>Created</th>
+                    <th>Last used</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {tokens.map((token) => (
+                    <tr id={token.id}>
+                      <td>
+                        {token.name}
+                        {token.description ? <span class="ak-small"> · {token.description}</span> : null}
+                      </td>
+                      <td>{token.kind}</td>
+                      <td>
+                        <When at={token.createdAt} />
+                      </td>
+                      <td>{token.lastUsedAt ? <When at={token.lastUsedAt} /> : <span class="ak-soft">never</span>}</td>
+                      <td>
+                        {token.revokedAt ? (
+                          <span>
+                            revoked <When at={token.revokedAt} />
+                          </span>
+                        ) : (
+                          <form method="post" action={`/settings/drop-tokens/${token.id}/revoke`} class="cairn-inline">
+                            <button class="ak-btn" type="submit">
+                              Revoke
+                            </button>
+                          </form>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      </Layout>,
+      status,
+    );
+
+  app.get("/settings/drop-tokens", async (c) => dropTokensPage(c, await listDropTokens(context), null, 200));
+
+  app.post("/settings/drop-tokens", async (c) => {
+    const form = await c.req.parseBody();
+    const values = { name: text(form, "name"), description: text(form, "description"), kind: text(form, "kind") };
+    let created: DropTokenSummary & { token: string };
+    try {
+      created = await createDropToken(
+        context,
+        { name: values.name, description: values.description || null, kind: values.kind as DropTokenKind },
+        by(c, text(form, "note")),
+      );
+    } catch (error) {
+      if (!(error instanceof ValidationError)) throw error;
+      return dropTokensPage(c, await listDropTokens(context), <ValidationBanner error={error} />, 400, values);
+    }
+    return dropTokensPage(
+      c,
+      await listDropTokens(context),
+      <Banner kind="ok">
+        <strong>Token for {created.name}, shown once.</strong> Copy it now; Cairn keeps only a hash.{" "}
+        <code class="cairn-token">{created.token}</code>
+        <br />
+        <span class="ak-small">
+          Use it as <code>Authorization: Bearer …</code> on <code>POST /api/v1/drops</code>, or with{" "}
+          <code>cairn drop</code>.
+        </span>
+      </Banner>,
+      200,
+    );
+  });
+
+  app.post("/settings/drop-tokens/:id/revoke", async (c) => {
+    const form = await c.req.parseBody();
+    try {
+      await revokeDropToken(context, c.req.param("id") ?? "", by(c, text(form, "note")));
+    } catch (error) {
+      if (!(error instanceof NotFoundError)) throw error;
+      return notFound(c, `Drop token ${c.req.param("id")}`);
+    }
+    return c.redirect("/settings/drop-tokens", 303);
+  });
+
   app.get("/review", async (c) => {
     const { items, counts } = await reviewQueue(context);
     const pages = await allPages(context);
