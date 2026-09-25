@@ -2,8 +2,11 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { closeContext, createContext, OWNER, type AppContext } from "../src/context.js";
 import type { AttachmentBlobStore } from "../src/attachments-blob.js";
 import { AttachmentsDisabledError, listAttachmentsForPage } from "../src/attachments.js";
-import { createDrop, dropTitle } from "../src/operations.js";
+import { eventually } from "@cairn/core/testing";
+import { createDrop, dropTitle, listDrops, moveRecord, searchPages } from "../src/operations.js";
 import { INBOX_COLLECTION_NAME } from "../src/templates.js";
+
+const AGENT = { kind: "agent", id: "claude", label: "Claude" } as const;
 
 /**
  * The dropbox (ADR-079 decisions 1 and 2): a drop is an ordinary page under
@@ -146,5 +149,34 @@ describe("createDrop", () => {
     // A text-only drop still works with attachments off.
     const page = await createDrop(context, { text: "just text" }, { actor: OWNER });
     expect(page.title).toBe("just text");
+  });
+
+  // Spec criterion 8: a drop is an ordinary page, so search finds it, and once
+  // an agent has absorbed it (a link from the target page, then the move) the
+  // drop's backlinks say where it went and the Inbox is empty again.
+  it("is searchable like any page, and after filing the target page's link is a backlink and the Inbox is empty", async () => {
+    const target = await context.pages.create(context.workspaceId, { title: "NAS", body: "The Synology in the cupboard.", tags: [] }, { actor: OWNER });
+    const drop = await createDrop(context, { text: "call Anna about the NAS warranty renewal" }, { actor: OWNER });
+    await eventually(async () => {
+      const found = await searchPages(context, { query: "NAS warranty renewal" });
+      expect(found.pages.map((p) => p.pageId)).toContain(drop.id);
+    });
+    expect((await listDrops(context)).map((p) => p.id)).toEqual([drop.id]);
+
+    const linked = await context.pages.update(
+      context.workspaceId,
+      target.id,
+      { title: target.title, tags: target.tags, body: `${target.body}\n\nWarranty: renew, see [[${drop.id}]].` },
+      target.version,
+      { actor: AGENT, changeNote: `from drop ${drop.id}` },
+    );
+    await moveRecord(context, drop.id, target.id, drop.version, { actor: AGENT, changeNote: "filed under NAS" });
+
+    expect((await context.store.getPage(context.workspaceId, drop.id))?.parentId).toBe(target.id);
+    expect(await listDrops(context)).toEqual([]);
+    await eventually(async () => {
+      const backlinks = await context.pages.backlinks(context.workspaceId, drop.id);
+      expect(backlinks.map((edge) => edge.sourceId)).toContain(linked.id);
+    });
   });
 });

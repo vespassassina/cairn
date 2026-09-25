@@ -127,7 +127,7 @@ The same operations are on the REST API at `/api/v1`, with version tokens as `ET
 
 ## 6. Review in the console
 
-Open http://localhost:8787. There is no sign-in on localhost. The home page lists recent changes, newest first; "Agents only" shows what Claude wrote. Every page has Edit and History, and any version can be restored.
+Open http://localhost:8787. There is no sign-in on localhost. The home page lists recent changes, newest first; "Agents only" shows what Claude wrote. Every page has Edit and History, and any version can be restored. The Inbox at http://localhost:8787/inbox holds what you dropped for later, from the "Drop" form there, `cairn drop` or a phone (see `CLI.md`, "Throw things in for later"), each with a form to file it under a page; the home page counts what waits. Drop tokens for a phone or a script are made at /settings/drop-tokens.
 
 ## 7. Export and import
 

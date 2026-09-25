@@ -13,6 +13,13 @@ Each entry answers four questions:
 
 ## 2026-09-25
 
+### A newest-first test flaked because two drops were created in the same millisecond
+
+1. **What happened.** The console Inbox test (sprint 2 task 4) asserting drops list newest first passed alone and failed once in the full run, with the two drops in the other order.
+2. **Cause.** `dropsAmong` orders by `createdAt` descending and breaks ties by id descending. Two drops created back to back in a test can share a millisecond, and then the order is the random ids', which the test cannot predict.
+3. **Fix.** A 5 ms pause between the two creates in `packages/api/test/console.test.ts` and, when the same flake showed in the full run while closing the sprint, in the `GET /drops` test in `packages/api/test/rest.test.ts`, each with a comment saying why.
+4. **Lesson.** A test of "newest first" must make sure the records have different timestamps; a pause, or a fixed clock, is part of the test's setup, not an afterthought. A flake that shows only in the full run, on an ordering assertion, is a timestamp tie before it is a bug.
+
 ### An OAuth race test failed when vitest ran inside `packages/api`, and passed from the root
 
 1. **What happened.** While checking sprint 2 task 1, `npx vitest run` from `packages/api` reported the ADR-054 test "gives up after a bounded wait rather than hanging" timing out at 5 seconds, on the clean tree as well as with the change.

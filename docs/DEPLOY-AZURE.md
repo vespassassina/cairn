@@ -164,6 +164,8 @@ az storage blob list --account-name <account> --container-name cairn-backups --a
 
 **Keep one copy yourself as well.** Both of the above live in the same storage account, under the same subscription. `cairn export ~/cairn-backup` now and then gives you one that does not, and one you can read without Cairn.
 
+**Drop from your phone.** Make a token that can only add to the Inbox, `cairn drop-token create phone --instance azure`, and use it from a Shortcut or `curl` against `https://<your-cairn>/api/v1/drops`; the recipe is in `docs/CLI.md`, "Throw things in for later". Photos need attachments on (`CAIRN_ATTACHMENTS_TO`); text works regardless.
+
 **Rotate the signing secret.** Move the current value to `CAIRN_AUTH_SECRET_PREVIOUS` in `deploy/azure/.cairn-deploy.env`, delete `CAIRN_AUTH_SECRET`, and run the script. Tokens signed with the old secret keep working until they expire.
 
 **Remove everything:**

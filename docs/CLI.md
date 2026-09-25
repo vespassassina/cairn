@@ -224,6 +224,34 @@ The approval mark is the owner's judgement of a page (ADR-078), separate from `v
 
 Every read shows where a page stands. `cairn read` prints an `approval:` line in the front matter, with `(was approved)` after `neutral` when an edit reset the mark, and on a disapproved or reset page one quoted notice line between the front matter and the body, so an agent reading the page cannot miss it. The notice is never part of the body: a read, edit and write back leaves the page text as it was.
 
+## Throw things in for later: drop, drops and drop tokens
+
+```
+cairn drop "call Anna re: NAS"                       text from the arguments, --text or stdin
+cairn drop --file IMG_0042.jpeg --file quote.pdf     up to 10 files of 25 MB each, with or without text
+cairn drop "the label on the box" --file label.jpeg --tag nas --url https://example.com/item
+cairn drops                                          what waits in the Inbox, newest first, with ids
+cairn drop-token create phone                        a token that can only drop; shown once, save it
+cairn drop-token create nightly-script --kind agent  the same for a script, recorded as an agent
+cairn drop-token list                                name, kind, last use, revoked or not
+cairn drop-token revoke <token-id>                   take one back
+```
+
+A drop is a page under a root collection called `Inbox`, tagged `drop` (ADR-079). Its title is the `--title` if given, else the first line of the text, else the first filename, else the time. Files are uploaded by the server and linked from the body, so they need `CAIRN_ATTACHMENTS_TO` set on it (ADR-064); text-only drops work everywhere. An agent files drops away later, so you can drop without thinking about where a thing belongs: the workspace summary tells agents how many are waiting, and `cairn drops` tells you.
+
+**From a phone, or anything with `curl`.** A drop token is the one credential that can only add to the Inbox, so it is safe enough to keep in a Shortcut. Make one with `cairn drop-token create phone`, copy the value, then:
+
+```
+curl -H "Authorization: Bearer cairn_drop_..." -F text="call Anna re: NAS" https://<your-cairn>/api/v1/drops
+curl -H "Authorization: Bearer cairn_drop_..." -F files=@IMG_0042.jpeg -F text="the label on the box" https://<your-cairn>/api/v1/drops
+```
+
+JSON works too, for text: `-H "content-type: application/json" -d '{"text":"call Anna","tags":["nas"],"url":"https://example.com"}'`. The answer carries the page's id and a link to it in the console.
+
+On an iPhone, a Shortcut with one "Get Contents of URL" action does the same: method POST, request body Form, a `text` field from the Shortcut's input and a `files` field from a photo, and an `Authorization` header with the token. Add it to the share sheet and any text, link or photo is a drop. On Android, an app that runs an HTTP request from the share sheet does the same job. A photo from an iPhone arrives as HEIC, which shows as a file link rather than a thumbnail (thumbnails cover PNG, JPEG and WebP); set the phone to share as JPEG if you want the picture in the Inbox list. The mobile app in `docs/specs/mobile-capture-app.md` will make Cairn itself a share target; until then the Shortcut is the recipe.
+
+If a token is lost, `cairn drop-token revoke` it and make a new one: the value is stored as a hash and cannot be shown again. A drop token used anywhere but `POST /api/v1/drops` is refused with `403 drop_token_scope`.
+
 ## Your data: export and import
 
 ```

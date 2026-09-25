@@ -1510,6 +1510,8 @@ describe("GET /drops (ADR-079 decision 5)", () => {
     expect(empty.json).toEqual({ drops: [] });
 
     await call("/drops", { method: "POST", body: { text: "older" } });
+    // Two drops in the same millisecond have no order to assert (docs/LESSONS.md, 2026-09-25).
+    await new Promise((resolve) => setTimeout(resolve, 5));
     const newer = await call("/drops", { method: "POST", body: { text: "newer" } });
     const listed = await call("/drops");
     const drops = listed.json["drops"] as Array<{ id: string; title: string }>;

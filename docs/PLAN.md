@@ -1,6 +1,6 @@
 # Plan: notes, approval, dropbox and the mobile app
 
-From the product review of 2026-09-24 and the owner's direction the same day. Specs: `docs/specs/knowledge-approval.md`, `docs/specs/dropbox.md`, `docs/specs/mobile-capture-app.md`, `docs/specs/console-for-notes.md`. Status: specs and plan agreed by the owner on 2026-09-24. Sprints 0 and 1 done the same day; gate 2 passed (eval unchanged); sprint 2 under way.
+From the product review of 2026-09-24 and the owner's direction the same day. Specs: `docs/specs/knowledge-approval.md`, `docs/specs/dropbox.md`, `docs/specs/mobile-capture-app.md`, `docs/specs/console-for-notes.md`. Status: specs and plan agreed by the owner on 2026-09-24. Sprints 0 and 1 done the same day; gate 2 passed (eval unchanged); sprint 2 done on 2026-09-25; sprint 3 next.
 
 Rules: one outcome and one test per task; a sprint is a working increment; each sprint opens with its ADR and closes with the four logs, `pnpm build`, `pnpm test`, and for search changes `pnpm eval`. Tasks tick here as they close. Sizes are agent working sessions: S under one, M one to two, L three or more.
 
@@ -47,7 +47,7 @@ Increment: text and files reach the Inbox from a shell and the console; agents p
 4. [x] Console `/inbox`, `/inbox/new`, file-away form, home count, `/settings/drop-tokens`. Test: criterion 5.
 5. [x] CLI `cairn drop`, `cairn drops`, `cairn drop-token`, `pnpm smoke:cli`. Test: criterion 6.
 6. [x] Summary count, instructions and skill paragraph, `pnpm context-cost`. Test: criterion 7.
-7. Guides: `docs/AGENT-OPERATE.md`, `docs/CLI.md`, the person's guide with the `curl` recipe; changelog, roadmap. Test: criteria 8 and 9.
+7. [x] Guides: `docs/AGENT-OPERATE.md`, `docs/CLI.md`, the person's guide with the `curl` recipe; changelog, roadmap. Test: criteria 8 and 9.
 
 ## Sprint 3: console for notes (E3, L)
 
