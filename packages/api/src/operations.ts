@@ -684,8 +684,59 @@ export interface DropInput {
 /** The `drop` tag every drop carries, so a drop moved out of the Inbox still says where it came from. */
 export const DROP_TAG = "drop";
 
-/** ADR-079 decision 2's ceilings, checked by the surfaces before bytes are read in full. */
+/** ADR-079 decision 2's ceilings, checked by `checkDropLimits` before any file is read in full. */
 export const DROP_LIMITS = { maxFiles: 10, maxFileBytes: 25 * 1024 * 1024, maxTextBytes: 64 * 1024 } as const;
+
+/** A drop over one of the ceilings. The surfaces answer 413 with the limit in the message. */
+export class DropTooLargeError extends Error {}
+
+/**
+ * The limits, checked on sizes alone so a surface can refuse before it
+ * reads a file's bytes. Every message names the ceiling and what to do:
+ * a phone can send fewer files, a script can split the text.
+ */
+export function checkDropLimits(input: { textBytes: number; files: readonly { filename: string; bytes: number }[] }): void {
+  if (input.files.length > DROP_LIMITS.maxFiles) {
+    throw new DropTooLargeError(
+      `A drop takes at most ${DROP_LIMITS.maxFiles} files, got ${input.files.length}. Send them as more than one drop.`,
+    );
+  }
+  for (const file of input.files) {
+    if (file.bytes > DROP_LIMITS.maxFileBytes) {
+      throw new DropTooLargeError(
+        `${file.filename} is ${file.bytes} bytes; a file in a drop is at most 25 MB (${DROP_LIMITS.maxFileBytes} bytes). Shrink it, or attach it to a page with create_attachment.`,
+      );
+    }
+  }
+  if (input.textBytes > DROP_LIMITS.maxTextBytes) {
+    throw new DropTooLargeError(
+      `The text is ${input.textBytes} bytes; a drop takes at most 64 KB (${DROP_LIMITS.maxTextBytes} bytes). Put long text in a file, or create a page.`,
+    );
+  }
+}
+
+/** ADR-079 decision 2: at most this many drops pass through the process at once. */
+const DROPS_IN_FLIGHT = 2;
+let dropsRunning = 0;
+const dropQueue: Array<() => void> = [];
+
+/**
+ * Runs `work` when one of the two drop slots is free, queueing otherwise.
+ * Server-side upload is the one path where bytes sit in this process, so
+ * the cap bounds memory to two drops' worth, whichever surface they come
+ * from. Waiting rather than refusing: a phone that just shared three photos
+ * expects all three to land.
+ */
+export async function withDropSlot<T>(work: () => Promise<T>): Promise<T> {
+  if (dropsRunning >= DROPS_IN_FLIGHT) await new Promise<void>((resolve) => dropQueue.push(resolve));
+  dropsRunning += 1;
+  try {
+    return await work();
+  } finally {
+    dropsRunning -= 1;
+    dropQueue.shift()?.();
+  }
+}
 
 /** `2026-09-24 19:31`, UTC, for a drop with nothing to name it by. */
 function dropTimestamp(now: Date): string {
@@ -779,7 +830,7 @@ export interface ErrorBody {
 }
 
 export interface DescribedError {
-  status: 400 | 403 | 404 | 409 | 422 | 500;
+  status: 400 | 403 | 404 | 409 | 413 | 422 | 500;
   body: ErrorBody;
 }
 
@@ -807,6 +858,14 @@ export function describeError(error: unknown, wording: ErrorWording): DescribedE
       },
     };
   }
+  if (error instanceof AttachmentsDisabledError) {
+    // Its own code (ADR-079 criterion 2): the fix is one setting, not a field
+    // in the request, so an agent should not retry with different input.
+    return {
+      status: 422,
+      body: { error: "attachments_off", message: error.errors[0]?.message ?? error.message, setting: "CAIRN_ATTACHMENTS_TO" },
+    };
+  }
   if (error instanceof ValidationError) {
     return {
       status: 422,
@@ -830,6 +889,9 @@ export function describeError(error: unknown, wording: ErrorWording): DescribedE
   }
   if (error instanceof ApprovalByAgentError) {
     return { status: 403, body: { error: "approval_person_only", message: error.message } };
+  }
+  if (error instanceof DropTooLargeError) {
+    return { status: 413, body: { error: "drop_too_large", message: error.message } };
   }
   return {
     status: 500,

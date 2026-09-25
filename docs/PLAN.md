@@ -42,7 +42,7 @@ Increment: the owner can approve, disapprove and review; agents rank and hide ac
 Increment: text and files reach the Inbox from a shell and the console; agents process them.
 
 1. [x] Inbox well-known collection and `createDrop` operation with title rules. Test: unit test on title, body, tags, sources.
-2. `POST /api/v1/drops`, multipart and JSON, server-side attachment upload, limits, `attachments_off`. Test: criteria 1 and 2.
+2. [x] `POST /api/v1/drops`, multipart and JSON, server-side attachment upload, limits, `attachments_off`. Test: criteria 1 and 2.
 3. Drop tokens table, `Authorization` check, scope refusal, `last_used_at`, revocation. Test: criteria 3 and 4.
 4. Console `/inbox`, `/inbox/new`, file-away form, home count, `/settings/drop-tokens`. Test: criterion 5.
 5. CLI `cairn drop`, `cairn drops`, `cairn drop-token`, `pnpm smoke:cli`. Test: criterion 6.

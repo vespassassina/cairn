@@ -32,6 +32,12 @@ import {
   listAttachmentsOp,
   deleteAttachmentOp,
   createPageFromTemplate,
+  checkDropLimits,
+  createDrop,
+  DROP_LIMITS,
+  DropTooLargeError,
+  withDropSlot,
+  type DropFile,
   getTodayNoteOp,
   toFieldDefs,
   undeletePage,
@@ -87,6 +93,92 @@ function exportOffset(cursor: string | undefined): number {
 
 const CHANGE_NOTE = z.string().max(500).optional();
 
+/** Refused from the Content-Length alone, before any byte is parsed: the drop limits plus multipart overhead. */
+const DROP_BODY_CEILING = DROP_LIMITS.maxFiles * DROP_LIMITS.maxFileBytes + DROP_LIMITS.maxTextBytes + 1024 * 1024;
+
+interface DropRequest {
+  text?: string;
+  title?: string;
+  tags?: string[];
+  url?: string;
+  files: DropFile[];
+  change_note?: string;
+}
+
+/** `tags` as a comma list (a form field) or an array (JSON), trimmed, blanks dropped. */
+function tagList(raw: string | readonly string[] | undefined): string[] {
+  const parts = typeof raw === "string" ? raw.split(",") : (raw ?? []);
+  return parts.map((t) => t.trim()).filter((t) => t.length > 0);
+}
+
+/**
+ * A multipart drop: `text`, `title`, `tags`, `url` and any number of
+ * `files` (or `files[]`, as some form libraries name them). Sizes are
+ * checked before a file's bytes are read, so an oversized part costs only
+ * the parse.
+ */
+async function multipartDrop(c: Context): Promise<DropRequest> {
+  let form: FormData;
+  try {
+    form = await c.req.raw.formData();
+  } catch {
+    throw new BadRequest("The body is not valid multipart/form-data.");
+  }
+  const field = (name: string): string | undefined => {
+    const value = form.get(name);
+    return typeof value === "string" ? value : undefined;
+  };
+  // Node's `FormData` types the file entries as `Blob`, without the name a
+  // `File` carries; at runtime they are `File`s, which the cast says.
+  const parts = [...form.getAll("files"), ...form.getAll("files[]")].filter((part) => typeof part !== "string") as unknown as File[];
+  const text = field("text");
+  checkDropLimits({
+    textBytes: text ? new TextEncoder().encode(text).byteLength : 0,
+    files: parts.map((part) => ({ filename: part.name, bytes: part.size })),
+  });
+  const files: DropFile[] = [];
+  for (const part of parts) {
+    files.push({
+      filename: part.name || "file",
+      contentType: part.type || "application/octet-stream",
+      bytes: new Uint8Array(await part.arrayBuffer()),
+    });
+  }
+  const url = field("url");
+  const title = field("title");
+  const note = field("change_note");
+  return {
+    ...(text === undefined ? {} : { text }),
+    ...(title === undefined ? {} : { title }),
+    ...(url === undefined ? {} : { url }),
+    ...(note === undefined ? {} : { change_note: note }),
+    tags: tagList(field("tags")),
+    files,
+  };
+}
+
+/** A JSON drop, files carried as base64 `data`. Same limits, checked on the decoded size. */
+async function jsonDrop(c: Context): Promise<DropRequest> {
+  const input = await parseBody(c, schemas.createDrop);
+  const files: DropFile[] = (input.files ?? []).map((file) => ({
+    filename: file.filename,
+    contentType: file.content_type,
+    bytes: new Uint8Array(Buffer.from(file.data, "base64")),
+  }));
+  checkDropLimits({
+    textBytes: input.text ? new TextEncoder().encode(input.text).byteLength : 0,
+    files: files.map((file) => ({ filename: file.filename, bytes: file.bytes.byteLength })),
+  });
+  return {
+    ...(input.text === undefined ? {} : { text: input.text }),
+    ...(input.title === undefined ? {} : { title: input.title }),
+    ...(input.url === undefined ? {} : { url: input.url }),
+    ...(input.change_note === undefined ? {} : { change_note: input.change_note }),
+    tags: tagList(input.tags),
+    files,
+  };
+}
+
 const FIELD_TYPES = [
   "text",
   "number",
@@ -112,6 +204,16 @@ const VERIFIED_AT = z.string().nullable().optional();
 const EDITED_AT = z.string().optional();
 
 const schemas = {
+  createDrop: z.object({
+    text: z.string().optional(),
+    title: z.string().optional(),
+    tags: z.union([z.array(z.string()), z.string()]).optional(),
+    url: z.string().optional(),
+    files: z
+      .array(z.object({ filename: z.string().min(1), content_type: z.string().min(1), data: z.string() }))
+      .optional(),
+    change_note: CHANGE_NOTE,
+  }),
   createPage: z.object({
     title: z.string().min(1),
     body: z.string().default(""),
@@ -951,6 +1053,26 @@ export function restRoutes(context: AppContext, callerFor: CallerFor, options: R
     const input = await parseBody(c, schemas.deleteBody);
     await deleteAttachmentOp(context, c.req.param("id"), version, by(c, input.change_note));
     return c.body(null, 204);
+  });
+
+  // The dropbox (ADR-079 decision 2): text and files from a phone, a shell
+  // or a script, filed under the Inbox by `createDrop`. Multipart for the
+  // share sheet and curl, JSON with base64 files for scripts that prefer it.
+
+  api.post("/drops", async (c) => {
+    const declared = Number(c.req.header("content-length") ?? 0);
+    if (declared > DROP_BODY_CEILING) {
+      throw new DropTooLargeError(
+        `The request is ${declared} bytes; a drop is at most ${DROP_LIMITS.maxFiles} files of 25 MB and 64 KB of text. Send fewer or smaller files.`,
+      );
+    }
+    const contentType = c.req.header("content-type") ?? "";
+    const input = contentType.startsWith("multipart/form-data") ? await multipartDrop(c) : await jsonDrop(c);
+    const page = await withDropSlot(() =>
+      createDrop(context, input, by(c, input.change_note ?? "Dropped via the API")),
+    );
+    const origin = publicOrigin ?? new URL(c.req.url).origin;
+    return c.json({ ...pageSummary(page), link: `${origin}/p/${page.id}` }, 201);
   });
 
   api.post("/move", async (c) => {

@@ -1346,3 +1346,159 @@ describe("unknown endpoints", () => {
     expect(json["error"]).toBe("not_found");
   });
 });
+
+describe("drops (ADR-079)", () => {
+  function fakeStore(onPut?: () => Promise<void>) {
+    const blobs = new Map<string, Uint8Array>();
+    return {
+      async head(key: string) {
+        const found = blobs.get(key);
+        return found === undefined ? null : { bytes: found.length };
+      },
+      async uploadUrl(key: string) {
+        return `https://blob.example/${key}?upload`;
+      },
+      async downloadUrl(key: string, _expires: number, filename: string) {
+        return `https://blob.example/${key}?download&filename=${encodeURIComponent(filename)}`;
+      },
+      async put(key: string, bytes: Uint8Array) {
+        if (onPut) await onPut();
+        blobs.set(key, bytes);
+      },
+      async get(key: string) {
+        return blobs.get(key) ?? null;
+      },
+    };
+  }
+
+  async function post(form: FormData, token: string | null = TOKEN) {
+    const response = await app.fetch(
+      new Request("http://localhost/api/v1/drops", {
+        method: "POST",
+        headers: { "user-agent": AGENT, ...(token === null ? {} : { authorization: `Bearer ${token}` }) },
+        body: form,
+      }),
+    );
+    return { status: response.status, json: (await response.json()) as Record<string, unknown> };
+  }
+
+  it("takes a multipart drop with two files: a page under Inbox, both attached and linked, the id and link in the answer (criteria 1 and 2)", async () => {
+    context.attachmentsStore = fakeStore();
+    const form = new FormData();
+    form.set("text", "call Anna re: NAS\nshe has the disks");
+    form.set("tags", "todo, nas");
+    form.set("url", "https://example.com/nas");
+    form.append("files", new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], "IMG_0042.png", { type: "image/png" }));
+    form.append("files", new File([new Uint8Array([0x25, 0x50, 0x44, 0x46])], "quote.pdf", { type: "application/pdf" }));
+
+    const { status, json } = await post(form);
+    expect(status).toBe(201);
+    expect(json["title"]).toBe("call Anna re: NAS");
+    expect(json["tags"]).toEqual(["todo", "nas", "drop"]);
+    expect(json["sources"]).toEqual(["https://example.com/nas"]);
+    expect(json["link"]).toBe(`http://localhost/p/${json["id"]}`);
+    expect((json["updated_by"] as Record<string, unknown>)["kind"]).toBe("agent");
+
+    const page = await call(`/pages/${json["id"]}`);
+    expect(page.status).toBe(200);
+    const parent = await call(`/pages/${json["parent_id"]}`);
+    expect(parent.json["title"]).toBe("Inbox");
+    const attachments = (await call(`/attachments?page=${json["id"]}`)).json["attachments"] as Record<string, unknown>[];
+    expect(attachments.map((a) => a["filename"]).sort()).toEqual(["IMG_0042.png", "quote.pdf"]);
+    expect(attachments.every((a) => a["status"] === "committed")).toBe(true);
+    const body = String(page.json["body"]);
+    expect(body).toContain("![IMG_0042.png](attachment:");
+    expect(body).toContain("[quote.pdf](attachment:");
+  });
+
+  it("takes a JSON drop too, with files as base64, and the same title rules", async () => {
+    context.attachmentsStore = fakeStore();
+    const { status, json } = await call("/drops", {
+      method: "POST",
+      body: {
+        title: "Anna's quote",
+        text: "see the file",
+        tags: ["nas"],
+        files: [{ filename: "quote.pdf", content_type: "application/pdf", data: Buffer.from([1, 2, 3]).toString("base64") }],
+        change_note: "Dropped from a script",
+      },
+    });
+    expect(status).toBe(201);
+    expect(json["title"]).toBe("Anna's quote");
+    const history = await call(`/pages/${json["id"]}/history`);
+    const notes = (history.json["revisions"] as Record<string, unknown>[]).map((r) => r["note"]);
+    expect(notes).toContain("Dropped from a script");
+
+    const timestamped = await call("/drops", { method: "POST", body: {} });
+    expect(timestamped.status).toBe(201);
+    expect(timestamped.json["title"]).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/);
+  });
+
+  it("refuses files when attachments are off, as attachments_off naming the setting, and still takes text alone (criterion 2)", async () => {
+    const form = new FormData();
+    form.set("text", "with a file");
+    form.append("files", new File([new Uint8Array([1])], "a.txt", { type: "text/plain" }));
+    const refused = await post(form);
+    expect(refused.status).toBe(422);
+    expect(refused.json["error"]).toBe("attachments_off");
+    expect(refused.json["setting"]).toBe("CAIRN_ATTACHMENTS_TO");
+    expect(String(refused.json["message"])).toContain("CAIRN_ATTACHMENTS_TO");
+
+    const text = new FormData();
+    text.set("text", "just text");
+    const taken = await post(text);
+    expect(taken.status).toBe(201);
+    expect(taken.json["title"]).toBe("just text");
+  });
+
+  it("enforces the limits before storing anything: 10 files, 25 MB each, 64 KB of text, with the limit in the message", async () => {
+    context.attachmentsStore = fakeStore();
+    const many = new FormData();
+    for (let i = 0; i < 11; i += 1) many.append("files", new File([new Uint8Array([1])], `f${i}.txt`, { type: "text/plain" }));
+    const tooMany = await post(many);
+    expect(tooMany.status).toBe(413);
+    expect(tooMany.json["error"]).toBe("drop_too_large");
+    expect(String(tooMany.json["message"])).toContain("10 files");
+
+    const big = new FormData();
+    big.append("files", new File([new Uint8Array(25 * 1024 * 1024 + 1)], "big.bin", { type: "application/octet-stream" }));
+    const tooBig = await post(big);
+    expect(tooBig.status).toBe(413);
+    expect(String(tooBig.json["message"])).toContain("25 MB");
+
+    const longText = new FormData();
+    longText.set("text", "x".repeat(64 * 1024 + 1));
+    const tooLong = await post(longText);
+    expect(tooLong.status).toBe(413);
+    expect(String(tooLong.json["message"])).toContain("64 KB");
+
+    // Nothing landed: no Inbox was created for any of them.
+    const roots = await call("/pages?parent=root");
+    expect(JSON.stringify(roots.json)).not.toContain("Inbox");
+  });
+
+  it("lets at most two drops with files run at once; the rest wait their turn rather than being refused", async () => {
+    let inFlight = 0;
+    let peak = 0;
+    context.attachmentsStore = fakeStore(async () => {
+      inFlight += 1;
+      peak = Math.max(peak, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      inFlight -= 1;
+    });
+    const one = () => {
+      const form = new FormData();
+      form.append("files", new File([new Uint8Array([1, 2])], "a.txt", { type: "text/plain" }));
+      return post(form);
+    };
+    const results = await Promise.all([one(), one(), one(), one()]);
+    expect(results.map((r) => r.status)).toEqual([201, 201, 201, 201]);
+    expect(peak).toBe(2);
+  });
+
+  it("needs a token like every other route", async () => {
+    const form = new FormData();
+    form.set("text", "no token");
+    expect((await post(form, null)).status).toBe(401);
+  });
+});
