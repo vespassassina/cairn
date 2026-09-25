@@ -156,6 +156,16 @@ Write (every write is a revision the owner can review and undo)
       server) and confirms it; prints the id and the attachment: link to paste into the page
   cairn attachment list <page-id>         committed attachments on that page
   cairn attachment get <attachment-id>    a short-lived download URL, or its pending status
+  cairn drop [text] [--title T] [--tag X]... [--file PATH]... [--url U]
+      throw text and files into the Inbox for an agent to file later (ADR-079); text
+      also from --text or stdin. Up to 10 files of 25 MB, 64 KB of text; files need
+      CAIRN_ATTACHMENTS_TO on the server
+  cairn drops                             what waits in the Inbox, newest first, with ids
+  cairn drop-token create <name> [--description D] [--kind person|agent]
+      a token that can only drop: for a phone's share sheet or a script without the
+      CLI. Shown once, save it. Default kind person; agent when a script holds it
+  cairn drop-token list                   drop tokens, with last use, revoked or not
+  cairn drop-token revoke <token-id>      take one back
   All writes take --note "why", shown to the owner, and --source S (repeatable):
   a URL or short citation for where the facts came from, added to the page's or row's sources.
   append, replace-section and write take --verified: you re-checked the page's facts and they
@@ -251,7 +261,7 @@ const OPTIONS = {
   verified: { type: "boolean" },
   note: { type: "string" },
   text: { type: "string" },
-  file: { type: "string" },
+  file: { type: "string", multiple: true },
   version: { type: "string" },
   section: { type: "string" },
   where: { type: "string", multiple: true },
@@ -285,6 +295,8 @@ const OPTIONS = {
   brief: { type: "boolean" },
   yes: { type: "boolean" },
   "include-disapproved": { type: "boolean" },
+  url: { type: "string" },
+  kind: { type: "string" },
 } as const;
 
 /** Commands that choose their own servers, so never probe for one. */
@@ -377,7 +389,7 @@ function normalise(text: string): string {
 
 async function content(flags: Flags, io: Io, required: boolean): Promise<string | undefined> {
   if (flags.text !== undefined) return normalise(flags.text);
-  if (flags.file !== undefined) return normalise(await readFile(flags.file, "utf8"));
+  if (flags.file?.[0] !== undefined) return normalise(await readFile(flags.file[0], "utf8"));
   const piped = await io.stdin();
   if (piped !== null) return normalise(piped);
   if (required) throw new UsageError("missing content: pass --text, --file, or pipe it in");
@@ -1378,7 +1390,7 @@ export async function run(argv: string[], io: Io): Promise<number> {
         const sub = args[0];
         if (sub === "create") {
           const pageId = need(args[1], "the page this attachment belongs to");
-          const path = need(flags.file, "--file PATH, the file to upload");
+          const path = need(flags.file?.[0], "--file PATH, the file to upload");
           const bytes = await readFile(path);
           const sha256 = hex(await crypto.subtle.digest("SHA-256", bytes));
           const filename = basename(path);
@@ -1440,6 +1452,99 @@ export async function run(argv: string[], io: Io): Promise<number> {
           return 0;
         }
         throw new UsageError(`cairn attachment needs a subcommand: create <page> --file PATH, list <page>, or get <id>. Got "${sub ?? ""}".`);
+      }
+
+      case "drop": {
+        const positional = args.join(" ").trim();
+        const text = positional !== "" ? positional : flags.text !== undefined ? normalise(flags.text) : await io.stdin().then((piped) => (piped === null ? "" : normalise(piped)));
+        const paths = flags.file ?? [];
+        if (text.trim() === "" && paths.length === 0) {
+          throw new UsageError('nothing to drop: give the text as an argument, with --text, or on stdin, or a file with --file PATH.');
+        }
+        const form = new FormData();
+        if (text.trim() !== "") form.set("text", text);
+        if (flags.title) form.set("title", flags.title);
+        if (flags.tag && flags.tag.length > 0) form.set("tags", flags.tag.join(","));
+        if (flags.url) form.set("url", flags.url);
+        if (note) form.set("change_note", note);
+        for (const path of paths) {
+          const bytes = await readFile(path);
+          form.append("files", new File([bytes], basename(path), { type: contentTypeFor(path) }));
+        }
+        const { json } = await client.request("POST", "/drops", { form });
+        out(json, () =>
+          `ok dropped "${String(json?.["title"])}" as ${String(json?.["id"])} under the Inbox` +
+          `${paths.length > 0 ? ` with ${paths.length} file${paths.length === 1 ? "" : "s"}` : ""}\n` +
+          `   ${String(json?.["link"])}\n` +
+          "   an agent files it from there; cairn drops lists what waits\n",
+        );
+        return 0;
+      }
+
+      case "drops": {
+        const { json } = await client.request("GET", "/drops");
+        out(json, () => {
+          const drops = list(json?.["drops"]);
+          if (drops.length === 0) return "the Inbox is empty: nothing waiting to be filed\n";
+          return (
+            drops.map((d) => `${String(d["id"])}  ${String(d["updated_at"]).slice(0, 16).replace("T", " ")}  ${String(d["title"])}\n`).join("") +
+            `${drops.length} waiting. File one with cairn move <id> --parent PAGE --version V, or cairn delete it once absorbed.\n`
+          );
+        });
+        return 0;
+      }
+
+      case "drop-token": {
+        const sub = args[0];
+        if (sub === "create") {
+          const name = need(args[1], "the token's name: where it lives, such as phone or cron");
+          const kind = flags.kind ?? "person";
+          if (kind !== "person" && kind !== "agent") {
+            throw new UsageError(`--kind must be person or agent, got "${kind}": who is behind the token, a person's phone or a script.`);
+          }
+          warnIfNoNote();
+          const { json } = await client.request("POST", "/drop-tokens", {
+            body: {
+              name,
+              kind,
+              ...(flags.description ? { description: flags.description } : {}),
+              ...(note ? { change_note: note } : {}),
+            },
+          });
+          out(json, () =>
+            `ok drop token "${name}" (${kind}) created: ${String(json?.["token"])}\n` +
+            "   shown once, not stored: save it now. It can only POST /api/v1/drops:\n" +
+            `   curl -H "Authorization: Bearer <token>" -F text="..." ${client.baseUrl}/api/v1/drops\n` +
+            (flags.kind ? "" : "   kind person because --kind was not given; pass --kind agent when a script holds it\n"),
+          );
+          return 0;
+        }
+        if (sub === "list") {
+          const { json } = await client.request("GET", "/drop-tokens");
+          out(json, () => {
+            const tokens = list(json?.["tokens"]);
+            if (tokens.length === 0) return "no drop tokens: make one with cairn drop-token create <name>\n";
+            return tokens
+              .map(
+                (t) =>
+                  `${String(t["id"])}  ${String(t["name"])}  ${String(t["kind"])}` +
+                  `  last used ${t["last_used_at"] ? String(t["last_used_at"]).slice(0, 16).replace("T", " ") : "never"}` +
+                  `${t["revoked_at"] ? "  (revoked)" : ""}${t["description"] ? `  ${String(t["description"])}` : ""}\n`,
+              )
+              .join("");
+          });
+          return 0;
+        }
+        if (sub === "revoke") {
+          const id = need(args[1], "the token id to revoke, from cairn drop-token list");
+          warnIfNoNote();
+          const { json } = await client.request("POST", `/drop-tokens/${encodeURIComponent(id)}/revoke`, {
+            body: note ? { change_note: note } : {},
+          });
+          out(json, () => `ok drop token ${id} revoked: anything still holding it gets 401\n`);
+          return 0;
+        }
+        throw new UsageError(`cairn drop-token needs a subcommand: create <name> [--kind person|agent], list, or revoke <id>. Got "${sub ?? ""}".`);
       }
 
       case "move": {

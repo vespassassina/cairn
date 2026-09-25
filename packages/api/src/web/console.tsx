@@ -27,13 +27,13 @@ import {
 import { OWNER, type AppContext } from "../context.js";
 import { AttachmentsDisabledError, getAttachmentThumbnail, listAttachmentsForPage, type AttachmentSummary } from "../attachments.js";
 import { createDropToken, listDropTokens, revokeDropToken, type DropTokenKind, type DropTokenSummary } from "../drop-tokens.js";
-import { INBOX_COLLECTION_NAME } from "../templates.js";
 import {
   addSynonym,
   approvalNotice,
   checkDropLimits,
   createDrop,
   deletePage,
+  dropsAmong,
   DropTooLargeError,
   withDropSlot,
   listStalePages,
@@ -151,20 +151,6 @@ function parseTags(value: string): string[] {
     .split(",")
     .map((tag) => tag.trim().replace(/^#/, ""))
     .filter((tag) => tag !== "");
-}
-
-/**
- * The drops waiting under the Inbox (ADR-079), newest first. The Inbox is
- * found by title at the root, the same way `createDrop` finds it, and is
- * absent until the first drop: no drop, no Inbox, nothing to count.
- */
-function inboxDrops(pages: Page[]): { inbox: Page | null; drops: Page[] } {
-  const inbox = pages.find((page) => page.parentId === null && page.title === INBOX_COLLECTION_NAME) ?? null;
-  if (!inbox) return { inbox: null, drops: [] };
-  const drops = pages
-    .filter((page) => page.parentId === inbox.id)
-    .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id));
-  return { inbox, drops };
 }
 
 const ATTACHMENT_LINK_LINE = /^!?\[[^\]]*\]\(attachment:[A-Za-z0-9_-]+\)\s*$/;
@@ -1267,7 +1253,7 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
     const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
     const { counts } = await reviewQueue(context);
     const toReview = counts.changed + counts.unchecked;
-    const waiting = inboxDrops(pages).drops.length;
+    const waiting = dropsAmong(pages).drops.length;
     return render(
       c,
       <Layout title="Cairn" section="collections">
@@ -2545,7 +2531,7 @@ export function registerConsole(app: Hono, options: ConsoleOptions): void {
   // file-away form. Filing is moving; a drop absorbed elsewhere is deleted.
   app.get("/inbox", async (c) => {
     const pages = await allPages(context);
-    const { inbox, drops } = inboxDrops(pages);
+    const { inbox, drops } = dropsAmong(pages);
     const files = new Map<string, AttachmentSummary[]>();
     for (const drop of drops) files.set(drop.id, await listAttachmentsForPage(context, drop.id));
     // Where a drop can be filed: any page that is not the Inbox or another drop.

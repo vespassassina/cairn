@@ -36,6 +36,7 @@ import {
   createDrop,
   createDropTokenOp,
   defaultDropNote,
+  listDrops,
   listDropTokensOp,
   revokeDropTokenOp,
   DROP_LIMITS,
@@ -1082,6 +1083,8 @@ export function restRoutes(context: AppContext, callerFor: CallerFor, options: R
     const origin = publicOrigin ?? new URL(c.req.url).origin;
     return c.json({ ...pageSummary(page), link: `${origin}/p/${page.id}` }, 201);
   });
+
+  api.get("/drops", async (c) => c.json({ drops: (await listDrops(context)).map(pageSummary) }));
 
   // Drop tokens (ADR-079 decision 3): issued and revoked here for the CLI and
   // the console; never listed with a value after creation. No MCP tool.

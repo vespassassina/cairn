@@ -53,7 +53,7 @@ export class CairnClient {
   async request(
     method: string,
     path: string,
-    init: { body?: unknown; ifMatch?: string | null; headers?: Record<string, string> } = {},
+    init: { body?: unknown; form?: FormData; ifMatch?: string | null; headers?: Record<string, string> } = {},
   ): Promise<ApiResponse> {
     const headers: Record<string, string> = {
       accept: "application/json, text/markdown",
@@ -71,7 +71,8 @@ export class CairnClient {
         new Request(url, {
           method,
           headers,
-          ...(init.body === undefined ? {} : { body: JSON.stringify(init.body) }),
+          // A form goes as multipart, and fetch writes the boundary header itself.
+          ...(init.form !== undefined ? { body: init.form } : init.body === undefined ? {} : { body: JSON.stringify(init.body) }),
         }),
       );
     } catch (error) {

@@ -1503,6 +1503,21 @@ describe("drops (ADR-079)", () => {
   });
 });
 
+describe("GET /drops (ADR-079 decision 5)", () => {
+  it("lists what waits under the Inbox, newest first, and nothing when there is no Inbox", async () => {
+    const empty = await call("/drops");
+    expect(empty.status).toBe(200);
+    expect(empty.json).toEqual({ drops: [] });
+
+    await call("/drops", { method: "POST", body: { text: "older" } });
+    const newer = await call("/drops", { method: "POST", body: { text: "newer" } });
+    const listed = await call("/drops");
+    const drops = listed.json["drops"] as Array<{ id: string; title: string }>;
+    expect(drops.map((d) => d.title)).toEqual(["newer", "older"]);
+    expect(drops[0]!.id).toBe(newer.json["id"]);
+  });
+});
+
 describe("drop tokens (ADR-079 decision 3)", () => {
   async function issue(kind: "person" | "agent", name = "phone") {
     const issued = await call("/drop-tokens", { method: "POST", body: { name, description: "share sheet", kind } });

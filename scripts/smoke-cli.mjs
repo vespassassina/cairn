@@ -110,6 +110,12 @@ async function main() {
       changes.out + changes.err,
     );
 
+    const dropped = cairn(["drop", "call Anna re: NAS", "--tag", "smoke", "--note", "Smoke drop"]);
+    const dropMatch = /^ok dropped "call Anna re: NAS" as (\S+) under the Inbox/.exec(dropped.out);
+    check("drops a note into the Inbox (ADR-079)", dropped.code === 0 && dropMatch !== null, dropped.out + dropped.err);
+    const drops = cairn(["drops"]);
+    check("lists the drop as waiting", drops.code === 0 && drops.out.includes(dropMatch[1]) && drops.out.includes("1 waiting"), drops.out + drops.err);
+
     const conflict = cairn(["write", id, "--version", "not-the-version", "--text", "stale"]);
     check("refuses a stale version", conflict.code === 1 && conflict.err.includes("version_conflict"), conflict.err);
 

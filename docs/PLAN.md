@@ -45,7 +45,7 @@ Increment: text and files reach the Inbox from a shell and the console; agents p
 2. [x] `POST /api/v1/drops`, multipart and JSON, server-side attachment upload, limits, `attachments_off`. Test: criteria 1 and 2.
 3. [x] Drop tokens table, `Authorization` check, scope refusal, `last_used_at`, revocation. Test: criteria 3 and 4.
 4. [x] Console `/inbox`, `/inbox/new`, file-away form, home count, `/settings/drop-tokens`. Test: criterion 5.
-5. CLI `cairn drop`, `cairn drops`, `cairn drop-token`, `pnpm smoke:cli`. Test: criterion 6.
+5. [x] CLI `cairn drop`, `cairn drops`, `cairn drop-token`, `pnpm smoke:cli`. Test: criterion 6.
 6. Summary count, instructions and skill paragraph, `pnpm context-cost`. Test: criterion 7.
 7. Guides: `docs/AGENT-OPERATE.md`, `docs/CLI.md`, the person's guide with the `curl` recipe; changelog, roadmap. Test: criteria 8 and 9.
 

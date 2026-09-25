@@ -836,6 +836,30 @@ export function dropTokenJson(token: DropTokenSummary): Record<string, unknown> 
   };
 }
 
+/**
+ * The Inbox and the drops under it, newest first, from a page list
+ * (ADR-079 decision 5). The Inbox is found by title at the root, the way
+ * `createDrop` finds it, and is absent until the first drop: no drop, no
+ * Inbox, nothing to count. Pure, so the console and the summary can run it
+ * on pages they already hold.
+ */
+export function dropsAmong(pages: readonly Page[]): { inbox: Page | null; drops: Page[] } {
+  const inbox = pages.find((page) => page.parentId === null && page.title === INBOX_COLLECTION_NAME) ?? null;
+  if (!inbox) return { inbox: null, drops: [] };
+  const drops = pages
+    .filter((page) => page.parentId === inbox.id)
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id));
+  return { inbox, drops };
+}
+
+/** The drops waiting, newest first: `GET /drops` and `cairn drops`. */
+export async function listDrops(context: AppContext): Promise<Page[]> {
+  const roots = await collectChildren(context, null);
+  const { inbox } = dropsAmong(roots);
+  if (!inbox) return [];
+  return dropsAmong([inbox, ...(await collectChildren(context, inbox.id))]).drops;
+}
+
 /** Issues a drop token; the one answer that carries the value (ADR-079 decision 3). */
 export async function createDropTokenOp(
   context: AppContext,
