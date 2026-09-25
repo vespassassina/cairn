@@ -1192,6 +1192,8 @@ describe("the Inbox in the console (ADR-079 decision 6)", () => {
 
   it("lists drops newest first, files one from its row so it leaves the list, and the home page count matches (criterion 5)", async () => {
     const older = await drop("older note");
+    // Two drops in one millisecond tie on createdAt and then order by id, which is random.
+    await new Promise((resolve) => setTimeout(resolve, 5));
     const newer = await drop("newer note");
     const target = await context.pages.create(context.workspaceId, { title: "NAS", body: "The NAS page." }, { actor: OWNER });
 

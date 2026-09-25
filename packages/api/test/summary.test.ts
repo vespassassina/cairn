@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";
 import { createContext, OWNER, type AppContext } from "../src/context.js";
 import { FIXED_INSTRUCTIONS_CEILING, INSTRUCTIONS_BUDGET, SERVER_INSTRUCTIONS } from "../src/mcp/instructions.js";
+import { createDrop } from "../src/operations.js";
 import {
   buildInstructions,
   cachedInstructions,
@@ -74,6 +75,17 @@ describe("workspace summary", () => {
     expect(summary).toContain('Common tags: "peptide", "healing", "category"');
     // Child pages are counted, not listed.
     expect(summary).not.toContain("BPC-157\" (");
+  });
+
+  it("counts the drops waiting in the Inbox on one line, and says nothing when there are none (ADR-079)", async () => {
+    await seedWiki();
+    expect(await workspaceSummary(context, 800)).not.toContain("Inbox:");
+    await createDrop(context, { text: "call Anna re: NAS" }, BY);
+    expect(await workspaceSummary(context, 800)).toContain("Inbox: 1 drop waiting to be filed.");
+    await createDrop(context, { text: "second" }, BY);
+    const summary = await workspaceSummary(context, 800);
+    expect(summary).toContain("Pages: 9.\nInbox: 2 drops waiting to be filed.");
+    expect(summary).toContain('- "Inbox" (2 pages under it)');
   });
 
   it("counts the owner's marks on one line, and says nothing when there are none (ADR-078)", async () => {

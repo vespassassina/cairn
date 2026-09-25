@@ -21,12 +21,13 @@
 // ADR-055: was 2200 (ADR-032's line about publishing). The summary now has
 // its own 700 character floor (SUMMARY_BUDGET in summary.ts) rather than a
 // remainder, so the total budget carries that cost explicitly. ADR-078 added
-// the paragraph on the owner's mark: was 2400 and 1500. About 600 tokens
-// total with the summary; see pnpm context-cost.
-export const INSTRUCTIONS_BUDGET = 2800;
+// the paragraph on the owner's mark: was 2400 and 1500. ADR-079 added the
+// paragraph on the Inbox: was 2800 and 1900. About 700 tokens total with
+// the summary; see pnpm context-cost.
+export const INSTRUCTIONS_BUDGET = 3100;
 
 /** The fixed text's own ceiling, so it can never eat the summary's room. */
-export const FIXED_INSTRUCTIONS_CEILING = 1900;
+export const FIXED_INSTRUCTIONS_CEILING = 2200;
 
 export const SERVER_INSTRUCTIONS = `Cairn is the owner's long-term memory: wiki pages in Markdown, linked with [[page-id]], and typed tables of rows. A top-level page with everything under it is a collection, one wiki.
 
@@ -40,4 +41,6 @@ Writes carry the version you read. On version_conflict, read the page again, mer
 
 Pages are private. Only the owner publishes one, or marks it approved or disapproved; there is no tool for either, so say that when asked. Never store secrets, credentials or throwaway scratch work.
 
-Search ranks approved pages higher and leaves disapproved ones out unless you pass include_disapproved. A page's approval_notice says the owner disapproved it, or that it was approved and has changed since: do not build on a disapproved page, and say so if asked about it; a changed page waits for the owner's re-review, not yours.`;
+Search ranks approved pages higher and leaves disapproved ones out unless you pass include_disapproved. A page's approval_notice says the owner disapproved it, or that it was approved and has changed since: do not build on a disapproved page, and say so if asked about it; a changed page waits for the owner's re-review, not yours.
+
+The Inbox collection holds drops, notes and files the owner left for you to file. When drops are waiting: get_page each, search for where it belongs, append or create there with a change_note naming the drop, then move the drop under that page, or delete_page it once fully absorbed. Never leave a used drop in the Inbox.`;

@@ -103,6 +103,17 @@ notice line before the body: do not build on a disapproved page, and say so if
 asked about it; a changed page waits for the owner's re-review, not yours. The
 mark travels with sync, export and import; publishing does not.
 
+## The Inbox
+
+The Inbox is a collection where the owner drops notes and files from a phone, a
+shell or the console, for you to file. `cairn drops` lists what waits, newest
+first, with ids; the workspace overview says how many. To process one: `cairn
+read` it, `cairn search` for where it belongs, `cairn append` or `cairn create`
+there with `--note` naming the drop, then `cairn move <drop-id> --parent <page>
+--version <v>` so the drop sits under the page it fed, or `cairn delete` it once
+fully absorbed. Never leave a used drop under the Inbox. To drop something
+yourself, `cairn drop "text" [--file PATH]...`.
+
 ## Publishing
 
 Everything in a Cairn is private. `cairn publish <page-id> --version <v>` serves

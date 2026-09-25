@@ -1,6 +1,6 @@
 import type { Page, Paged, Row } from "@cairn/core";
 import type { AppContext } from "../context.js";
-import { approvalCounts } from "../operations.js";
+import { approvalCounts, dropsAmong } from "../operations.js";
 import { SERVER_INSTRUCTIONS } from "./instructions.js";
 
 /**
@@ -171,6 +171,9 @@ export async function workspaceSummary(context: AppContext, budget: number = SUM
       marks.disapproved > 0 ? `${marks.disapproved} disapproved` : null,
     ].filter((part): part is string => part !== null);
     if (markParts.length > 0) push(`Approval: ${markParts.join(", ")}.`);
+    // Drops waiting to be filed (ADR-079 decision 5), only when there are any.
+    const waiting = dropsAmong(pages).drops.length;
+    if (waiting > 0) push(`Inbox: ${waiting} drop${waiting === 1 ? "" : "s"} waiting to be filed.`);
 
     const counts = descendantCounts(pages);
     const roots = pages
