@@ -45,3 +45,4 @@ Set in `../CLAUDE.md`, under documentation discipline. In short:
 2. Never edit a decision away. Supersede it with a new ADR.
 3. When a doc and the code disagree, that is a bug. Fix whichever is wrong, and say which in the changelog.
 4. Plain, direct writing. Short paragraphs, sentence case headings, numbered lists, no em dashes.
+5. Work not yet built has a spec with acceptance criteria and a place in `PLAN.md` before it has code; `HANDOFF.md` exists only while a task is stopped midway.

@@ -12,4 +12,4 @@ Follow `docs/AGENT-INSTALL.md` from the top. It tells you what to ask first (on 
 
 ## If you were asked to work on Cairn itself
 
-Read `CLAUDE.md`: the project's rules, stack and documentation discipline apply to every agent, not only Claude.
+Read `CLAUDE.md`: the project's rules, stack, documentation discipline and way of working apply to every agent, not only Claude. In short: design, spec and plan before a major feature, with the owner's yes on both; a failing test before each task; one sprint at a time from `docs/PLAN.md`; verify for real and show the evidence; the four logs in the same commit as the work; commit to `main` and push, with the no-reply author.

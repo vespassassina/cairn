@@ -12,9 +12,9 @@ Cairn: a source-available, self-hosted wiki and table store where Claude is the 
 
 ## Current phase
 
-Phase 0 is done: the eval set was finished on 2026-09-14, and spike S1 was dropped by ADR-020. Phase 1 (MCP only, used daily) is under way locally. Live status is in `docs/ROADMAP.md`.
+Phase 0 is done: the eval set was finished on 2026-09-14, and spike S1 was dropped by ADR-020. Phase 1 (MCP only, used daily) is under way, and the plan from the review of 2026-09-24 (`docs/PLAN.md`: approval, dropbox, console for notes, mobile capture app) runs inside it, sprint by sprint. Sprints 0 to 2 are done. Live status is in `docs/ROADMAP.md`.
 
-Do not write editor code until Phase 1 passes its gate (see PRD section 14). The one exception is the review console (ADR-009), a server-rendered screen for reviewing, navigating, editing and restoring. Keep it inside the scope limits that ADR sets: no rich editor, no table views beyond a plain table, no client-side application.
+Do not write editor code until Phase 1 passes its gate (see PRD section 14). The one exception is the review console (ADR-009, amended by ADR-080 for one service worker), a server-rendered screen for reviewing, navigating, editing and restoring. Keep it inside the scope limits that ADR sets: no rich editor, no table views beyond a plain table, no client-side application.
 
 ## Documentation discipline
 
@@ -40,7 +40,24 @@ Rules:
 
 ## Workflow
 
-Commit directly to `main` and push once a change is done and verified. No branches or pull requests: the owner's direction of 2026-09-13 ("disable PRs and just keep committing"). CI runs on every push, so the checks under "Verification before calling a task done" still come first. Tags and releases are outward-facing: ask before making one.
+Commit directly to `main` and push once a change is done and verified. No branches or pull requests: the owner's direction of 2026-09-13 ("disable PRs and just keep committing"). CI runs on every push, so the checks under "Verification before calling a task done" still come first. Tags, releases and anything published outside the repository are outward-facing: ask before making one.
+
+Commits: imperative subject, a body that says why, small commits after the check passes. The author email is the GitHub no-reply address, never a personal one, because the repository is public. Every commit ends with the `Co-Authored-By` line for the agent that wrote it.
+
+## How work is done
+
+The owner's global rules, applied to this repository. A new project, a major feature, or a request for it goes through design, spec, plan and test, in that order and agile. Small changes go straight to test-first.
+
+1. **Design.** Interview the owner a few questions at a time, each with a default: goal, audience, scope, non-goals, constraints, existing material, risks. Propose an approach and alternatives. Push back on gaps.
+2. **Spec.** `docs/specs/<name>.md` with numbered acceptance criteria, the hard rules that bear on it, and its open questions. `docs/specs/README.md` indexes them.
+3. **Plan.** `docs/PLAN.md`. Epics first, split into tasks, grouped into sprints. A task is one outcome and one test. A sprint is a working increment and opens with its ADR. Get a yes on the spec and the plan before building.
+4. **Test.** Each task starts with its failing test: behaviour, not implementation; mocks only at real boundaries (the blob store, the network); then a real run. A test that would pass with the feature removed is not a test. A task closes only when its tests pass, and is ticked in `docs/PLAN.md`.
+
+One sprint at a time. Each sprint closes with the four logs, `pnpm build`, `pnpm test`, and for a search change `pnpm eval`; then review and re-plan before the next one starts. Unattended, mark assumptions in the plan and build one sprint. Stopping mid-task leaves `docs/HANDOFF.md` (done, next, blocked, how to resume), deleted when the work resumes; read it first.
+
+Skills, when the owner's setup has them: `/investigate` for a bug (no fix without a root cause), `/review` before a behaviour-changing commit, `/qa` after a console change with a screenshot per state and breakpoint, `/cso` for anything touching auth, tokens, input or the network.
+
+Beyond the repository's logs, the owner's own Cairn is where persistable knowledge goes: the project page under Projects carries sprint state, findings and lessons, updated as the work lands, with a change note.
 
 ## Stack
 
@@ -104,16 +121,20 @@ docs/
 
 ## Verification before calling a task done
 
-1. `pnpm build` and `pnpm test` pass
+Write the check first, run the work for real, show the evidence. Name what was skipped. Never report green you did not see.
+
+1. `pnpm build` and `pnpm test` pass, run from the repository root (a per-package run misses the root timeout, see `docs/LESSONS.md`)
 2. Conformance suite passes for every adapter touched
-3. New MCP tools, REST endpoints and CLI commands have a contract test with a realistic payload
-4. PRD or an ADR updated if behaviour changed
-5. `docs/CHANGELOG.md` has an entry saying what changed and why, and `docs/ROADMAP.md` reflects the new status
-6. New owner directions are in `docs/DIRECTIONS.md`, and failures met along the way are in `docs/LESSONS.md`
+3. New MCP tools, REST endpoints and CLI commands have a contract test with a realistic payload; a CLI change also passes `pnpm smoke:cli`
+4. A console change is looked at in a browser, at desktop and phone width, light and dark, with a screenshot per state; never ask the owner to check by hand
+5. Every artefact gets an adversarial pass: bad input, wrong order, the strongest objection. Record what held
+6. PRD or an ADR updated if behaviour changed
+7. `docs/CHANGELOG.md` has an entry saying what changed and why, and `docs/ROADMAP.md` reflects the new status
+8. New owner directions are in `docs/DIRECTIONS.md`, and failures met along the way are in `docs/LESSONS.md`. The same mistake twice means fixing its source: this file, a guide, or a skill
 
 ## Coding style
 
-Write like the surrounding code: its naming, comment density and idiom. Beyond that, one rule the owner set on 2026-09-14 (ADR-031): the code guides whoever uses it, as much as it can, "even when the user is an agent".
+Write like the surrounding code: its naming, comment density and idiom. Keep it simple: the simplest design that meets the spec, a helper at the third repetition, abstractions only at real boundaries (the adapter ports, the surfaces). Shallow functions, intent-revealing names, comments that say why. A dependency is a decision: standard library first, and the rest logged in the changelog. No hidden behaviour. Beyond that, one rule the owner set on 2026-09-14 (ADR-031): the code guides whoever uses it, as much as it can, "even when the user is an agent".
 
 1. **Every error is the best one we can write.** It says what happened, why when that is not obvious, and the exact next step: the command, flag or setting that fixes it. "X failed" alone is a bug.
 2. **Say when a default was used.** When the code acted on a default the person did not choose, such as the CLI talking to localhost because no server was named, the error that follows says so and how to choose.
@@ -123,7 +144,7 @@ Write like the surrounding code: its naming, comment density and idiom. Beyond t
 
 ## Writing style for docs
 
-Plain, direct, short paragraphs. No em dashes. Sentence case headings. Numbered lists over dash bullets.
+Plain, direct, short paragraphs. Short sentences, plain words, no drama. Write as little as does the job. No em dashes. Sentence case headings. Numbered lists over dash bullets. The same voice in docs, commit messages, errors and the console. English with international spelling throughout; metric units; ISO 8601 dates and 24-hour times, Central European Time where a zone matters. Nothing in the repository is in another language.
 
 ## Open questions that block work
 

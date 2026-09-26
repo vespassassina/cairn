@@ -11,6 +11,12 @@ Rules:
 3. Every entry says where it landed: an ADR, a doc, a commit, or "not yet".
 4. A later direction that reverses an earlier one does not edit it. Add the new one and point back.
 
+## 2026-09-26
+
+### "update the process and dev guide from my global one"
+
+Given after sprint 2 closed. The owner keeps a global set of working rules for every project (design, spec, plan and test in that order; a failing test per task; one sprint at a time; verification with evidence and an adversarial pass; KISS code; commit hygiene; plain writing; metric and ISO 8601; a handoff file when stopping midway; Cairn as long-term memory). Landed as a rewrite of `CLAUDE.md`: a new "How work is done" section, the workflow section with the commit rules, the verification list with the browser check, the smoke test and the adversarial pass, the coding style with the simplicity rules, and the writing style with the language and unit standards; the current-phase paragraph now names the 2026-09-24 plan. `AGENTS.md` and `docs/README.md` point at the same rules for other agents.
+
 ## 2026-09-24
 
 ### "fix the bugs, then prepare a plan to build what is lacking, upgrade and update the preview, add a "dropbox" to upload and write notes that an agent can later process and incorporate. add a certified check for pages that a human can mark knowledge approved/neutral/disapproved, allow agents to retrieve everything but keep the mark into account (or exclude unapproved knowledge from their work). make it easy to approve knowledge and to review, keep the mark of approval in future updates if the changes are minimal. allow diff between versions (have a button that allows opening a diff view side by side with previous version). then plan for a simple mobile first webapp to add notes/images/files. also allow agents to drop files there even without the cli/mpc (but auth yes). help me spec properly what we need and what we miss. build a detailed plan"
