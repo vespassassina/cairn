@@ -6,6 +6,8 @@ Entries link to the ADR when there is one. A change of direction that has no ADR
 
 ## 2026-11-10
 
+**A command no longer falls over from a stopped laptop to Azure (ADR-083).** The owner said they barely used Cairn, so the sync-loop explanation of the Azure bill was wrong or incomplete. The cause found: with the laptop server down, each unnamed `cairn` command (agent sessions, the session hook) went to the next registered instance, Azure, woke it, and held it up for 30 minutes, so one command every few minutes kept it awake all day. Now, once an instance on this machine does not answer, cloud instances are not tried; the error names `cairn start` and `--instance <name>`. With only cloud instances registered nothing changes. `cairn sync` and `--instance` still reach Azure on purpose. Supersedes the failover part of ADR-029. Still an inference: no logs exist to name the caller.
+
 **A sync that would keep Azure awake is now refused (ADR-082).** The owner's October Azure bill was about 7 EUR (vCPU 4.90, memory 1.23, storage list operations 0.89). The app was awake around the clock from 2026-10-10 to 2026-10-20 with about one request every six minutes, the signature of a `cairn sync --every 5m` loop, which `docs/CLI.md` and `docs/LOCAL.md` gave as their example. `cairn sync --every` and `cairn sync install --every` now refuse an interval under two hours against an `*.azurecontainerapps.io` address, saying what it costs and what to use instead; `--keep-awake` overrides. The examples now say `--every 4h`. Not proven: there are no logs to name the caller, and since 2026-10-21 the app sleeps again, so nothing in the deployment needed changing. No dependency added.
 
 ## 2026-09-26

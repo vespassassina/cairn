@@ -207,10 +207,17 @@ describe("choosing an instance", () => {
     expect(stderr).toBe("");
     expect(seen.some((url) => url.startsWith(CLOUD))).toBe(false);
 
+    // ADR-083: a laptop that is down does not send the command to the cloud,
+    // because every such command wakes Azure and holds it up for 30 minutes.
     down.add(LAPTOP);
-    expect(await cairn("overview")).toBe(0);
-    expect(stdout).toContain("In the cloud");
-    expect(stderr).toContain(`using cloud (${CLOUD}): laptop did not answer`);
+    stdout = "";
+    stderr = "";
+    seen.length = 0;
+    expect(await cairn("overview")).toBe(1);
+    expect(seen.some((url) => url.startsWith(CLOUD))).toBe(false);
+    expect(stderr).toContain("laptop");
+    expect(stderr).toContain("cairn start");
+    expect(stderr).toContain("--instance cloud");
   });
 
   it("lets --instance and CAIRN_URL choose, and says when none answers", async () => {
@@ -226,7 +233,7 @@ describe("choosing an instance", () => {
     down.add(LAPTOP);
     down.add(CLOUD);
     expect(await cairn("overview")).toBe(1);
-    expect(stderr).toContain("none of your instances answered");
+    expect(stderr).toContain("was not tried");
     expect(await cairn("login")).toBe(2);
     expect(stderr).toContain("cairn login --instance <name>");
   });
@@ -240,9 +247,8 @@ describe("choosing an instance", () => {
     expect(seen.some((url) => url.startsWith(CLOUD))).toBe(false);
 
     down.add(LAPTOP);
-    expect(await cairn("server")).toBe(0);
-    expect(stdout).toBe(`${CLOUD}\n`);
-    expect(stderr).toContain(`using cloud (${CLOUD}): laptop did not answer`);
+    expect(await cairn("server")).toBe(1);
+    expect(seen.some((url) => url.startsWith(CLOUD))).toBe(false);
 
     expect(await cairn("server", "--instance", "cloud")).toBe(0);
     expect(stdout).toBe(`${CLOUD}\n`);
@@ -445,5 +451,15 @@ describe("cairn hook", () => {
     expect(stdout).toContain("removed the session hook");
     const settings = JSON.parse(await readFile(join(config, ".claude", "settings.json"), "utf8"));
     expect(settings.hooks?.SessionStart).toBeUndefined();
+  });
+});
+
+describe("cloud-only registrations (ADR-083)", () => {
+  it("still tries the cloud when no instance on this machine is registered", async () => {
+    expect(await cairn("instances", "add", "cloud", CLOUD)).toBe(0);
+    await contexts[CLOUD]!.pages.create(contexts[CLOUD]!.workspaceId, { title: "In the cloud", body: "x" }, BY);
+    stdout = "";
+    expect(await cairn("overview")).toBe(0);
+    expect(stdout).toContain("In the cloud");
   });
 });

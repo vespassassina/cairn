@@ -90,6 +90,7 @@ A decision that changes is not edited away. Add a new ADR that supersedes it, an
 | [080](ADR-080.md) | A mobile capture app at /m, a progressive web app with one service worker; amends ADR-009 | proposed | 2026-09-24 |
 | [081](ADR-081.md) | The console gains what a person needs to write notes, inside ADR-009 | proposed | 2026-09-24 |
 | [082](ADR-082.md) | A repeating sync refuses to keep Azure awake without being told | accepted | 2026-11-10 |
+| [083](ADR-083.md) | A stopped local Cairn does not send commands to the cloud | accepted | 2026-11-10 |
 
 ## Writing one
 

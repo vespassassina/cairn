@@ -13,6 +13,10 @@ Rules:
 
 ## 2026-11-10
 
+### "the app was awake because it awakened and cannot go to sleep. that's the bug. i almost never used it. cairn sync needs to be trimmed"
+
+A correction to the first diagnosis. The owner used Cairn little, so a deliberate sync loop was the wrong story. Found: with the laptop server down, every unnamed `cairn` command (agents using the skill, the session hook) fell over to Azure, woke it, and held it up for 30 minutes. Landed in: `docs/decisions/ADR-083.md`, `packages/cli/src/instances.ts` and `main.ts`, `docs/CLI.md`, `docs/CHANGELOG.md`, `docs/LESSONS.md`. The sync guard of ADR-082 stays.
+
 The owner reported an Azure bill of about 8 euro and said Cairn "should be much cheaper than this. check, fix". Summary. Landed in: `docs/decisions/ADR-082.md`, `packages/cli/src/sync.ts` and `main.ts`, `docs/CHANGELOG.md`, `docs/LESSONS.md`.
 
 ## 2026-09-26

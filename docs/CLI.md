@@ -314,7 +314,7 @@ open "$(cairn server)"
 
 ## Several Cairns as one: instances
 
-Register each Cairn you use by name, and the CLI treats them as one: your laptop first, then Azure, then your own server, say (ADR-029). Each is then a backup of the others, and when one is down, another serves.
+Register each Cairn you use by name, and the CLI treats them as one: your laptop first, then Azure, then your own server, say (ADR-029). Each is then a backup of the others. A command goes to your laptop; if it is down, the CLI stops and tells you, and does not wake a cloud Cairn on its own (ADR-083).
 
 ```
 cairn instances add laptop http://localhost:8787 --start "pnpm --dir ~/Cairn dev"
@@ -325,7 +325,7 @@ cairn instances add spare https://other-address --first    put one first
 cairn instances remove spare
 ```
 
-1. **Every command goes to the first that answers,** in your order. If it skipped one, it says so. `--instance azure`, or `-i azure`, picks one; `CAIRN_URL`, when set, still wins over the list. The check waits 2 seconds for this machine and 60 for another, since a Cairn on Azure may be starting, and stops at the first that answers, so Azure is not woken while your laptop is up.
+1. **Every command goes to the first that answers,** in your order. If an instance on this machine does not answer, the cloud ones after it are not tried, since each command would wake Azure and keep it billed: start the laptop one (`cairn start`) or name the cloud one (`--instance azure`). With only cloud instances registered, they are tried in order. `--instance azure`, or `-i azure`, picks one; `CAIRN_URL`, when set, still wins over the list. The check waits 2 seconds for this machine and 60 for another, since a Cairn on Azure may be starting, and stops at the first that answers, so Azure is not woken while your laptop is up.
 2. **`cairn sync`** with no addresses syncs them all: the first that answers syncs with each of the others, and again with the earlier ones if it took changes, so a change made on any of them reaches all of them in one run. `cairn sync laptop azure` syncs one pair by name.
 3. **`cairn start`** starts the first one with its `--start` command if it is not running, waits for it, and then syncs, so you begin with anything changed in the cloud while your laptop was off. Its output goes to `logs/<name>.log` beside your sign-ins.
 4. **They offer to sync themselves.** When you register the second Cairn, `cairn instances add` asks whether to keep them in sync every four hours with no terminal open. Yes installs it; anything else installs nothing and prints the command for later. You are asked once, never again once a job exists, and never when input is piped or you are running from a script, where it prints the command instead (ADR-052).

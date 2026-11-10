@@ -667,13 +667,22 @@ export async function run(argv: string[], io: Io): Promise<number> {
       if (command === "login" || command === "logout") {
         throw new UsageError(`which instance? cairn ${command} --instance <name>, one of: ${names()}`);
       }
-      const { instance, skipped } = await firstReachable(registered, io.fetch);
+      const { instance, skipped, held } = await firstReachable(registered, io.fetch);
       if (!instance) {
         // A session hook has nowhere to report an error: say so in one line
         // instead of failing the session it is starting.
         if (command === "overview" && flags.brief) {
           io.stdout("Cairn is not answering. Start it: cairn start\n");
           return 0;
+        }
+        if (held.length > 0) {
+          const first = skipped[0]!;
+          io.stderr(
+            `error: ${first.name} (${first.url}) did not answer, and ${held.map((x) => x.name).join(", ")} was not tried: ` +
+              `a command sent there wakes it, and a few an hour keep it awake and billed.\n` +
+              `Start ${first.name}: cairn start. Or choose the cloud one on purpose: cairn <command> --instance ${held[0]!.name} (about 30 seconds to wake).\n`,
+          );
+          return 1;
         }
         io.stderr(`error: none of your instances answered: ${registered.map((x) => `${x.name} (${x.url})`).join(", ")}\n`);
         return 1;

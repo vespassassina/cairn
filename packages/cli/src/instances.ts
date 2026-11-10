@@ -89,15 +89,28 @@ export async function reachable(url: string, fetch: Fetch): Promise<boolean> {
  * The first instance that answers, trying them in order and stopping there,
  * so a cloud copy is not woken while an earlier one is up. Also returns the
  * ones skipped on the way, to say so.
+ *
+ * ADR-083: once an instance on this machine has failed to answer, the ones
+ * after it that are not on this machine are not tried. A command that fell
+ * over to Azure woke it, and a few such commands an hour kept it awake for
+ * weeks. They come back as `held` so the caller can name them. With no
+ * instance on this machine registered, the cloud ones are tried as before.
  */
 export async function firstReachable(
   instances: Instance[],
   fetch: Fetch,
-): Promise<{ instance: Instance | null; skipped: Instance[] }> {
+): Promise<{ instance: Instance | null; skipped: Instance[]; held: Instance[] }> {
   const skipped: Instance[] = [];
+  const held: Instance[] = [];
+  let localDown = false;
   for (const instance of instances) {
-    if (await reachable(instance.url, fetch)) return { instance, skipped };
+    if (localDown && !isLoopback(instance.url)) {
+      held.push(instance);
+      continue;
+    }
+    if (await reachable(instance.url, fetch)) return { instance, skipped, held };
     skipped.push(instance);
+    if (isLoopback(instance.url)) localDown = true;
   }
-  return { instance: null, skipped };
+  return { instance: null, skipped, held };
 }

@@ -13,6 +13,13 @@ Each entry answers four questions:
 
 ## 2026-11-10
 
+### A silent failover to the cloud kept Azure awake (corrects the entry below)
+
+1. **What happened.** The owner said they almost never used Cairn, yet it stayed awake for ten days and billed 7 EUR. The sync-loop explanation below was an inference from timing, and the owner rejected it.
+2. **Cause.** ADR-029 sends an unnamed command to the first registered instance that answers. With the laptop server stopped, every `cairn` command from any agent session or hook went to Azure instead. Each one woke it and restarted a 30 minute idle timer, so a command every 6 minutes kept it up all day. Seen in `firstReachable` and the registry (laptop first, azure second). Still not proven against logs, which do not exist.
+3. **Fix.** After an instance on this machine fails to answer, cloud instances are not tried unless named (ADR-083). The error names `cairn start` and `--instance`.
+4. **Lesson.** A fallback that costs money must be chosen, not automatic. Ask of every failover: what does the standby bill when something wakes it?
+
 ### A documentation example kept Azure awake and cost 7 EUR
 
 1. **What happened.** The October Azure bill was about 7 EUR instead of near zero. Replica metrics show Cairn awake nearly 24 hours a day from 2026-10-10 to 2026-10-20, with a request about every six minutes.
