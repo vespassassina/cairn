@@ -11,6 +11,15 @@ Each entry answers four questions:
 3. **Fix.** What changed, with the commit or file.
 4. **Lesson.** What to do differently next time. This is the part worth reading.
 
+## 2026-11-10
+
+### A documentation example kept Azure awake and cost 7 EUR
+
+1. **What happened.** The October Azure bill was about 7 EUR instead of near zero. Replica metrics show Cairn awake nearly 24 hours a day from 2026-10-10 to 2026-10-20, with a request about every six minutes.
+2. **Cause.** Most likely a `cairn sync --every 5m` loop, copied from the example in `docs/CLI.md` and `docs/LOCAL.md`. The same pages warned that a short interval keeps Cairn awake, but the example contradicted the warning and nothing in the command checked. Inferred from timing; the deployment keeps no logs to confirm the caller.
+3. **Fix.** The command refuses an interval under two hours against an Azure address unless `--keep-awake` is given (ADR-082), and the examples use `4h`.
+4. **Lesson.** An example is the most copied line in the docs, so it must be safe to copy. A warning in prose does not stop a cost; a check in the command does. When a mistake costs money, make the command refuse it and say the way out.
+
 ## 2026-09-25
 
 ### A newest-first test flaked because two drops were created in the same millisecond

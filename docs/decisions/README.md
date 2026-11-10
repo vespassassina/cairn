@@ -89,6 +89,7 @@ A decision that changes is not edited away. Add a new ADR that supersedes it, an
 | [079](ADR-079.md) | The dropbox is an Inbox collection fed by one endpoint and scoped drop tokens | accepted | 2026-09-24 |
 | [080](ADR-080.md) | A mobile capture app at /m, a progressive web app with one service worker; amends ADR-009 | proposed | 2026-09-24 |
 | [081](ADR-081.md) | The console gains what a person needs to write notes, inside ADR-009 | proposed | 2026-09-24 |
+| [082](ADR-082.md) | A repeating sync refuses to keep Azure awake without being told | accepted | 2026-11-10 |
 
 ## Writing one
 

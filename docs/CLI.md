@@ -291,7 +291,7 @@ The table itself is ordinary: `cairn tables`, `cairn rows <table-id>`, `cairn ro
 ```
 cairn sync http://localhost:8787 https://your-address --dry-run   what a sync would change
 cairn sync http://localhost:8787 https://your-address             sync once
-cairn sync http://localhost:8787 https://your-address --every 5m  keep syncing, every 5 minutes
+cairn sync http://localhost:8787 https://your-address --every 4h  keep syncing, every 4 hours
 ```
 
 1. **Sign in to both first.** `cairn login` with `CAIRN_URL` set to each server that uses OAuth, or `cairn login --instance <name>` for a registered one; localhost needs no sign-in. Sync uses those sign-ins, not `CAIRN_TOKEN`.
@@ -300,7 +300,7 @@ cairn sync http://localhost:8787 https://your-address --every 5m  keep syncing, 
 4. **Moving to a new Cairn** is one sync into an empty one. Ids and links are kept, as with an import.
 5. **It remembers the last sync** in a small file per pair of servers, next to the CLI's sign-ins. Deleting it loses nothing: the next run compares everything again and changes only what differs, with one catch. A record deleted on one side since the last sync comes back from the other, because without the file sync cannot tell a deletion from a record the other side never had.
 6. **Tables are never deleted by sync;** it warns instead.
-7. **`--every`** keeps it running, at least 30 seconds apart, on a machine that stays on. A failed run is reported and tried again next time. Each run reads everything from both sides, which for a personal wiki takes about a second, plus the cold start when a Cairn on Azure was asleep. Syncing more often than a Cairn on Azure's idle time keeps it awake, which costs more (`docs/DEPLOY-AZURE.md`, "Cold starts").
+7. **`--every`** keeps it running, at least 30 seconds apart, on a machine that stays on. A failed run is reported and tried again next time. Each run reads everything from both sides, which for a personal wiki takes about a second, plus the cold start when a Cairn on Azure was asleep. Syncing more often than a Cairn on Azure's idle time keeps it awake, which costs more (`docs/DEPLOY-AZURE.md`, "Cold starts"). `--every` under two hours against an `azurecontainerapps.io` address is refused for that reason; add `--keep-awake` to accept the cost (ADR-082).
 
 ## Which server a command would use: `cairn server`
 

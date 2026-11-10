@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { closeContext, createApp, createContext, OWNER, type AppContext } from "@cairn/api";
 import { revisionRecordId } from "@cairn/core";
 import { run, type Io } from "../src/main.js";
-import { loadState, newer, parseInterval, plan, record, type Snapshot, type SyncRecord } from "../src/sync.js";
+import { keepsAzureAwake, loadState, newer, parseInterval, plan, record, type Snapshot, type SyncRecord } from "../src/sync.js";
 
 /**
  * cairn sync (ADR-023): two real Cairns, driven through the command, must end
@@ -447,6 +447,25 @@ describe("cairn sync between two servers", () => {
     expect(stderr).toContain("two different servers");
     expect(await sync("--every", "5")).toBe(2);
     expect(stderr).toContain("--every");
+  });
+});
+
+describe("sync that keeps Azure awake (ADR-082)", () => {
+  const AZURE = "https://cairn.kindfield-1234.swedencentral.azurecontainerapps.io";
+
+  it("refuses --every under two hours against an Azure address, and says how to go on", async () => {
+    expect(await cairn("sync", A_URL, AZURE, "--every", "5m")).toBe(2);
+    expect(stderr).toContain("keeps your Cairn on Azure awake");
+    expect(stderr).toContain("--every 4h");
+    expect(stderr).toContain("--keep-awake");
+  });
+
+  it("only counts Azure addresses, and only short intervals", () => {
+    const min = 60_000;
+    expect(keepsAzureAwake([A_URL, AZURE], 5 * min)).toBe(true);
+    expect(keepsAzureAwake([A_URL, AZURE], 119 * min)).toBe(true);
+    expect(keepsAzureAwake([A_URL, AZURE], 120 * min)).toBe(false);
+    expect(keepsAzureAwake([A_URL, B_URL], 5 * min)).toBe(false);
   });
 });
 

@@ -43,6 +43,7 @@ import {
   apply,
   loadState,
   normaliseUrl,
+  keepsAzureAwake,
   parseInterval,
   plan,
   readSide,
@@ -191,7 +192,7 @@ Your data
   cairn export <folder> --format site [--site-url URL]  a folder of HTML, openable by double-click or a
                                                         static host; --site-url also writes a sitemap.xml
   cairn import <folder> [--dry-run]                     read an export back in, keeping ids; safe to repeat
-  cairn sync <url-a> <url-b> [--every 5m] [--dry-run]   keep two Cairns the same; edits made on both
+  cairn sync <url-a> <url-b> [--every 4h] [--dry-run]   keep two Cairns the same; edits made on both
                                                         merge as in git, and where both changed the same
                                                         part the newer wins, the other kept in history
   cairn check-sources [--root PAGE] [--timeout MS]      which sources (a URL, a DOI or a PubMed id) no
@@ -284,6 +285,7 @@ const OPTIONS = {
   force: { type: "boolean" },
   "dry-run": { type: "boolean" },
   every: { type: "string" },
+  "keep-awake": { type: "boolean" },
   // Short form because it is typed on nearly every command aimed at a named
   // Cairn, the owner's direction of 2026-09-16.
   instance: { type: "string", short: "i" },
@@ -855,6 +857,17 @@ export async function run(argv: string[], io: Io): Promise<number> {
     );
   };
 
+  // A short repeat against Azure keeps Cairn awake and bills the full rate
+  // (ADR-082). Refuse with the way out; --keep-awake is the owner's choice.
+  const refuseIfAwake = (urls: string[], everyMs: number) => {
+    if (flags["keep-awake"] === true || !keepsAzureAwake(urls, everyMs)) return;
+    throw new UsageError(
+      `--every ${flags.every} keeps your Cairn on Azure awake all day, billed at the full rate (about 7 EUR a month at 5m). ` +
+        `Use --every 4h (the default for cairn sync install), run cairn sync once when you need it, ` +
+        `or add --keep-awake if you accept the cost`,
+    );
+  };
+
   const installJob = async (instances: Instance[] = registered): Promise<number> => {
     if (instances.length < 2) {
       throw new UsageError("register two or more instances first: cairn instances add <name> <url>");
@@ -867,6 +880,7 @@ export async function run(argv: string[], io: Io): Promise<number> {
         throw new UsageError(error instanceof Error ? error.message : String(error));
       }
     }
+    refuseIfAwake(instances.map((instance) => instance.url), everyMs);
     if (!io.self) throw new Error("this build of cairn cannot install a job");
     let program: string[];
     try {
@@ -2313,6 +2327,7 @@ export async function run(argv: string[], io: Io): Promise<number> {
 
         let round: () => Promise<boolean>;
         if (args.length === 0) {
+          if (every !== null) refuseIfAwake(registered.map((instance) => instance.url), every);
           if (registered.length < 2) {
             throw new UsageError("cairn sync needs two addresses, or two or more registered instances (cairn instances add)");
           }
@@ -2325,6 +2340,7 @@ export async function run(argv: string[], io: Io): Promise<number> {
             b: address(need(args[1], "the second server's address")),
           };
           if (urls.a === urls.b) throw new UsageError("cairn sync needs two different servers");
+          if (every !== null) refuseIfAwake([urls.a, urls.b], every);
           round = async () => {
             await syncPair(urls, dry);
             return true;

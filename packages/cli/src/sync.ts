@@ -670,6 +670,28 @@ export async function saveState(path: string, state: SyncState): Promise<void> {
 }
 
 /** "30s", "5m" or "2h", at least 30 seconds, as milliseconds. */
+/** A Cairn on Azure Container Apps: it stops when idle and bills only while awake (ADR-018). */
+const AZURE_HOST = /\.azurecontainerapps\.io$/;
+
+/**
+ * Under this, a repeating sync against Azure leaves Cairn awake a quarter of
+ * the day or more. A `--every 5m` loop did that for ten days in October 2026
+ * and made a bill of about 7 EUR (ADR-082).
+ */
+export const MIN_EVERY_ON_AZURE_MS = 2 * 3_600_000;
+
+/** True when syncing this often would keep a Cairn on Azure awake most of the time. */
+export function keepsAzureAwake(urls: string[], everyMs: number): boolean {
+  if (everyMs >= MIN_EVERY_ON_AZURE_MS) return false;
+  return urls.some((url) => {
+    try {
+      return AZURE_HOST.test(new URL(url).hostname);
+    } catch {
+      return false;
+    }
+  });
+}
+
 export function parseInterval(raw: string): number {
   const match = /^(\d+)(s|m|h)$/.exec(raw.trim());
   if (!match) throw new Error(`cannot read --every "${raw}". Use a number and s, m or h, such as 5m`);

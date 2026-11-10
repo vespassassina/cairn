@@ -11,6 +11,10 @@ Rules:
 3. Every entry says where it landed: an ADR, a doc, a commit, or "not yet".
 4. A later direction that reverses an earlier one does not edit it. Add the new one and point back.
 
+## 2026-11-10
+
+The owner reported an Azure bill of about 8 euro and said Cairn "should be much cheaper than this. check, fix". Summary. Landed in: `docs/decisions/ADR-082.md`, `packages/cli/src/sync.ts` and `main.ts`, `docs/CHANGELOG.md`, `docs/LESSONS.md`.
+
 ## 2026-09-26
 
 ### "update the process and dev guide from my global one"
